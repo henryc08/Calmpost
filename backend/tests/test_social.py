@@ -148,19 +148,44 @@ def test_expired_sessions_and_declined_requests(c):
     assert c.get('/social/me', headers=b).status_code == 401
 
 
-def test_care_requires_fresh_sensor_data_and_demo_routes_cannot_award_player_xp(c):
+def test_sensorless_care_logs_work_but_demo_routes_cannot_award_player_xp(c):
     alice, a = account(c, 'alice')
     c.post('/social/bin', headers=a, json={'device_token': c.device_token})
     payload = {'catalog_id': 'cardboard', 'action': 'added', 'request_id': 'stale-test-12345'}
-    assert c.post('/social/care-log', headers=a, json=payload).status_code == 409
+    advice = c.post('/bins/bin-001/advice/check', headers=a, json={'item': 'Cardboard'})
+    assert advice.status_code == 200, advice.text
+    assert advice.json()['verdict'] == 'careful'
+    assert advice.json()['input_snapshot']['measured_at'] is None
+    assert not advice.json()['input_snapshot']['layers']['top']['measured']
+    saved = c.post('/social/care-log', headers=a, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {'xp_awarded': 2, 'duplicate': False}
     ingest_series(c, moisture_raw=380, probe_temp=30, co2=900)
     assert c.post('/bins/bin-001/logs', headers=a, json={'item':'cardboard','category':'brown','was_advised':True}).status_code == 403
     assert c.post('/bins/bin-001/harvest', headers=a, json={'layer': 'top', 'yield_g': 1000}).status_code == 403
     assert c.get(f'/users/{alice}/game').status_code == 403  # shared key cannot read players
     assert c.post('/quests/checkin/claim', headers=a, params={'user_id': alice}).status_code == 409
     c.portal.call(run_sql, "UPDATE readings SET time=time-interval '1 day'")
-    assert c.post('/social/care-log', headers=a, json=payload).status_code == 409
-    assert c.get('/social/me', headers=a).json()['progress']['total_xp'] == 0
+    assert c.post('/social/care-log', headers=a, json=payload).json() == {'xp_awarded': 2, 'duplicate': True}
+    stale = c.post('/social/care-log', headers=a, json={**payload, 'request_id': 'stale-new-12345'})
+    assert stale.status_code == 200, stale.text
+    assert stale.json()['xp_awarded'] == 2  # volume only, no +15 care bonus
+    assert c.get('/social/me', headers=a).json()['progress']['total_xp'] == 4
+
+
+def test_sensorless_advice_keeps_harmful_items_out(c):
+    _, headers = account(c, 'sensorless')
+    c.post('/social/bin', headers=headers, json={'device_token': c.device_token})
+    advice = c.post('/bins/bin-001/advice/check', headers=headers, json={'item': 'Meat'})
+    assert advice.status_code == 200, advice.text
+    assert advice.json()['verdict'] == 'avoid'
+    assert not advice.json()['bottom_ready']
+    whole = c.get('/bins/bin-001/advice', headers=headers)
+    assert whole.status_code == 200, whole.text
+    assert whole.json()['suggest_add'] == []
+    assert whole.json()['verdict'] == 'careful'
+    assert 'unavailable' in whole.json()['reason']
+    assert c.post('/bins/missing/advice/check', json={'item': 'Cardboard'}).status_code == 404
 
 
 def test_concurrent_pairing_cannot_claim_two_bins(c):

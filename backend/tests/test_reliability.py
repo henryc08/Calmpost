@@ -84,7 +84,10 @@ def test_social_nonrecommended_volume_is_scoped_and_retryable(c):
     assert len(logs) == 1 and logs[0]['quantity_g'] == 250
     c.portal.call(run_sql, "UPDATE readings SET time=time-interval '1 day'")
     assert c.post('/social/care-log', headers=headers, json=body).json() == replay
-    assert c.post('/social/care-log', headers=headers, json={**body, 'request_id': 'new-stale-log-001'}).status_code == 409
+    stale = c.post('/social/care-log', headers=headers, json={**body, 'request_id': 'new-stale-log-001'})
+    assert stale.status_code == 200, stale.text
+    assert stale.json()['xp_awarded'] == 13  # cumulative 500 g, no advice bonus
+    assert c.get('/social/me', headers=headers).json()['progress']['total_xp'] == 25
     assert c.get(f'/users/{uid}/game', headers=headers).status_code == 200
     assert c.post('/bins/bin-001/chat', headers=headers, json={'message': 'How is my compost?', 'include_photos': False}).status_code == 200
     assert c.post('/bins/bin-001/chat', json={'message': 'How is my compost?'}).status_code == 403

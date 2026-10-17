@@ -200,6 +200,25 @@ async def recent_adds(bin_id: str, hours: int = 48, limit: int = 12) -> list[dic
     ]
 
 
+async def unmeasured_snapshot(bin_id: str) -> dict:
+    """Advice-only context before the first reading; never invent sensor data."""
+    greens, browns = await balance_cups(bin_id)
+    return {
+        "time": None, "stale": True,
+        "layers": {layer: {
+            "measured": False, "moisture_pct": None, "moisture_raw": None,
+            "moisture_state": "unknown", "temp_c": None,
+        } for layer in ("top", "bottom")},
+        "stages": {"top": "started", "bottom": "started"},
+        "air": {"co2_ppm": None, "co2_ok": False,
+                "co2_slope_per_day": None, "ambient_temp_c": None},
+        "greens_7d": greens, "browns_7d": browns,
+        "moisture_time_weighted_6h": None, "healthy_hours_today": None,
+        "moisture_calibrated": False,
+        "healthy_band": [compost.MOISTURE_LO, compost.MOISTURE_HI],
+    }
+
+
 async def snapshot(bin_id: str) -> dict | None:
     """Everything the live view and the model need, in one shape.
 

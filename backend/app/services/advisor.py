@@ -324,6 +324,10 @@ def fallback(snapshot: dict, item: str | None) -> dict:
                 "moisture rather than filling the bin with it."
             )
 
+    if item is None and (snapshot.get('stale') or not top['measured'] or pct is None):
+        verdict, headline = "careful", "Check the bin first"
+        reason = "Current moisture is unavailable. Check the bin by hand before adding more."
+
     # suggestFor(): a finished bottom layer is the headline news.
     if item is None and stages["bottom"] == "ready":
         line = "The bottom layer looks ready. Check its texture and smell; sensors are only a guide."

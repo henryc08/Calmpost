@@ -644,7 +644,9 @@ not used for multiplayer.
   additions/avoids, and selected compostable amounts earn 1 XP per 20 g under the same
   cumulative rounding and 60 XP action cap. Non-recommended compostables remain loggable.
   Requests use transaction receipts: identical retries return original XP; changed bodies
-  conflict. New social logs still require fresh readings; existing receipts remain retryable after readings age.
+  conflict. Missing/stale sensors do not block logging or volume XP; only the advice
+  bonus requires fresh readings. Before the first reading, the verdict sheet gives
+  cautious rule-based advice with unknown sensor values. Hard keep-outs stay avoid.
 - Legacy API-key routes cannot read or mutate registered players' private state or bins.
   Player sessions can read their owned bin and game, request advice or Trunc chat, and
   claim earned rewards or spend server balances. Demo harvest/log writes stay blocked;

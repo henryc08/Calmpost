@@ -90,7 +90,9 @@ Home and Layers then read your bin using your account session. Opening Layers re
 one daily check-in. Adding or skipping a catalog item in Log is saved to your account;
 the backend determines whether it follows advice or keeps a harmful item out, applies
 the existing action XP cap, and prevents retries from duplicating a saved log. Sensor
-readings must be recent for new logs. Confirmed compostable additions earn 1 XP per
+readings need not be available to save a log; only advice bonuses require fresh
+readings. Before the first reading, Log shows cautious advice without inventing
+sensor values. Confirmed compostable additions earn 1 XP per
 20 g, rounded cumulatively per day, plus verified care bonuses under the shared
 60 XP daily action cap. Non-recommended compostables can still be logged. Identical
 retries return the original award without saving twice; changed retry bodies conflict.

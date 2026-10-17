@@ -45,7 +45,7 @@ async def _advise(bin_id: str, item: str | None, refresh: bool) -> AdviceRespons
 
     snap = await binstate.snapshot(bin_id)
     if snap is None:
-        raise HTTPException(status_code=409, detail="no readings for this bin yet")
+        snap = await binstate.unmeasured_snapshot(bin_id)
 
     state_hash = binstate.state_hash(snap, item)
 

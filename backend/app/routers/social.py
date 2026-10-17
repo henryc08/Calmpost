@@ -437,9 +437,8 @@ async def care_log(body: CareLog, uid: str = Depends(current_user)):
         await conn.fetchval("SELECT user_id FROM user_state WHERE user_id=$1 FOR UPDATE", uid)
         duplicate = bool(await conn.fetchval(
             "SELECT 1 FROM log_requests WHERE bin_id=$1 AND request_id=$2", bid, entry.request_id))
-        # A saved receipt remains retryable even after its sensor reading ages.
-        if not duplicate and (not snapshot or snapshot["stale"]):
-            raise HTTPException(409, "Your bin needs a recent sensor reading first")
+        # Volume and keep-out logs do not depend on sensors. write_log only
+        # awards the advice bonus when a fresh snapshot verifies the action.
         result = await write_log(conn, bid, entry, snapshot)
     return {"xp_awarded": result.xp_awarded, "duplicate": duplicate}
 

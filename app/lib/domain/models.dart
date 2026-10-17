@@ -383,3 +383,67 @@ class DropResult {
 
   final int xpAwarded;
 }
+
+// --- Trunc, the compost assistant -------------------------------------------
+//
+// Free-text questions, answered by the backend's POST /bins/{id}/chat. The app
+// never calls Gemini and never holds its key; the backend assembles the sensor
+// readings, what was recently added and the last camera photos, and holds the
+// answer to the app's own compost rules.
+//
+// Stateless on the server: the app owns the conversation and passes it back
+// each turn, so keep the turns in state and send them with the next question.
+
+enum TruncRole { user, assistant }
+
+class TruncTurn {
+  const TruncTurn({required this.role, required this.text});
+
+  final TruncRole role;
+  final String text;
+
+  bool get isUser => role == TruncRole.user;
+}
+
+/// What Trunc actually had to work with. Worth showing quietly rather than
+/// decoratively: when [readingsAt] is null the bin has never reported, so the
+/// answer came from general rules and not from this bin.
+class TruncContext {
+  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0});
+
+  final DateTime? readingsAt;
+  final int recentAdds;
+  final int photos;
+}
+
+class TruncReply {
+  const TruncReply({
+    required this.reply,
+    required this.model,
+    required this.onTopic,
+    required this.usedReadings,
+    required this.context,
+  });
+
+  /// Always something sayable, including when [onTopic] is false or the model
+  /// was unreachable. Render it as a normal message either way.
+  final String reply;
+
+  /// 'gemini-2.5-flash' when the model answered, 'rules-fallback' when it was
+  /// unreachable and the sensors answered instead, 'rules-override' when the
+  /// rules replaced an answer that suggested a keep-out item.
+  final String model;
+
+  /// False when the question was not about compost. The backend already
+  /// supplies the polite redirect, so there is no refusal UI to build.
+  final bool onTopic;
+
+  /// True when the answer leaned on the sensor data.
+  final bool usedReadings;
+
+  final TruncContext context;
+
+  /// Gemini was unavailable and this came from the rules. A normal reply, not
+  /// an error: do not show a failure state for it.
+  bool get isFallback => model == 'rules-fallback';
+}

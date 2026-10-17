@@ -39,10 +39,10 @@ async def write_log(conn, bin_id: str, body: LogCreate, snapshot: dict | None) -
         """SELECT coalesce(sum(quantity_g),0) FROM add_log WHERE user_id=$1
            AND action='added' AND category IN ('green','brown') AND time >= date_trunc('day',now())""", owner)
     row = await conn.fetchrow(
-        """INSERT INTO add_log(bin_id,user_id,item,catalog_id,category,action,quantity_g,source,was_advised,advice_id,notes)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,time""",
+        """INSERT INTO add_log(bin_id,user_id,item,catalog_id,category,action,quantity_g,source,was_advised,advice_id,notes,piece_count)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,time""",
         bin_id, owner, body.item, catalog["id"] if catalog else None, category,
-        body.action, grams, body.source, advised, body.advice_id, body.notes)
+        body.action, grams, body.source, advised, body.advice_id, body.notes, body.piece_count)
     xp = 0
     if added and grams > 0:
         xp += await ledger.award(conn, owner, "compost_added", bin_id=bin_id,
@@ -53,7 +53,7 @@ async def write_log(conn, bin_id: str, body: LogCreate, snapshot: dict | None) -
         xp += await ledger.award(conn, owner, "avoided_bad_add", bin_id=bin_id, meta={"log_id":row["id"]})
     result = LogEntry(id=row["id"],time=row["time"],bin_id=bin_id,item=body.item,category=category,catalog_id=catalog['id'] if catalog else None,
                      action=body.action,quantity_g=grams,source=body.source,was_advised=advised,
-                     notes=body.notes,xp_awarded=xp)
+                     notes=body.notes,piece_count=body.piece_count,xp_awarded=xp)
     if body.request_id:
         await conn.execute("INSERT INTO log_requests VALUES($1,$2,$3,$4)", bin_id, body.request_id, payload, result.model_dump(mode="json"))
     return result

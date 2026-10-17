@@ -24,8 +24,10 @@ const mixedScrapsId = 'mixed_scraps';
 
 /// One thing the camera reported.
 class Detection {
-  const Detection({required this.label, required this.confidence, this.catalogId, this.category, this.amount, this.box});
+  const Detection({required this.label, required this.confidence, this.catalogId, this.category, this.amount, this.box, this.pieceCount, this.estimatedGrams});
   final String label;
+  final int? pieceCount;
+  final double? estimatedGrams;
 
   /// Null when the camera couldn't match it to the catalog.
   final String? catalogId;
@@ -80,7 +82,9 @@ enum DropTier {
 
 DropTier tierOf(Drop d, Map<String, FoodItem> catalog) {
   if (!d.geminiOk || d.items.isEmpty) return DropTier.unclear;
-  if (d.items.every((i) => !catalog.containsKey(i.catalogId))) return DropTier.unclear;
+  if (d.items.every((i) => !catalog.containsKey(i.catalogId))) {
+    return DropTier.unclear;
+  }
   if (d.items.any((i) => i.catalogId == mixedScrapsId)) return DropTier.unclear;
   if (d.items.any((i) => needsCheck(i, catalog))) return DropTier.check;
   return DropTier.confident;
@@ -93,11 +97,23 @@ bool needsCheck(Detection i, Map<String, FoodItem> catalog) =>
 
 /// One editable row in the pop-up.
 class DropLine {
-  const DropLine({required this.item, required this.amount, this.confidence, this.check = false, this.removed = false, this.fromCamera = false});
+  const DropLine({
+    required this.item,
+    required this.amount,
+    this.confidence,
+    this.check = false,
+    this.removed = false,
+    this.fromCamera = false,
+    this.pieceCount = 1,
+    this.quantityG,
+  });
 
   /// A catalog item, or a free-text one ([isCustom]) for things the catalog lacks.
   final FoodItem item;
   final Amount amount;
+  final int pieceCount;
+  final double? quantityG;
+  double get grams => quantityG ?? amountGrams[amount]!;
 
   /// The camera's confidence; null for rows the user added.
   final double? confidence;
@@ -112,13 +128,15 @@ class DropLine {
   bool get isCustom => item.id.startsWith(customPrefix);
   bool get keepOut => item.category == FoodCategory.avoid;
 
-  DropLine copyWith({FoodItem? item, Amount? amount, bool? check, bool? removed}) => DropLine(
+  DropLine copyWith({FoodItem? item, Amount? amount, bool? check, bool? removed, int? pieceCount, double? quantityG}) => DropLine(
     item: item ?? this.item,
     amount: amount ?? this.amount,
     confidence: item != null && item.id != this.item.id ? null : confidence,
     check: check ?? this.check,
     removed: removed ?? (item != null && item.id != this.item.id ? false : this.removed),
     fromCamera: fromCamera,
+    pieceCount: pieceCount ?? this.pieceCount,
+    quantityG: quantityG ?? (amount == null ? this.quantityG : null),
   );
 }
 
@@ -134,10 +152,8 @@ FoodItem customFood(String label, FoodCategory category, Amount amount) => FoodI
   note: category == FoodCategory.avoid ? "It won't break down safely in a home bin." : '',
 );
 
-bool keepOutLabel(String label) => RegExp(
-  r'\b(meat|chicken|beef|pork|bacon|fish|dairy|cheese|milk|butter|yogurt|oil|oily|grease|bone|bread|pet waste|cat litter|glossy)',
-  caseSensitive: false,
-).hasMatch(label);
+bool keepOutLabel(String label) =>
+    RegExp(r'\b(meat|chicken|beef|pork|bacon|fish|dairy|cheese|milk|butter|yogurt|oil|oily|grease|bone|bread|pet waste|cat litter|glossy)', caseSensitive: false).hasMatch(label);
 
 /// The rows the pop-up starts with. Catalog items take the catalog's category
 /// (rules); unmatched ones keep the camera's label as a custom item.
@@ -151,9 +167,19 @@ List<DropLine> linesFor(Drop d, Map<String, FoodItem> catalog) {
           confidence: i.confidence,
           check: true,
           fromCamera: true,
+          pieceCount: i.pieceCount ?? 1,
+          quantityG: i.estimatedGrams,
         )
       else if (catalog[i.catalogId] case final food?)
-        DropLine(item: food, amount: i.amount ?? amountFor(food.grams), confidence: i.confidence, check: needsCheck(i, catalog), fromCamera: true)
+        DropLine(
+          item: food,
+          amount: i.amount ?? amountFor(food.grams),
+          confidence: i.confidence,
+          check: needsCheck(i, catalog),
+          fromCamera: true,
+          pieceCount: i.pieceCount ?? 1,
+          quantityG: i.estimatedGrams,
+        )
       else
         DropLine(
           item: customFood(i.label, i.category ?? FoodCategory.green, i.amount ?? Amount.handful),
@@ -161,6 +187,8 @@ List<DropLine> linesFor(Drop d, Map<String, FoodItem> catalog) {
           confidence: i.confidence,
           check: true,
           fromCamera: true,
+          pieceCount: i.pieceCount ?? 1,
+          quantityG: i.estimatedGrams,
         ),
   ];
 }
@@ -174,6 +202,8 @@ bool corrected(Drop d, List<DropLine> lines) {
     if (seen.catalogId != line.item.id ||
         (seen.amount != null && seen.amount != line.amount) ||
         (seen.category != null && seen.category != line.item.category) ||
+        (seen.pieceCount != null && seen.pieceCount != line.pieceCount) ||
+        (seen.estimatedGrams != null && seen.estimatedGrams!.round() != line.grams.round()) ||
         line.removed) {
       return true;
     }

@@ -68,6 +68,7 @@ class CareLog(Body):
     action: Literal["added", "skipped"]
     request_id: str = Field(min_length=10, max_length=100)
     quantity_g: int | None = Field(default=None, ge=0, le=5000)
+    piece_count: int | None = Field(default=None, ge=1, le=999, strict=True)
 
 
 def password_hash(password: str, salt: str | None = None) -> str:
@@ -351,17 +352,22 @@ async def invite_circle(cid: str, uid: str = Depends(current_user)):
 async def leaderboard(cid: str, period: Literal["week", "all"] = "week", uid: str = Depends(current_user)):
     circle = await member(cid, uid)
     start = week_start() if period == "week" else datetime(1970,1,1,tzinfo=timezone.utc)
-    rows = await db.fetch("""SELECT p.user_id,p.handle,u.display_name,coalesce(sum(e.xp),0)::int xp
+    rows = await db.fetch("""SELECT p.user_id,p.handle,u.display_name,coalesce(sum(e.xp),0)::int xp,
+      coalesce(sum(e.xp) FILTER (WHERE e.kind='compost_added'),0)::int volume_xp,
+      (SELECT coalesce(sum(a.quantity_g),0)::bigint FROM add_log a WHERE a.user_id=m.user_id
+        AND a.time >= $2 AND a.time <= now() AND a.action='added' AND a.category IN ('green','brown') AND a.quantity_g>0) grams,
+      (SELECT coalesce(sum(a.piece_count),0)::bigint FROM add_log a WHERE a.user_id=m.user_id
+        AND a.time >= $2 AND a.time <= now() AND a.action='added' AND a.category IN ('green','brown') AND a.quantity_g>0) pieces
       FROM social_circle_members m JOIN social_profiles p ON p.user_id=m.user_id
       JOIN user_state u ON u.user_id=m.user_id
       LEFT JOIN point_events e ON e.user_id=m.user_id AND e.time >= $2 AND e.time <= now()
-      WHERE m.circle_id=$1 GROUP BY p.user_id,u.display_name ORDER BY xp DESC,p.handle""", cid, start)
+      WHERE m.circle_id=$1 GROUP BY p.user_id,u.display_name,m.user_id ORDER BY xp DESC,p.handle""", cid, start)
     out, last_xp, rank = [], None, 0
     for i, row in enumerate(rows, 1):
         if row["xp"] != last_xp:
             rank = i
         last_xp = row["xp"]
-        out.append({**dict(row), "rank": rank, "is_you": row["user_id"] == uid})
+        out.append({**dict(row), "care_xp": row["xp"] - row["volume_xp"], "rank": rank, "is_you": row["user_id"] == uid})
     return {"id": cid, "name": circle["name"], "owner_id": circle["owner_id"], "members": out,
             "period": period, "resets_at": (week_start()+timedelta(days=7)).isoformat(),
             "team_xp": sum(r["xp"] for r in out)}
@@ -429,7 +435,7 @@ async def care_log(body: CareLog, uid: str = Depends(current_user)):
     snapshot = await binstate.snapshot(bid)
     entry = LogCreate(
         item=item["name"], catalog_id=item["id"], category=item["category"],
-        action=body.action, quantity_g=body.quantity_g if body.action == "added" else 0,
+        action=body.action, quantity_g=body.quantity_g if body.action == "added" else 0, piece_count=body.piece_count,
         request_id="social:" + body.request_id, was_advised=True,
     )
     async with db.pool().acquire() as conn, conn.transaction():

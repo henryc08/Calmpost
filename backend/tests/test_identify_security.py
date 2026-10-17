@@ -55,3 +55,11 @@ def test_provider_key_is_in_header_not_url(monkeypatch):
     assert requests[0].headers["x-goog-api-key"] == secret
     assert "key" not in requests[0].url.params
     assert secret not in str(requests[0].url)
+
+
+def test_photo_count_is_optional_and_does_not_multiply_total_weight():
+    from app.services import identify
+    for proposed,expected in [(2,2),(None,None),(0,None),(1000,None),(True,None),(1.5,None)]:
+        item=identify.parse({'items':[{'label':'banana peel','catalog_id':'banana_peel',
+            'confidence':.9,'piece_count':proposed,'est_grams':90}]})[0]
+        assert item['piece_count']==expected and item['est_grams']==90

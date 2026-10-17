@@ -97,9 +97,13 @@ sensor values. Confirmed compostable additions earn 1 XP per
 60 XP daily action cap. Non-recommended compostables can still be logged. Identical
 retries return the original award without saving twice; changed retry bodies conflict.
 
-Camera capture currently supports demo bins only: the vision service still uses
-the shared demo key, which cannot access player-owned bins. Use manual Log for a
-paired player bin until device-scoped vision authorization is implemented.
+Camera capture supports paired player bins. Set the bin's `DEVICE_TOKEN` in
+`vision/.env`; the camera service can report detections only for that bin.
+The signed-in owner reviews and confirms every detection. Confirmed rows store
+editable pieces/portions and total grams, and appear in **Compost inventory**
+from Log or Profile. Counts do not multiply weight or XP. Private groups show
+aggregate estimated kg, counted pieces/portions, and amount XP + care/reward XP;
+ingredient inventories remain private. Older additions have unknown counts.
 
 Social, Home, Profile and Greenhouse use the same saved server ledger in live account
 mode. Layers reads actual saved additions. Account-scoped reward claims and spending

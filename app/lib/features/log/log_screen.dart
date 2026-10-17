@@ -47,10 +47,14 @@ class _LogScreenState extends ConsumerState<LogScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen(logIntentProvider, (_, next) {
-      if (next != null) WidgetsBinding.instance.addPostFrameCallback((_) => _consumeIntent());
+      if (next != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _consumeIntent());
+      }
     });
     ref.listen(tabProvider, (_, next) {
-      if (next == AppTab.log) WidgetsBinding.instance.addPostFrameCallback((_) => _consumeIntent());
+      if (next == AppTab.log) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _consumeIntent());
+      }
     });
 
     final repo = ref.watch(repositoryProvider);
@@ -78,6 +82,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       ),
       hero: _SearchField(controller: _search, onChanged: (q) => setState(() => _query = q)),
       children: [
+        PillButton(label: 'Compost inventory', icon: PhosphorIconsRegular.leaf, onTap: () => Routes.inventory(context)),
+        const SectionBreak(),
         if (_query.isEmpty && suggestion != null && suggestion.add.isNotEmpty) ...[
           const SectionLabel('RECOMMENDED NOW', trailing: PinkPill('+15 XP each')),
           const SizedBox(height: S.x2),

@@ -7,7 +7,7 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 
 **Contents**
 1. [Key ideas](#1-key-ideas-dont-break-these)
-2. [Major features](#2-major-features): sensing & health · next best action · scrap check · **camera drop-in** · summaries · game & economy · notifications
+2. [Major features](#2-major-features): compost inventory · sensing & health · next best action · scrap check · **camera drop-in** · summaries · game & economy · notifications
 3. [Gemini: what it does and how](#3-gemini-what-it-does-and-how)
 4. [System architecture](#4-system-architecture)
 5. [Backend & Tiger Data](#5-backend--tiger-data)
@@ -40,6 +40,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | ✅ vision + backend + app (sheet, "Is this right?" review, mixed drops) |
+| 2.10 | **Confirmed compost inventory** (counts, estimated mass, score breakdown) | ✅ backend + mock/live app + private group totals |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
@@ -121,6 +122,43 @@ Why this design:
 - **Hands, lids or utensils:** the prompt says to ignore them; a person-only detection is treated as no drop.
 
 **Built in this order:** (1) mock flow in the app (`MockRepository` emits a fake banana detection 2.5 s after arming, so the pop-up and edit form can be built now) → (2) vision service with webcam + motion trigger, logging to console → (3) Gemini call → (4) backend endpoints + Tiger tables → (5) swap the app to the API.
+
+### 2.10 Confirmed compost inventory
+
+- Open **Compost inventory** from Log or Profile. It groups confirmed additions by
+  catalog item (or normalized free-text label), showing **2 × Banana peel**, estimated
+  total grams, green/brown type, addition count, camera/photo attribution and last date.
+  Search and **All time / This week** filters are available; weeks start Sunday 00:00 UTC.
+- Counts are **pieces / portions**: count whole scraps; use portions for coffee grounds,
+  shredded paper and other loose material. Count and **total** weight are independent:
+  changing 1 to 2 pieces does not silently double the recorded weight or XP.
+- Vision proposes optional `piece_count` (integer 1–999) and `est_grams` for the whole row.
+  The review screen always shows the count; missing guesses start at one portion for the
+  user to confirm. Both count and exact total weight (1–5000 g) can be corrected, as can
+  the item and amount preset. Manual Log uses the same count and weight controls.
+- Only a successful confirmation writes `add_log.piece_count` and total `quantity_g`.
+  Pending/dismissed detections, skipped/removed items, keep-out materials, and zero-weight
+  entries are excluded. Retries and concurrent confirmations never create extra inventory
+  or rewards. Original guesses and corrected fields stay separate.
+- Historical rows retain NULL counts; their weights count, and the UI labels additions
+  without counts. Never invent pieces from historical mass. The inventory is a history
+  of inputs, including decomposed/harvested material; it does not claim to measure what
+  physically remains or the weight of finished compost.
+- **Overall compost score = actual amount XP + care and reward XP** from the server
+  ledger. Keep the existing cumulative **1 XP / 20 g** and shared **60 action XP/day** cap.
+  Piece count earns no additional XP. Inventory shows the breakdown; private group
+  leaderboards include estimated kg, counted pieces/portions and the same breakdown.
+  The sensor-based Bin Health Score remains a separate measure.
+- `GET /bins/{id}/inventory?period=all|week` is owner-scoped, including the contributor's
+  identity so claiming a demo bin cannot transfer its former owner's compost history.
+  Group members see aggregate amounts/scores, never private ingredient inventories.
+- Signed-in owners can arm, review, confirm/dismiss and submit photos for their bin.
+  Vision uses `DEVICE_TOKEN` (`X-Device-Token`) for that bin's active session, reporting,
+  closing and correction hints. It cannot arm sessions, confirm drops or read inventories.
+  The legacy `APP_API_KEY` continues to work for demo bins only.
+- Inventory uses `CalmpostRepository.inventory` in mock and API mode, refreshes after
+  successful saves, every 20 seconds while visible, and on manual refresh. Demo inventory
+  lasts for the repository session and does not represent a signed-in account's score.
 
 ### 2.5 Summaries 📝 *planned*
 Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Layers), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
@@ -232,7 +270,7 @@ The app never calls Gemini and never holds its key.
 
 | Job | Feature | Input | Output (JSON schema) | Model |
 |---|---|---|---|---|
-| **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
+| **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, piece_count?, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
 | **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: great \| careful \| avoid, headline, reason, balance, suggest_add[], suggest_avoid[], pair_with[], tip}` | Flash |
 | **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
 | **Photo identification** | 2.9 | one user-supplied JPEG + the catalog ids | same `items` shape as drop identification; categories come from the rules, not the model | Flash |
@@ -339,18 +377,18 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 |---|---|
 | Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
-| Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
+| Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `GET /bins/{id}/inventory?period=all\|week` · `POST /bins/{id}/harvest` |
 | **Photo submission** | `POST /bins/{id}/drops/photo` — `{image_jpeg_b64}` ⇒ a pending drop with `source: 'photo'`. Downscale to ~1024 px; over ~1.5 MB is a 413. Finishes through the normal `/drops/{id}/confirm` and `/dismiss`. |
 | **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, context}`. Stateless: the app owns the conversation. |
 | **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` · `GET /bins/{id}/drops/history` (resolved drops, paged; `has_photo` rather than inline base64) · `GET /drops/{id}` · `GET /drops/{id}/photo` (real `image/jpeg`) |
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
 | Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
 
-**Auth:** registered players use scoped bearer sessions (see Multiplayer below). Shared demo `X-API-Key` access cannot read or mutate their bins or private state. Legacy demo users/bins still share that key. Vision currently uses the demo key and is not yet authorized for player-owned cameras. The board/bridge sends `X-Device-Token` (only its hash is stored). Re-registering an existing demo bin returns 409 instead of replacing its owner/token. Database TLS verifies certificates and hostnames; set `DATABASE_CA_FILE` to the provider's CA PEM if needed.
+**Auth:** registered players use scoped bearer sessions (see Multiplayer below). Shared demo `X-API-Key` access cannot read or mutate their bins or private state. Legacy demo users/bins still share that key. Vision uses the bin’s `X-Device-Token` for player-owned camera sessions, reports and hints, and the demo key for demo bins. The board/bridge sends `X-Device-Token` (only its hash is stored). Re-registering an existing demo bin returns 409 instead of replacing its owner/token. Database TLS verifies certificates and hostnames; set `DATABASE_CA_FILE` to the provider's CA PEM if needed.
 
 **Environment** (`backend/.env` and `vision/.env`, both git-ignored, **never commit them**):
 - `backend/.env`: `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_API_KEY`, `DEVICE_TOKEN`
-- `vision/.env`: `GEMINI_API_KEY`, `GEMINI_VISION_MODEL`, `CAMERA_SOURCE`, `BIN_ID`, `BACKEND_URL` (`:8000` = real backend, `:8090` = `mock_backend.py`), `APP_API_KEY`
+- `vision/.env`: `GEMINI_API_KEY`, `GEMINI_VISION_MODEL`, `CAMERA_SOURCE`, `BIN_ID`, `DEVICE_TOKEN` (player-owned bin), `BACKEND_URL` (`:8000` = real backend, `:8090` = `mock_backend.py`), `APP_API_KEY`
 
 **Tests:** `cd backend && python -m pytest`. They run on a real local Postgres (`pgserver`), with TimescaleDB stand-ins. The final check against Tiger Cloud is `python -m scripts.smoke_test`.
 
@@ -602,7 +640,7 @@ cd vision && python main.py
 - A quiet new/dry bin is not ready. The readiness guide additionally requires recorded active/hot history at least 14 days old after the last harvest. This is a conservative product heuristic, **not a validation of compost maturity**.
 - Serial samples receive a timestamp before queueing so retrying preserves capture time. A single background HTTP uploader keeps serial reads independent of network stalls and retries even without new serial input. The memory-only buffer holds 500 queued samples plus one in flight; full queues warn and drop incoming samples, and exit warns about unsent data. Vision opens the camera only for armed sessions, polls cancellation during watching, and clears its preview after the session.
 - A recommendation is **not permission to log**: any catalog green/brown can be logged, including a `careful` verdict, earning volume XP without an unearned advice bonus. Manual verdict sheets scroll so the add button remains reachable with Android large-text accessibility settings. Hard keep-out materials remain a separate safety case.
-- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Scoped multiplayer accounts, friends and groups are implemented; production signing/deployment, background notifications, summary generation, rewards history, a Trunc chat screen, and a phone-camera/live-preview workflow remain unfinished. Player-owned camera capture also needs device-scoped vision authorization. Do not describe these as production-ready.
+- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Scoped multiplayer accounts, friends and groups are implemented; production signing/deployment, background notifications, summary generation, rewards history, a Trunc chat screen, and a phone-camera/live-preview workflow remain unfinished. Player-owned camera capture uses device-scoped vision authorization. Do not describe these as production-ready.
 - Visual review: `cd app && flutter test test/visual_correction_test.dart --dart-define=CAPTURE_REVIEW=true` writes actual phone-sized Flutter renders to `artifacts/review/`. Detections are simulated and the missing photo is labelled; this is not a real Gemini/hardware accuracy test.
 
 ### Working together
@@ -632,7 +670,7 @@ not used for multiplayer.
   only, never access to private profile history. Codes expire in 7 days; issuing a new
   code rotates the old one. Codes are copied for the user to share; no messages are sent automatically.
 - Private groups support up to 50 people, weekly/all-time leaderboards, shared ranks
-  for tied XP, and a team XP total. Weekly boundaries are Sunday 00:00 UTC. Only owners
+  for tied XP, a team XP total, estimated composted kg and counted pieces/portions. Weekly boundaries are Sunday 00:00 UTC. Only owners
   create group invites, remove others, or delete the group. Members can leave; removals
   revoke existing invites. Each user can own up to 20 groups.
 - Feed and profiles read actual `point_events`. Cheers are idempotent and award no XP.

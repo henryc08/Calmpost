@@ -21,7 +21,7 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
         title: group['name'],
         subtitle:
             'Private group · ${(group['members'] as List).length} growers',
-        hero: heroStat('${group['team_xp']}', 'care XP together'),
+        hero: heroStat('${group['team_xp']}', 'compost XP together'),
         children: [
           status(),
           if (owner)
@@ -45,7 +45,7 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
             ),
           const SizedBox(height: S.x4),
           Text(
-            'A little friendly motivation. Every care action helps the whole group grow.',
+            'A little friendly motivation. Your composting and care help the whole group grow.',
             style: T.body,
           ),
           const SizedBox(height: S.x4),
@@ -67,7 +67,7 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
           ),
           const SizedBox(height: S.x3),
           Text(
-            'Weekly reset: Sunday 00:00 UTC. Equal XP shares a rank.',
+            'Score = amount XP + care and rewards. Compostable material earns 1 XP per 20 g; action XP is capped at 60/day. Weekly reset: Sunday 00:00 UTC. Equal XP shares a rank.',
             style: T.small,
           ),
           const SectionBreak(),
@@ -121,6 +121,16 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
                       PinkPill('${row['xp']} XP'),
                     ],
                   ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 36, top: S.x2),
+                      child: Text(
+                        '${((row['grams'] as num? ?? 0) / 1000).toStringAsFixed(2)} kg estimated · ${row['pieces'] ?? 0} counted pieces / portions\n${row['volume_xp'] ?? 0} amount XP + ${row['care_xp'] ?? row['xp']} care & reward XP',
+                        style: T.small,
+                      ),
+                    ),
+                  ),
                   if (owner && row['user_id'] != uid)
                     Align(
                       alignment: Alignment.centerRight,
@@ -150,7 +160,7 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
             ),
           const SectionBreak(),
           Text(
-            'Group membership shares leaderboard scores. Private care histories still require an approved follow.',
+            'Group membership shares scores and estimated composting amounts. Ingredient inventories stay private.',
             style: T.small,
           ),
           const SizedBox(height: S.x4),

@@ -8,12 +8,19 @@ import '../data/calmpost_repository.dart';
 import '../data/mock_repository.dart';
 import '../domain/health_score.dart';
 import '../domain/models.dart';
+import '../domain/inventory.dart';
 import '../domain/xp_rules.dart';
 import 'game.dart';
 import 'social.dart';
 
 /// Demo scenario for the mock bin. Only used while [dataSourceProvider] is mock.
 final scenarioProvider = StateProvider<Scenario>((ref) => Scenario.healthy);
+
+final inventoryProvider = FutureProvider.autoDispose.family<CompostInventory, String>((ref, period) async {
+  final timer = Timer(const Duration(seconds: 20), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref.watch(repositoryProvider).inventory(period: period);
+});
 
 /// Live = the real bin through the backend (needs a build with API_URL, see
 /// data/api_config.dart). Mock = the demo scenarios. Switch in the demo

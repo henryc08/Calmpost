@@ -78,7 +78,7 @@ class ReadingsRow extends StatelessWidget {
           ),
           const Hairline(vertical: true),
           s.bottomMeasured
-              ? col(Zone.bottom, 'BOTTOM', '${s.bottomMoisture.round()}', '%', '${s.bottomTemp.round()}°')
+              ? col(Zone.bottom, 'BOTTOM', '${s.bottomMoisture.round()}', '%', s.bottomTemperatureMeasured ? '${s.bottomTemp.round()}°' : '')
               : col(Zone.bottom, 'BOTTOM', '—', '', ''),
           const Hairline(vertical: true),
           col(

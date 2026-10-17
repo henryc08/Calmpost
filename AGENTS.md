@@ -48,6 +48,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + app data layer · ⏳ chat UI · ⏳ needs Gemini billing |
 
 ### 2.1 Live sensing & Bin Health Score
+- Bottom moisture and temperature availability are independent. A moisture-only second probe never displays a substitute temperature. Layers distinguishes loading, retryable trend errors and empty history; bottom history is explicitly unavailable until backend aggregates support it. Probe 2 is treated as uncalibrated unless its own live flag says otherwise, never inferred from probe 1.
 - **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
 - **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Firmware supports two sensor pairs: A0/D2 retains `moisture_raw` / `probe_temp_c`; A1/D3 adds `moisture_raw_2` / `probe_temp_c_2`. Each externally powered DS18B20 data line needs its own 4.7 kΩ pull-up to 5 V (unless its module already includes one). The bridge forwards both pairs; the backend stores and calibrates them independently. Bottom moisture can be measured while its temperature is unknown. Missing readings remain unknown, never 0; bottom-layer historical trends are not implemented yet. The score comes from `domain/health_score.dart`:
   ```

@@ -45,6 +45,7 @@ class BinSnapshot {
     this.airMeasured = true,
     this.ambientMeasured = true,
     this.moistureCalibrated = true,
+    this.bottomMoistureCalibrated = false,
   });
 
   final DateTime time;
@@ -81,6 +82,9 @@ class BinSnapshot {
   final bool stale;
   final bool topMeasured, topTemperatureMeasured, bottomTemperatureMeasured;
   final bool airMeasured, ambientMeasured, moistureCalibrated;
+  final bool bottomMoistureCalibrated;
+
+  bool calibrated(Zone zone) => zone == Zone.bottom ? bottomMoistureCalibrated : moistureCalibrated;
 
   bool get readingsStale => stale || DateTime.now().difference(time) > const Duration(minutes: 2);
 
@@ -395,12 +399,7 @@ class DropConfirmation {
 
 /// What came back from confirming a drop.
 class DropResult {
-  const DropResult({
-    required this.dropId,
-    required this.corrected,
-    required this.verdicts,
-    required this.xpAwarded,
-  });
+  const DropResult({required this.dropId, required this.corrected, required this.verdicts, required this.xpAwarded});
 
   final int dropId;
 
@@ -447,13 +446,7 @@ class TruncContext {
 }
 
 class TruncReply {
-  const TruncReply({
-    required this.reply,
-    required this.model,
-    required this.onTopic,
-    required this.usedReadings,
-    required this.context,
-  });
+  const TruncReply({required this.reply, required this.model, required this.onTopic, required this.usedReadings, required this.context});
 
   /// Always something sayable, including when [onTopic] is false or the model
   /// was unreachable. Render it as a normal message either way.

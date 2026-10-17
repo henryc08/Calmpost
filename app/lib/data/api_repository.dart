@@ -443,6 +443,7 @@ BinSnapshot snapshotFromJson(Map<String, dynamic> j) {
     airMeasured: air['co2_ok'] != false && air['co2_ppm'] != null,
     ambientMeasured: air['ambient_temp_c'] != null,
     moistureCalibrated: j['moisture_calibrated'] == true,
+    bottomMoistureCalibrated: bottom['moisture_calibrated'] == true,
   );
 }
 

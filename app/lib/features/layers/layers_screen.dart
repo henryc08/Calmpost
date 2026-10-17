@@ -33,7 +33,8 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
     if (h == null) return const SizedBox();
     final s = h.snapshot;
     final metric = _zone == Zone.air ? Metric.co2 : _metric;
-    final trend = ref.watch(trendProvider((_zone, metric))).valueOrNull ?? const <TrendPoint>[];
+    final trendState = ref.watch(trendProvider((_zone, metric)));
+    final trend = trendState.valueOrNull ?? const <TrendPoint>[];
     final logs = ref.watch(gameProvider.select((g) => g.logs));
 
     final unmeasured = switch ((_zone, metric)) {
@@ -49,7 +50,7 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
       Metric.temperature => (s.temp(_zone).toStringAsFixed(1), '°C'),
       Metric.co2 => ('${s.co2.round()}', ' ppm'),
     };
-    final state = zoneState(s, _zone);
+    final state = unmeasured ? ZoneState.unknown : zoneState(s, _zone);
     final (stateLabel, stateColor) = switch (state) {
       ZoneState.wet => ('Too wet', C.water),
       ZoneState.dry => ('Too dry', C.amber),
@@ -128,7 +129,32 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
         const SizedBox(height: S.x3),
         SizedBox(
           height: 190,
-          child: trend.isEmpty ? const SizedBox() : _Chart(points: trend, metric: metric, zone: _zone, ambient: s.ambientTemp, logs: logs),
+          child: trendState.when(
+            loading: () => const Center(child: CircularProgressIndicator(color: C.forest)),
+            error: (_, _) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Could not load this trend.', style: T.body),
+                  TextButton(
+                    onPressed: () => ref.invalidate(trendProvider((_zone, metric))),
+                    child: Text('Retry trend', style: T.button),
+                  ),
+                ],
+              ),
+            ),
+            data: (points) => points.isEmpty || unmeasured
+                ? Center(
+                    child: Text(
+                      _zone == Zone.bottom
+                          ? 'Bottom-layer history is not available yet. Live moisture still updates above; this probe does not report temperature.'
+                          : 'No measurements for this chart yet.',
+                      style: T.body,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : _Chart(points: points, metric: metric, zone: _zone, ambient: s.ambientTemp, logs: logs),
+          ),
         ),
         const SizedBox(height: S.x4),
         Row(
@@ -139,15 +165,19 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
           ],
         ),
         const SizedBox(height: S.x4),
-        if (trend.isNotEmpty) _Stats(points: trend, metric: metric),
+        if (trend.isNotEmpty && !unmeasured) _Stats(points: trend, metric: metric),
         const SectionBreak(),
         const SectionLabel('WHAT IT MEANS'),
         const SizedBox(height: S.x3),
         Text(
-          unmeasured ? 'No usable reading from this sensor. Unknown is not zero; check the sensor connection.' : _meaning(_zone, s),
+          unmeasured
+              ? (_zone == Zone.bottom && metric == Metric.temperature
+                    ? 'This probe measures moisture only. Bottom temperature is not measured.'
+                    : 'No usable reading from this sensor. Unknown is not zero; check the sensor connection.')
+              : _meaning(_zone, s),
           style: T.body.copyWith(fontSize: 15),
         ),
-        if (!s.moistureCalibrated && _zone != Zone.air) Text('Moisture is uncalibrated: treat the percentage as an estimate.', style: T.small),
+        if (!s.calibrated(_zone) && _zone != Zone.air) Text('This probe is uncalibrated: treat its moisture percentage as an estimate.', style: T.small),
         if (_zone != Zone.air && !unmeasured) ...[
           const SectionBreak(),
           SectionLabel('LIFE CYCLE', trailing: Text('Guide from sensor trends', style: T.small.copyWith(fontSize: 11))),
@@ -167,6 +197,7 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
     Zone.air when !s.airMeasured => 'CO₂ unavailable · check the air sensor',
     Zone.top => 'Fresh scraps and browns · ${s.topTemp.round()}°C, ${(s.topTemp - s.ambientTemp).round()}° above the room',
     Zone.bottom when !s.bottomMeasured => 'Older compost, slowly finishing · no probe here yet',
+    Zone.bottom when !s.bottomTemperatureMeasured => 'Older compost · moisture only, temperature not measured',
     Zone.bottom => 'Older compost, slowly finishing · ${s.bottomTemp.round()}°C',
     Zone.air => 'CO₂ in the gap under the lid · ${s.co2SlopePerDay >= 0 ? 'rising' : 'falling'} ${s.co2SlopePerDay.abs().round()}% a day',
   };
@@ -186,10 +217,10 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
       'There is no probe in this layer yet, so its moisture and temperature are unknown. Its stage is a guide from the top layer and the CO₂.',
     Zone.bottom =>
       s.bottomStage == Stage.ready
-          ? 'This layer is done: cool, dark and crumbly. Harvest it for your plants.'
+          ? 'This layer looks ready from the available readings. Check its texture and smell before harvesting; sensors cannot confirm those.'
           : s.bottomMoisture < moistureLo - 4
           ? 'The finishing layer is drying out. A little water keeps the last stage of curing moving.'
-          : 'Cooling and curing. In a few weeks this will be rich, finished compost.',
+          : 'Moisture helps guide care here. The life-cycle stage is an estimate, not a measurement of readiness.',
   };
 }
 

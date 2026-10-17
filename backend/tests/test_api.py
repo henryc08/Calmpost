@@ -6,6 +6,8 @@ streaks and Lid Locks -> quests -> daily goal -> crates -> Seed Packets ->
 equipping -> leagues.
 """
 
+import pytest
+import json
 from datetime import date, datetime, time, timedelta, timezone
 
 from app.rules import game, gacha
@@ -70,15 +72,15 @@ def test_same_scrap_different_answer(c):
     assert meat["verdict"] == "avoid" and meat["model"] == "rules-always-avoid"
 
 
-# --- logging: care earns XP, volume never does -------------------------------------
+# --- logging: compostable volume and verified care earn XP -------------------------
 
 def test_logging_rules(c):
     plain = c.post("/bins/bin-001/logs", json={"item": "Banana peel", "catalog_id": "banana_peel"}).json()
-    assert plain["xp_awarded"] == 0 and plain["category"] == "green"
+    assert plain["xp_awarded"] == 5 and plain["category"] == "green"
     assert plain["quantity_g"] == 110  # the catalog's typical weight
 
     tip = c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "was_advised": True}).json()
-    assert tip["xp_awarded"] == game.XP["followed_suggestion"]
+    assert tip["xp_awarded"] == 2  # 40 g; no readings to verify the claimed advice
 
     kept_out = c.post("/bins/bin-001/logs", json={"item": "Cheese & dairy", "action": "skipped"}).json()
     assert kept_out["xp_awarded"] == game.XP["avoided_bad_add"] and kept_out["category"] == "avoid"
@@ -137,7 +139,7 @@ def test_quests_are_claimed_not_auto_paid(c):
 def test_daily_goal_rewards(c):
     c.post(f"/users/{USER}/check-in")  # 5
     c.post("/quests/checkin/claim", params={"user_id": USER})  # 10
-    c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "was_advised": True})  # 15
+    c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "quantity_g": 300})  # 15 volume XP
     goal = c.get(f"/users/{USER}/daily-goal").json()
     assert goal["xp_today"] == 30 and goal["goals"][0]["reached"] and not goal["goals"][1]["reached"]
 
@@ -195,7 +197,7 @@ def test_equip_finish_and_title(c):
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_gold"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "title_sage"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_aurora"}).status_code == 409  # not owned
-    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "fern"}).status_code == 422  # plants aren't equipped
+    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "fern"}).status_code == 409  # not owned
     p = profile(c)
     assert p["equipped_finish"] == "finish_gold" and p["title"] == "Loam Sage" and p["level_title"] == "Scrap Saver"
 
@@ -262,9 +264,9 @@ def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
     r = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"}).json()
     assert r["verdict"] == "great" and r["model"] == "rules-override"
 
-    # Outside the catalogue, the model's answer is used.
+    # Unknown items also retain the conservative deterministic verdict.
     r = c.post("/bins/bin-001/advice/check", json={"item": "durian rind"}, params={"refresh": "true"}).json()
-    assert r["verdict"] == "avoid" and r["model"] != "rules-override"
+    assert r["verdict"] == "careful" and r["model"] == "rules-override"
 
 
 def test_starter_finish_can_always_be_re_equipped(c):
@@ -273,3 +275,176 @@ def test_starter_finish_can_always_be_re_equipped(c):
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_gold"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_classic"}).status_code == 200
     assert profile(c)["equipped_finish"] == "finish_classic"
+
+
+def test_the_model_is_given_the_items_that_actually_went_in(c, monkeypatch):
+    """The prompt promises "a log of what was recently added". It used to get
+    only greens_7d/browns_7d cup totals, so it could not name anything."""
+    from app.config import get_settings
+    from app.services import advisor
+
+    seen: dict = {}
+
+    async def capture(body):
+        seen["text"] = body["contents"][0]["parts"][0]["text"]
+        return {"verdict": "great", "headline": "Good add", "reason": "Fine.",
+                "pair_with": [], "suggest_add": [], "suggest_avoid": [], "balance": "balanced",
+                "stage_top": "active", "stage_bottom": "started", "bottom_ready": False, "tip": ""}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(advisor, "_ask_gemini", capture)
+
+    ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
+    c.post("/bins/bin-001/logs", json={"item": "Coffee grounds", "category": "green"})
+    c.post("/bins/bin-001/logs", json={"item": "Cheese", "category": "avoid", "action": "skipped"})
+
+    c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"})
+
+    payload = json.loads(seen["text"].split("Bin state as JSON:\n", 1)[1].rsplit("\n\n", 1)[0])
+    adds = payload["recent_adds"]
+    assert [a["item"] for a in adds] == ["Cheese", "Coffee grounds"], "newest first"
+    assert adds[0]["action"] == "skipped", "a kept-out item is part of the history"
+    assert adds[1]["category"] == "green"
+    assert all(a["hours_ago"] >= 0 for a in adds)
+
+
+def test_recent_adds_is_empty_rather_than_absent_for_a_fresh_bin(c, monkeypatch):
+    """An empty list tells the model to say nothing about recent additions;
+    a missing key would leave it guessing from the cup totals."""
+    from app.config import get_settings
+    from app.services import advisor
+
+    seen: dict = {}
+
+    async def capture(body):
+        seen["text"] = body["contents"][0]["parts"][0]["text"]
+        return {"verdict": "great", "headline": "Good add", "reason": "Fine.",
+                "pair_with": [], "suggest_add": [], "suggest_avoid": [], "balance": "balanced",
+                "stage_top": "active", "stage_bottom": "started", "bottom_ready": False, "tip": ""}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(advisor, "_ask_gemini", capture)
+
+    ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
+    c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"})
+
+    payload = json.loads(seen["text"].split("Bin state as JSON:\n", 1)[1].rsplit("\n\n", 1)[0])
+    assert payload["recent_adds"] == []
+
+
+# --- second moisture probe -------------------------------------------------------
+#
+# The firmware now sends both probes in one sample. Probe 1 is the top layer,
+# probe 2 the bottom; probe_temp_c_2 arrives null today because the second
+# probe reports moisture but not temperature.
+
+NEW_FORMAT = {
+    "device_id": "bin-001", "probe_temp_c": 22.25, "moisture_raw": 464,
+    "probe_temp_c_2": None, "moisture_raw_2": 482,
+    "co2_ppm": 1498, "air_temp_c": 22.67, "air_humidity_pct": 40.83, "co2_status": 0,
+}
+
+
+def post_reading(c, body):
+    return c.post("/ingest", headers={"X-Device-Token": c.device_token}, json=body)
+
+
+def test_the_new_firmware_payload_is_accepted_verbatim(c):
+    r = post_reading(c, NEW_FORMAT)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["accepted"] is True
+    # Both probes get a percentage, each from its own calibration.
+    assert body["moisture_pct"] is not None
+    assert body["moisture_pct_2"] is not None
+
+
+def test_the_second_probe_makes_the_bottom_layer_measured(c):
+    """It used to be hardcoded unmeasured: "No second probe in this build"."""
+    post_reading(c, NEW_FORMAT)
+
+    live = c.get("/bins/bin-001/live").json()
+    bottom = [l for l in live["layers"] if l["layer"] == "bottom"][0]
+
+    assert bottom["measured"] is True
+    assert bottom["moisture_raw"] == 482
+    assert bottom["moisture_pct"] is not None
+    assert bottom["moisture_state"] in ("dry", "ok", "wet")
+    # Moisture alone is enough to count as measured; temperature is still null.
+    assert bottom["temp_c"] is None
+
+    top = [l for l in live["layers"] if l["layer"] == "top"][0]
+    assert top["moisture_raw"] == 464, "probe 1 still drives the top layer"
+
+
+def test_both_probes_survive_the_usb_bridge_to_live_view(c):
+    from scripts.serial_bridge import to_payload
+
+    assert post_reading(c, to_payload(NEW_FORMAT, 'bin-001')).status_code == 200
+    layers = {l['layer']: l for l in c.get('/bins/bin-001/live').json()['layers']}
+    assert layers['top']['moisture_raw'] == 464
+    assert layers['bottom']['measured'] is True
+    assert layers['bottom']['moisture_raw'] == 482
+    assert layers['bottom']['temp_c'] is None
+
+
+def test_a_sample_without_the_second_probe_leaves_the_bottom_unknown(c):
+    """The old payload must keep working: nothing should imply 0."""
+    old = {k: v for k, v in NEW_FORMAT.items() if not k.endswith("_2")}
+    assert post_reading(c, old).status_code == 200
+
+    bottom = [l for l in c.get("/bins/bin-001/live").json()["layers"]
+              if l["layer"] == "bottom"][0]
+    assert bottom["measured"] is False
+    assert bottom["moisture_pct"] is None
+    assert bottom["moisture_state"] == "unknown"
+
+
+def test_each_probe_calibrates_separately(c):
+    """Different physical sensors, different dry/wet counts. Sharing probe 1's
+    would quietly mis-scale probe 2 -- the 10-bit ADC bug again."""
+    post_reading(c, NEW_FORMAT)
+
+    # Probe 2 reads 482. Calibrate it so that lands mid-range.
+    r = c.post("/bins/bin-001/calibration",
+               json={"moisture_raw_dry": 600, "moisture_raw_wet": 300, "probe": 2})
+    assert r.status_code == 200 and r.json()["probe"] == 2
+    assert r.json()["readings_recomputed"] >= 1, "history replayed"
+
+    layers = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    # (600-482)/(600-300) = 39.3%
+    assert layers["bottom"]["moisture_pct"] == pytest.approx(39.3, abs=0.5)
+
+    # Probe 1 must be untouched by that call.
+    before = layers["top"]["moisture_pct"]
+    c.post("/bins/bin-001/calibration",
+           json={"moisture_raw_dry": 475, "moisture_raw_wet": 177, "probe": 1})
+    after = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    assert after["bottom"]["moisture_pct"] == pytest.approx(39.3, abs=0.5), \
+        "calibrating probe 1 must not move probe 2"
+    assert after["top"]["moisture_pct"] != before
+
+
+def test_a_resend_of_the_same_timestamp_fills_the_second_probe_in(c):
+    """ON CONFLICT must cover the new columns, or a bridge retry would drop
+    whichever probe arrived second."""
+    # Relative, not a wall-clock literal: binstate.STALE_AFTER is two minutes,
+    # so a fixed timestamp makes this test rot.
+    ts = datetime.now(timezone.utc).isoformat()
+    first = {k: v for k, v in NEW_FORMAT.items() if not k.endswith("_2")}
+    assert post_reading(c, {**first, "time": ts}).status_code == 200
+    assert post_reading(c, {**NEW_FORMAT, "time": ts}).status_code == 200
+
+    # Asserted through the live view rather than SQL: run_sql wraps
+    # conn.execute, which returns a status string rather than rows.
+    layers = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    assert layers["top"]["moisture_raw"] == 464, "probe 1 survived the resend"
+    assert layers["bottom"]["moisture_raw"] == 482, "probe 2 was filled in"
+
+
+def test_an_out_of_range_second_probe_is_rejected(c):
+    bad = {**NEW_FORMAT, "moisture_raw_2": 99999}
+    assert post_reading(c, bad).status_code == 422
+    assert post_reading(c, {**NEW_FORMAT, "probe_temp_c_2": 500}).status_code == 422

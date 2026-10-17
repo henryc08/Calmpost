@@ -22,7 +22,7 @@ from .. import db
 from ..rules import compost
 
 # A bin that has not reported for this long is shown as offline.
-STALE_AFTER = timedelta(minutes=20)
+STALE_AFTER = timedelta(minutes=2)
 
 
 async def bin_row(bin_id: str):
@@ -40,6 +40,7 @@ async def latest_reading(bin_id: str):
     return await db.fetchrow(
         """
         SELECT time, probe_layer, probe_temp_c, moisture_raw, moisture_pct,
+               probe_temp_c_2, moisture_raw_2, moisture_pct_2,
                co2_ppm, air_temp_c, air_humidity_pct, co2_status
         FROM readings
         WHERE bin_id = $1
@@ -165,6 +166,60 @@ async def balance_cups(bin_id: str, days: int = 7) -> tuple[float, float]:
     )
 
 
+async def recent_adds(bin_id: str, hours: int = 48, limit: int = 12) -> list[dict]:
+    """What actually went into the bin lately, newest first.
+
+    balance_cups answers "how much green vs brown", which is all the advice
+    prompt used to get: two volume numbers. The prompt claims the model is
+    given "a log of what was recently added", so without this it was being
+    told about evidence it never received and could not name anything that
+    went in. Skips are included -- deciding to keep something out is part of
+    the history, and action says which happened.
+    """
+    rows = await db.fetch(
+        """
+        SELECT item, category, action, quantity_g,
+               extract(epoch FROM now() - time) / 3600.0 AS hours_ago
+        FROM add_log
+        WHERE bin_id = $1 AND time >= now() - ($2 || ' hours')::interval
+        ORDER BY time DESC
+        LIMIT $3
+        """,
+        bin_id,
+        str(hours),
+        limit,
+    )
+    return [
+        {
+            "item": r["item"],
+            "category": r["category"],
+            "action": r["action"],
+            "quantity_g": r["quantity_g"],
+            "hours_ago": round(float(r["hours_ago"]), 1),
+        }
+        for r in rows
+    ]
+
+
+async def unmeasured_snapshot(bin_id: str) -> dict:
+    """Advice-only context before the first reading; never invent sensor data."""
+    greens, browns = await balance_cups(bin_id)
+    return {
+        "time": None, "stale": True,
+        "layers": {layer: {
+            "measured": False, "moisture_pct": None, "moisture_raw": None,
+            "moisture_state": "unknown", "temp_c": None,
+        } for layer in ("top", "bottom")},
+        "stages": {"top": "started", "bottom": "started"},
+        "air": {"co2_ppm": None, "co2_ok": False,
+                "co2_slope_per_day": None, "ambient_temp_c": None},
+        "greens_7d": greens, "browns_7d": browns,
+        "moisture_time_weighted_6h": None, "healthy_hours_today": None,
+        "moisture_calibrated": False,
+        "healthy_band": [compost.MOISTURE_LO, compost.MOISTURE_HI],
+    }
+
+
 async def snapshot(bin_id: str) -> dict | None:
     """Everything the live view and the model need, in one shape.
 
@@ -189,21 +244,51 @@ async def snapshot(bin_id: str) -> dict | None:
     # there is a value and no error flag.
     co2_ok = latest["co2_ppm"] is not None and latest["co2_status"] in (0, None)
     ambient = latest["air_temp_c"]
+    probes = {r['probe_layer']: r for r in await db.fetch(
+        "SELECT DISTINCT ON (probe_layer) * FROM readings WHERE bin_id=$1 ORDER BY probe_layer,time DESC", bin_id)}
+
+    # Two ways a layer can report, and both are live:
+    #
+    #   * its own rows, keyed by probe_layer -- what `probes` above finds, and
+    #     what a second probe posting independently would use
+    #   * the second-probe columns on the newest row, which is what the
+    #     firmware actually sends today: one wide sample carrying both probes
+    #     (moisture_raw/probe_temp_c = top, moisture_raw_2/probe_temp_c_2 =
+    #     bottom), because readings_bin_time_uniq is UNIQUE (bin_id, time)
+    #
+    # A dedicated fresh row wins; the same-row columns are the fallback. A
+    # layer counts as measured on MOISTURE alone, since probe_temp_c_2 arrives
+    # null today: a real percentage with no temperature beats "unknown".
+    now_ = datetime.now(timezone.utc)
+    # Which layer probe 1 sits in, so probe 2 belongs to the other one.
     probe_layer = latest["probe_layer"]
-    pct = latest["moisture_pct"]
+    other = "bottom" if probe_layer == "top" else "top"
+    fresh = now_ - latest["time"] <= STALE_AFTER
 
     layers: dict[str, dict] = {}
     for layer in ("top", "bottom"):
-        if layer == probe_layer:
+        probe = probes.get(layer)
+        if probe is not None and now_ - probe["time"] <= STALE_AFTER:
+            lpct = probe["moisture_pct"]
             layers[layer] = {
                 "measured": True,
-                "moisture_pct": pct,
-                "moisture_raw": latest["moisture_raw"],
-                "moisture_state": compost.moisture_state(pct),
-                "temp_c": latest["probe_temp_c"],
+                "moisture_pct": lpct,
+                "moisture_raw": probe["moisture_raw"],
+                "moisture_state": compost.moisture_state(lpct),
+                "temp_c": probe["probe_temp_c"],
+            }
+        elif layer == other and fresh and latest["moisture_raw_2"] is not None:
+            pct2 = latest["moisture_pct_2"]
+            layers[layer] = {
+                "measured": True,
+                "moisture_pct": pct2,
+                "moisture_raw": latest["moisture_raw_2"],
+                "moisture_state": compost.moisture_state(pct2),
+                "temp_c": latest["probe_temp_c_2"],
             }
         else:
-            # No second probe in this build. Say so rather than imply 0.
+            # No probe for this layer, or it has gone quiet. Say so rather
+            # than imply 0.
             layers[layer] = {
                 "measured": False,
                 "moisture_pct": None,
@@ -217,15 +302,20 @@ async def snapshot(bin_id: str) -> dict | None:
     stages = {}
     for layer, v in layers.items():
         if v["measured"]:
+            mature = await db.fetchval("""SELECT EXISTS(SELECT 1 FROM stage_history h
+                WHERE h.bin_id=$1 AND h.layer=$2 AND h.stage IN ('active','hot')
+                AND h.time < now()-interval '14 days'
+                AND NOT EXISTS(SELECT 1 FROM stage_history x WHERE x.bin_id=h.bin_id
+                  AND x.layer=h.layer AND x.stage='harvested' AND x.time>h.time))""", bin_id, layer)
             stages[layer] = compost.stage(
-                v["temp_c"], ambient, latest["co2_ppm"], v["moisture_pct"], slope, co2_ok
+                v["temp_c"], ambient, latest["co2_ppm"], v["moisture_pct"], slope, co2_ok, has_mature_history=mature
             )
         else:
             stages[layer] = "started"
 
     now = datetime.now(timezone.utc)
     last_seen = binr["last_seen_at"]
-    stale = last_seen is None or (now - last_seen) > STALE_AFTER
+    stale = (now - latest['time']) > STALE_AFTER
 
     notes: list[str] = []
     if not binr["calibrated"]:
@@ -313,6 +403,13 @@ def state_hash(snap: dict, item: str | None) -> str:
     top = snap["layers"]["top"]
     air = snap["air"]
     coarse = {
+        "rule_band": [top['moisture_pct'] is not None and top['moisture_pct'] > 64,
+                      top['moisture_pct'] is not None and top['moisture_pct'] < 36],
+        "need": compost.need_for(snap),
+        "stages": snap['stages'],
+        "stale": snap.get('stale', False),
+        "calibrated": snap.get('moisture_calibrated', False),
+        "balance_rule": compost.balance_of(top['moisture_pct'], snap['greens_7d'], snap['browns_7d']),
         "item": (item or "").strip().lower(),
         "moisture": round(top["moisture_pct"] / 5) if top["moisture_pct"] is not None else None,
         "temp": round(top["temp_c"] / 2) if top["temp_c"] is not None else None,

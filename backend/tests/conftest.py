@@ -25,7 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import db
-from app.routers import advice, bins, drops, economy, game, ingest
+from app.routers import advice, bins, chat, drops, economy, game, ingest, social
 
 KEY = {"X-API-Key": "dev-change-me"}
 STUBS = Path(__file__).with_name("timescale_stubs.sql")
@@ -92,7 +92,7 @@ async def lifespan(app):
 
 def make_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
-    for r in (ingest.router, bins.router, advice.router, game.router, drops.router, economy.router):
+    for r in (ingest.router, bins.router, advice.router, chat.router, game.router, drops.router, economy.router, social.router):
         app.include_router(r)
     return app
 

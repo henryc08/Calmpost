@@ -45,6 +45,12 @@ class PreviewState:
         with self._lock:
             return self._jpeg
 
+    def clear(self) -> None:
+        with self._lock:
+            self._jpeg = None
+        self.last_box = None
+        self.status = 'idle: not armed'
+
 
 def serve(state: PreviewState, port: int) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):

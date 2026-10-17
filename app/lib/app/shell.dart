@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,10 +33,12 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   bool _readyNotified = false;
+  Timer? _gameTick;
 
   @override
   void initState() {
     super.initState();
+    _gameTick = Timer.periodic(const Duration(minutes: 1), (_) => ref.read(gameProvider.notifier).tick());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _applyDevLinks();
@@ -43,14 +46,29 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
   }
 
+  @override
+  void dispose() {
+    _gameTick?.cancel();
+    super.dispose();
+  }
+
   /// Web preview deep links for design review: ?tab=0-4 &scenario=tooWet &checkin=1 &source=mock|live
+  /// &drop=banana|check|mixed|unclear|nothing (opens the camera drop-in on the mock)
   void _applyDevLinks() {
-    if (!kIsWeb) return;
+    if (!kIsWeb || ref.read(repositoryProvider).serverGame) return;
     final q = Uri.base.queryParameters;
     final tab = int.tryParse(q['tab'] ?? '');
     if (tab != null && tab >= 0 && tab < AppTab.values.length) ref.read(tabProvider.notifier).state = AppTab.values[tab];
     final s = Scenario.values.where((s) => s.name == q['scenario']).firstOrNull;
     if (s != null) ref.read(scenarioProvider.notifier).state = s;
+    final drop = MockDrop.values.where((d) => d.name == q['drop']).firstOrNull;
+    if (drop != null) {
+      final repo = ref.read(repositoryProvider);
+      if (repo is MockRepository) repo.nextDrop = drop;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) Routes.drop(context);
+      });
+    }
     final source = DataSource.values.where((d) => d.name == q['source']).firstOrNull;
     if (source != null) ref.read(dataSourceProvider.notifier).state = source;
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
@@ -77,14 +95,16 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     // Opening Layers counts as checking on the bin.
     ref.listen(tabProvider, (prev, next) {
-      if (next == AppTab.layers) ref.read(gameProvider.notifier).checkIn();
+      if (next == AppTab.layers) {
+        ref.read(gameProvider.notifier).checkInAsync();
+      }
     });
 
     ref.listen(binProvider, (prev, next) {
       final s = next.valueOrNull;
       if (s == null) return;
-      ref.read(gameProvider.notifier).syncHealthyHours(s.healthyHoursToday);
-      final ready = s.bottomStage == Stage.ready;
+      if (!ref.read(repositoryProvider).serverGame) ref.read(gameProvider.notifier).syncHealthyHours(s.healthyHoursToday);
+      final ready = s.bottomMeasured && !s.readingsStale && s.bottomStage == Stage.ready;
       if (ready && !_readyNotified) Notifications.compostReady();
       _readyNotified = ready;
     });

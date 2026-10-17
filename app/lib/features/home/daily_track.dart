@@ -9,6 +9,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Today's XP fills a track toward three reward nodes you tap to claim.
 class DailyTrack extends ConsumerWidget {
@@ -22,8 +23,8 @@ class DailyTrack extends ConsumerWidget {
     final ready = [for (var i = 0; i < dailyGoals.length; i++) xp >= dailyGoals[i] && !claimed.contains(i)];
 
     Future<void> claim(int i) async {
-      final reward = ref.read(gameProvider.notifier).claimDaily(i);
-      if (reward == null) return;
+      final reward = await ref.read(gameProvider.notifier).claimDailyAsync(i);
+      if (reward == null || !context.mounted) return;
       await showRewardReveal(
         context,
         title: 'Daily reward',
@@ -40,6 +41,7 @@ class DailyTrack extends ConsumerWidget {
       children: [
         SectionLabel(
           'DAILY GOAL',
+          info: InfoTip.xp,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

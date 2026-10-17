@@ -8,21 +8,39 @@ import '../data/calmpost_repository.dart';
 import '../data/mock_repository.dart';
 import '../domain/health_score.dart';
 import '../domain/models.dart';
+import '../domain/inventory.dart';
 import '../domain/xp_rules.dart';
 import 'game.dart';
+import 'social.dart';
 
 /// Demo scenario for the mock bin. Only used while [dataSourceProvider] is mock.
 final scenarioProvider = StateProvider<Scenario>((ref) => Scenario.healthy);
+
+final inventoryProvider = FutureProvider.autoDispose.family<CompostInventory, String>((ref, period) async {
+  final timer = Timer(const Duration(seconds: 20), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref.watch(repositoryProvider).inventory(period: period);
+});
 
 /// Live = the real bin through the backend (needs a build with API_URL, see
 /// data/api_config.dart). Mock = the demo scenarios. Switch in the demo
 /// picker (long-press the Bin World), e.g. if the venue Wi-Fi drops.
 enum DataSource { live, mock }
 
-final dataSourceProvider = StateProvider<DataSource>((ref) => ApiConfig.configured ? DataSource.live : DataSource.mock);
+final dataSourceProvider = StateProvider<DataSource>((ref) {
+  final account = ref.watch(socialSessionProvider).valueOrNull;
+  return account != null || ApiConfig.configured ? DataSource.live : DataSource.mock;
+});
 
 final repositoryProvider = Provider<CalmpostRepository>((ref) {
-  if (ref.watch(dataSourceProvider) == DataSource.live && ApiConfig.configured) {
+  final account = ref.watch(socialSessionProvider).valueOrNull;
+  final source = ref.watch(dataSourceProvider);
+  if (source == DataSource.live && account != null) {
+    final repo = ApiRepository(ApiConfig(baseUrl: account.server, apiKey: '', binId: account.binId ?? '', userId: account.userId, token: account.token));
+    ref.onDispose(repo.close);
+    return repo;
+  }
+  if (source == DataSource.live && account == null && ApiConfig.configured) {
     final repo = ApiRepository(ApiConfig.fromEnvironment());
     ref.onDispose(repo.close);
     return repo;
@@ -86,13 +104,19 @@ final standingsProvider = Provider<Standing>((ref) {
       if (c != 0) return c;
       return a.isYou ? -1 : (b.isYou ? 1 : 0);
     });
-  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[GameState.tierIndex]);
+  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[ref.watch(gameProvider.select((g) => g.leagueTier))]);
 });
 
 /// 24 h trend for one zone + metric (sparklines, layer charts).
-final trendProvider = FutureProvider.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
+final trendProvider = FutureProvider.autoDispose.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
   ref.watch(scenarioProvider);
-  return ref.watch(repositoryProvider).trends(key.$1, key.$2);
+  final repo = ref.watch(repositoryProvider);
+  if (repo is ApiRepository) {
+    final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+    ref.onCancel(timer.cancel);
+  }
+  return repo.trends(key.$1, key.$2);
 });
 
 /// Bottom-nav tabs.

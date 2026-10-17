@@ -125,6 +125,25 @@ def balance_of(top_moisture: float | None, greens_cups: float, browns_cups: floa
     return "balanced"
 
 
+def need_for(snap: dict) -> str:
+    top, air = snap["layers"]["top"], snap["air"]
+    pct = top["moisture_pct"]
+    if snap.get("stale") or not top["measured"] or pct is None:
+        return "nothing"
+    if snap["stages"]["bottom"] in ("curing", "ready") and snap["layers"]["bottom"]["measured"]:
+        return "nothing"
+    greens, browns = snap["greens_7d"], snap["browns_7d"]
+    ratio = browns / greens if greens > 0 else (4.0 if browns > 0 else 2.5)
+    delta = top["temp_c"] - air["ambient_temp_c"] if top["temp_c"] is not None and air["ambient_temp_c"] is not None else None
+    if pct > 60 or ratio < 2 or (air.get("co2_ok") and (air["co2_ppm"] or 0) > 6000 and delta is not None and delta < 5):
+        return "browns"
+    if pct < 40:
+        return "greens" if ratio > 3 else "water"
+    if air.get("co2_ok") and (air.get("co2_slope_per_day") or 0) > 2 and delta is not None and delta < 5:
+        return "mix"
+    return "nothing"
+
+
 # --- stage -----------------------------------------------------------------
 
 def stage(
@@ -134,6 +153,7 @@ def stage(
     pct: float | None,
     slope_pct_per_day: float | None = None,
     co2_ok: bool = True,
+    has_mature_history: bool = False,
 ) -> Stage:
     """Life-cycle stage from sensor trends. A guide, not a lab test."""
     if not co2_ok:
@@ -156,7 +176,10 @@ def stage(
         return "curing"
     if slope_pct_per_day is not None and slope_pct_per_day > 2:
         return "curing"
-    return "ready"
+    # A quiet/dry new bin is not evidence of finished compost.
+    if pct is None or pct < MOISTURE_LO or delta is None:
+        return "started"
+    return "ready" if has_mature_history else "curing"
 
 
 def stage_at_least(value: str, threshold: str) -> bool:

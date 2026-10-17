@@ -10,6 +10,8 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'collectible_art.dart';
+import 'collectible_details.dart';
+import 'seed_learning.dart';
 
 /// The pull: the packet shakes, tears open in the colour of the best rarity,
 /// then the collectibles appear (one big card, or a 5×2 grid for ten).
@@ -71,43 +73,76 @@ class _PullRevealState extends State<_PullReveal> with SingleTickerProviderState
           padding: const EdgeInsets.all(S.x6),
           child: Column(
             children: [
-              const Spacer(),
-              if (!_open)
-                SizedBox(
-                  height: 300,
-                  child: Center(
-                    child: const SeedPacketArt(size: 150)
-                        .animate()
-                        .shake(hz: best.item.rarity.index >= 3 ? 9 : 6, rotation: 0.07, offset: Offset.zero, duration: 1400.ms)
-                        .scaleXY(end: 1.08, duration: 1400.ms),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: S.x5),
+                      if (!_open)
+                        SizedBox(
+                          height: 300,
+                          child: Center(
+                            child: const SeedPacketArt(size: 150)
+                                .animate()
+                                .shake(hz: best.item.rarity.index >= 3 ? 9 : 6, rotation: 0.07, offset: Offset.zero, duration: 1400.ms)
+                                .scaleXY(end: 1.08, duration: 1400.ms),
+                          ),
+                        )
+                      else if (single)
+                        _Single(pull: best, rays: _rays)
+                      else
+                        _Grid(pulls: widget.pulls, rays: _rays, color: color),
+                      const SizedBox(height: S.x6),
+                      AnimatedOpacity(
+                        opacity: _open ? 1 : 0,
+                        duration: const Duration(milliseconds: 400),
+                        child: Column(
+                          children: [
+                            if (!single) ...[Text('Best pull: ${best.item.name}', style: T.title.copyWith(color: C.onBrand)), const SizedBox(height: S.x2)],
+                            Text(
+                              [if (newCount > 0) '$newCount new', if (refund > 0) '+$refund Loam from duplicates'].join(' · '),
+                              style: T.label.copyWith(color: C.onBrandMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_open && single && best.item.type == CollectibleType.specimen) ...[
+                        const SizedBox(height: S.x5),
+                        SeedLearning(id: best.item.id, onDark: true),
+                        const SizedBox(height: S.x3),
+                        PillButton(label: 'View / activate seed', color: C.onBrand, textColor: C.ink, onTap: () => showCollectibleDetails(context, best.item)),
+                      ],
+                      if (_open && !single) ...[
+                        const SizedBox(height: S.x3),
+                        Text('Explore your plants', style: T.heading.copyWith(color: C.onBrand)),
+                        const SizedBox(height: S.x2),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final p in {
+                              for (final p in widget.pulls)
+                                if (p.item.type == CollectibleType.specimen) p.item.id: p,
+                            }.values)
+                              PillButton(
+                                label: '${p.item.name} · field note',
+                                dense: true,
+                                color: C.onBrand,
+                                textColor: C.ink,
+                                onTap: () => showCollectibleDetails(context, p.item),
+                              ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: S.x5),
+                    ],
                   ),
-                )
-              else if (single)
-                _Single(pull: best, rays: _rays)
-              else
-                _Grid(pulls: widget.pulls, rays: _rays, color: color),
-              const SizedBox(height: S.x6),
-              AnimatedOpacity(
-                opacity: _open ? 1 : 0,
-                duration: const Duration(milliseconds: 400),
-                child: Column(
-                  children: [
-                    if (!single) ...[Text('Best pull: ${best.item.name}', style: T.title.copyWith(color: C.onBrand)), const SizedBox(height: S.x2)],
-                    Text(
-                      [if (newCount > 0) '$newCount new', if (refund > 0) '+$refund Loam from duplicates'].join(' · '),
-                      style: T.label.copyWith(color: C.onBrandMuted),
-                    ),
-                  ],
                 ),
               ),
-              const Spacer(),
-              AnimatedOpacity(
-                opacity: _open ? 1 : 0,
-                duration: const Duration(milliseconds: 300),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: PillButton(label: 'Collect', color: C.pink, textColor: C.ink, onTap: _open ? () => Navigator.of(context).pop() : null),
-                ),
+              const SizedBox(height: S.x3),
+              SizedBox(
+                width: double.infinity,
+                child: PillButton(label: 'Collect', color: C.pink, textColor: C.ink, onTap: _open ? () => Navigator.of(context).pop() : null),
               ),
             ],
           ),
@@ -126,7 +161,7 @@ class _Single extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = rarityColor(pull.item.rarity);
     return SizedBox(
-      height: 300,
+      width: double.infinity,
       child: Column(
         children: [
           SizedBox(

@@ -23,8 +23,8 @@ class RewardsShelf extends ConsumerWidget {
     if (crates.isEmpty && packets == 0) return const SizedBox.shrink();
 
     Future<void> open(int i) async {
-      final o = ref.read(gameProvider.notifier).openCrate(i);
-      if (o != null) await revealCrate(context, o.tier, o.loam, o.packets);
+      final o = await ref.read(gameProvider.notifier).openCrateAsync(i);
+      if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
     }
 
     return Column(

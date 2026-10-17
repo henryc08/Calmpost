@@ -4,8 +4,8 @@ import 'package:flutter/widgets.dart' show Color, IconData;
 
 import 'models.dart';
 
-/// What a Seed Packet can contain. Cosmetic only: never changes XP, health
-/// or league standing.
+/// Plants have one equippable progression buff; finishes and titles are cosmetic.
+/// No collectible changes measured health or compost safety advice.
 enum CollectibleType { specimen, finish, title }
 
 class Collectible {

@@ -20,12 +20,15 @@ Expected input, one object per line:
 """
 
 import argparse
+from datetime import datetime, timezone
 import json
 import logging
 import os
 import time
 from collections import deque
 from pathlib import Path
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 
 import requests
 import serial
@@ -39,6 +42,8 @@ INGEST_FIELDS = {
     "device_id",
     "probe_temp_c",
     "moisture_raw",
+    "probe_temp_c_2",
+    "moisture_raw_2",
     "co2_ppm",
     "air_temp_c",
     "air_humidity_pct",
@@ -76,6 +81,7 @@ def to_payload(raw: dict, default_device: str) -> dict | None:
         return None
 
     out.setdefault("device_id", default_device)
+    out.setdefault("time", datetime.now(timezone.utc).isoformat())
     return out
 
 
@@ -108,6 +114,68 @@ def load_token(explicit: str | None) -> str:
     )
 
 
+class UploadWorker:
+    """One HTTP writer; serial ingestion never waits for network I/O.
+
+    Keep up to 500 queued samples plus the in-flight sample. If full, discard
+    the incoming sample with a warning; accepted samples retain their order.
+    This is an in-memory demo buffer, not durable offline storage.
+    """
+
+    def __init__(self, url, headers, *, capacity=500, retry_delay=1,
+                 session_factory=requests.Session):
+        self.url, self.headers = url, headers
+        self.queue = Queue(maxsize=capacity)
+        self.pending = deque()
+        self.stop = Event()
+        self.error = None
+        self.retry_delay = retry_delay
+        self.session_factory = session_factory
+        self.thread = Thread(target=self._run, name="sensor-upload", daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop.set()
+        self.thread.join(timeout=11)  # One bounded HTTP attempt may be finishing.
+        remaining = self.queue.qsize() + len(self.pending)
+        if remaining:
+            log.warning("stopped; %d unsent samples remain in memory and will be lost", remaining)
+
+    def raise_if_failed(self):
+        if self.error is not None:
+            raise SystemExit(self.error)
+
+    def submit(self, payload):
+        self.raise_if_failed()
+        try:
+            self.queue.put_nowait(payload)
+            return True
+        except Full:
+            log.warning("upload queue full; dropping incoming sample at %s", payload.get("time"))
+            return False
+
+    def _run(self):
+        try:
+            with self.session_factory() as session:
+                while not self.stop.is_set():
+                    if not self.pending:
+                        try:
+                            self.pending.append(self.queue.get(timeout=0.1))
+                        except Empty:
+                            continue
+                    _drain(session, self.url, self.headers, self.pending)
+                    if self.pending:
+                        self.stop.wait(self.retry_delay)
+        except SystemExit as exc:
+            self.error = str(exc)
+        except Exception:
+            # Make failures visible to the serial loop, without leaking tokens.
+            self.error = "upload worker failed; restart the bridge and check the backend"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", help="serial port, e.g. COM3 or /dev/ttyUSB0")
@@ -132,19 +200,19 @@ def main() -> None:
 
     url = f"{args.api.rstrip('/')}/ingest"
     headers = {"X-Device-Token": token, "Content-Type": "application/json"}
-    session = requests.Session()
-
-    # Hold samples that failed to upload so a dropped link does not lose
-    # data. Bounded, so a long outage cannot exhaust memory.
-    pending: deque[dict] = deque(maxlen=500)
-
     log.info("bridge: %s @ %d -> %s", port, args.baud, url)
+    with UploadWorker(url, headers) as uploader:
+        read_serial(port, args.baud, args.device, uploader)
 
+
+def read_serial(port, baud, device, uploader):
     while True:
         try:
-            with serial.Serial(port, args.baud, timeout=5) as ser:
+            uploader.raise_if_failed()
+            with serial.Serial(port, baud, timeout=5) as ser:
                 log.info("serial open")
                 while True:
+                    uploader.raise_if_failed()
                     line = ser.readline().decode("utf-8", errors="replace").strip()
                     if not line or line.startswith("#"):
                         if line:
@@ -160,19 +228,18 @@ def main() -> None:
                         log.debug("bad json: %s", line[:80])
                         continue
 
-                    payload = to_payload(raw, args.device)
+                    payload = to_payload(raw, device)
                     if payload is None:
                         log.debug("no sensor fields: %s", line[:80])
                         continue
 
-                    pending.append(payload)
-                    _drain(session, url, headers, pending)
+                    uploader.submit(payload)
 
         except serial.SerialException as exc:
             log.warning("serial error (%s); retrying in 3s", exc)
             time.sleep(3)
         except KeyboardInterrupt:
-            log.info("stopped (%d samples still queued)", len(pending))
+            log.info("serial reader stopped")
             return
 
 
@@ -188,7 +255,12 @@ def _drain(session, url, headers, pending: deque) -> None:
 
         if resp.status_code == 200:
             pending.popleft()
-            body = resp.json()
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            if not isinstance(body, dict):
+                body = {}
             pct = body.get("moisture_pct")
             log.info(
                 "sent raw=%s -> moisture=%s%s",
@@ -198,7 +270,7 @@ def _drain(session, url, headers, pending: deque) -> None:
             )
         elif resp.status_code in (401, 403):
             # Wrong or revoked token: retrying forever would just spam.
-            raise SystemExit(f"auth rejected ({resp.status_code}): {resp.text[:200]}")
+            raise SystemExit(f"auth rejected ({resp.status_code}); check the device token")
         elif resp.status_code == 422:
             # Out-of-range or malformed reading: drop it rather than block
             # every later sample behind it.

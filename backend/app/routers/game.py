@@ -74,6 +74,10 @@ async def profile(user_id: str) -> GameResponse:
         user_id=user_id,
         display_name=st["display_name"],
         total_xp=total_xp,
+        week_xp=await db.fetchval("SELECT coalesce(sum(xp),0)::int FROM point_events WHERE user_id=$1 AND time >= $2", user_id, datetime.combine(economy.week_start(), time.min, tzinfo=timezone.utc)),
+        action_xp_today=await db.fetchval("SELECT coalesce(sum(xp),0)::int FROM point_events WHERE user_id=$1 AND time >= date_trunc('day',now()) AND kind=ANY($2::text[])", user_id, list(game.CAPPED_KINDS)),
+        grams_today=await db.fetchval("SELECT coalesce(sum(quantity_g),0) FROM add_log WHERE user_id=$1 AND time>=date_trunc('day',now()) AND action='added' AND category IN ('green','brown')", user_id),
+        stats=settled['stats'],
         level=level,
         title=title,
         level_title=level_title,
@@ -92,6 +96,9 @@ async def profile(user_id: str) -> GameResponse:
         packets=st["packets"],
         equipped_finish=st["equipped_finish"],
         equipped_title=equipped_title,
+        equipped_seed=st['equipped_seed'],
+        level_claimed=[int(r['dedupe_key'].split(':')[1]) for r in await db.fetch(
+            "SELECT dedupe_key FROM point_events WHERE user_id=$1 AND kind='level_reward'", user_id)],
         collected=collected or 0,
         collection_total=len(COLLECTIBLES),
         impact=ImpactStats(**game.impact(grams or 0)),
@@ -133,8 +140,9 @@ async def check_in(user_id: str) -> dict:
     Separate from /live so merely polling the API does not tick the streak.
     """
     today = date.today().isoformat()
-    async with db.pool().acquire() as conn:
+    async with db.pool().acquire() as conn, conn.transaction():
         await ledger.ensure_user(conn, user_id)
+        await conn.fetchval("SELECT user_id FROM user_state WHERE user_id=$1 FOR UPDATE", user_id)
         xp = await ledger.award(conn, user_id, "check_in", dedupe_key=f"checkin:{today}")
     current, _ = await ledger.streaks(user_id)
     return {"user_id": user_id, "xp_awarded": xp, "day": today, "streak_days": current}

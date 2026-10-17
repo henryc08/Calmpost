@@ -13,6 +13,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -143,7 +144,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: T.caps.copyWith(color: color)),
+                  Row(children: [Text(label, style: T.caps.copyWith(color: color)), const InfoDot(InfoTip.verdict)]),
                   const SizedBox(height: 2),
                   Text(a.item.name, style: T.small.copyWith(color: C.ink2)),
                 ],

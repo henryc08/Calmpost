@@ -12,6 +12,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Weekly league, friends and co-op quests.
 class SocialScreen extends ConsumerStatefulWidget {
@@ -77,11 +78,18 @@ class _SocialScreenState extends ConsumerState<SocialScreen> {
         ],
       ),
       children: [
-        PaperSegments<_View>(
-          values: _View.values,
-          selected: _view,
-          label: (v) => v == _View.league ? 'This week' : 'Friends',
-          onChanged: (v) => setState(() => _view = v),
+        Row(
+          children: [
+            Expanded(
+              child: PaperSegments<_View>(
+                values: _View.values,
+                selected: _view,
+                label: (v) => v == _View.league ? 'This week' : 'Friends',
+                onChanged: (v) => setState(() => _view = v),
+              ),
+            ),
+            const InfoDot(InfoTip.league),
+          ],
         ),
         const SizedBox(height: S.x4),
         if (_view == _View.league) ..._league(st) else ..._friends(st),

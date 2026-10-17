@@ -8,6 +8,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// The main Home section: what the bin wants right now, as three tappable
 /// items with what each will do, plus what to hold off on.
@@ -33,7 +34,7 @@ class WhatToAdd extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('WHAT TO ADD', trailing: PinkPill('+${Xp.followedSuggestion} XP')),
+        const SectionLabel('WHAT TO ADD', info: InfoTip.whatToAdd, trailing: PinkPill('+${Xp.followedSuggestion} XP')),
         const SizedBox(height: S.x3),
         Text(title, style: T.title.copyWith(fontSize: 28)),
         const SizedBox(height: S.x2),

@@ -5,3 +5,9 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 httpx==0.28.1
 python-dotenv==1.0.1
+
+# tests (python -m pytest). pgserver starts a throwaway local Postgres, so
+# the suite needs neither Tiger Cloud nor an installed server; set
+# TEST_DATABASE_URL to point at your own instead (it gets WIPED).
+pytest>=8
+pgserver>=0.1.4

@@ -4,3 +4,6 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Bridge autostart log: local runtime output, grows forever.
+bridge.log

@@ -260,3 +260,181 @@ def test_unknown_drop_and_bin_are_404(c):
     assert c.get("/drops/999999").status_code == 404
     assert c.get("/drops/999999/photo").status_code == 404
     assert c.get("/bins/nope/drops/history").status_code == 404
+
+
+# --- single photo submission ----------------------------------------------------
+#
+# The camera decides for itself that something arrived; this is the user
+# pointing a phone at something. It becomes an ordinary pending drop, so
+# confirm/dismiss/history/XP all work on it unchanged -- only `source` differs.
+
+REAL_JPEG = base64.b64encode(
+    bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffdb004300"
+                  "0806060708070807090909") + b"\x00" * 40 + bytes.fromhex("ffd9")
+).decode()
+
+
+def stub_identify(monkeypatch, items, model="gemini-2.5-flash", error=None, seen=None):
+    from app.config import get_settings
+    from app.services import identify
+
+    async def fake(jpeg):
+        if seen is not None:
+            seen["jpeg"] = jpeg
+        return items, model, error
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(identify, "identify", fake)
+
+
+def submit(c, b64=None):
+    return c.post("/bins/bin-001/drops/photo", json={"image_jpeg_b64": b64 or REAL_JPEG})
+
+
+def test_a_submitted_photo_becomes_a_pending_drop(c, monkeypatch):
+    seen = {}
+    stub_identify(monkeypatch, [
+        {"label": "banana peel", "catalog_id": "banana_peel", "category": "green",
+         "est_grams": 110.0, "confidence": 0.93, "box_2d": [100, 200, 800, 700]}], seen=seen)
+
+    r = submit(c)
+    assert r.status_code == 201
+    d = r.json()
+
+    assert d["status"] == "pending"
+    assert d["source"] == "photo", "distinguishable from a camera detection"
+    assert d["items"][0]["label"] == "banana peel"
+    assert d["items"][0]["box_2d"] == [100, 200, 800, 700]
+    assert d["gemini_ok"] is True
+    # The photo is kept, so it can be shown and reused as Trunc context.
+    assert d["thumbnail_jpeg_b64"] == REAL_JPEG
+    assert seen["jpeg"] == base64.b64decode(REAL_JPEG)
+
+    # It shows up exactly where a camera drop would.
+    assert [p["id"] for p in c.get("/bins/bin-001/drops/pending").json()] == [d["id"]]
+
+
+def test_a_submitted_photo_confirms_through_the_normal_path(c, monkeypatch):
+    """No second confirm endpoint: the XP rules and add_log rows are shared."""
+    stub_identify(monkeypatch, [
+        {"label": "banana peel", "catalog_id": "banana_peel", "category": "green",
+         "est_grams": 110.0, "confidence": 0.93, "box_2d": None}])
+    drop_id = submit(c).json()["id"]
+
+    r = c.post(f"/drops/{drop_id}/confirm",
+               json={"items": [{"label": "banana peel", "catalog_id": "banana_peel",
+                                "category": "green", "amount": "handful"}]})
+    assert r.status_code == 200
+    assert r.json()["items"][0]["log"]["source"] == "camera"
+
+    d = c.get(f"/drops/{drop_id}").json()
+    assert d["status"] == "confirmed" and d["source"] == "photo"
+
+
+def test_photos_do_not_count_towards_camera_accuracy(c, monkeypatch):
+    """/drops/accuracy is a statement about the CAMERA. Counting photos the
+    user deliberately framed would flatter it."""
+    stub_identify(monkeypatch, [
+        {"label": "banana peel", "catalog_id": "banana_peel", "category": "green",
+         "est_grams": 110.0, "confidence": 0.93, "box_2d": None}])
+
+    camera_drop = report(c, arm(c)).json()["drop_id"]
+    c.post(f"/drops/{camera_drop}/dismiss")
+    submit(c)  # a photo, which must not appear in the stat
+
+    acc = c.get("/bins/bin-001/drops/accuracy").json()
+    assert acc["drops"] == 1, "only the camera detection"
+    assert acc["dismissed"] == 1
+
+
+def test_gemini_failing_still_keeps_the_photo_for_the_user_to_name(c, monkeypatch):
+    """An empty item list is a real answer: the sheet already handles an
+    unnamed item, so this needs no new state."""
+    stub_identify(monkeypatch, [], model="rules-fallback", error="429 quota exhausted")
+
+    d = submit(c).json()
+
+    assert d["items"] == []
+    assert d["gemini_ok"] is False
+    assert d["error"] == "429 quota exhausted"
+    assert d["thumbnail_jpeg_b64"] == REAL_JPEG, "the photo is not thrown away"
+    assert d["status"] == "pending", "still answerable by hand"
+
+
+def test_a_photo_drop_records_how_long_identification_took(c, monkeypatch):
+    stub_identify(monkeypatch, [])
+    assert submit(c).json()["latency_ms"] >= 0
+
+
+def test_bad_images_are_rejected_clearly(c, monkeypatch):
+    from app.services import identify
+
+    stub_identify(monkeypatch, [])
+    assert submit(c, b64="not base64 at all!!").status_code == 422
+    assert c.post("/bins/bin-001/drops/photo", json={"image_jpeg_b64": ""}).status_code == 422
+
+    too_big = base64.b64encode(b"\xff\xd8" + b"\x00" * identify.MAX_PHOTO_BYTES).decode()
+    r = submit(c, b64=too_big)
+    assert r.status_code == 413
+    assert "downscale" in r.json()["detail"], "says what to do about it"
+
+
+def test_photo_submission_needs_the_api_key_and_a_real_bin(c, monkeypatch):
+    stub_identify(monkeypatch, [])
+    assert c.post("/bins/bin-001/drops/photo", headers={"X-API-Key": "wrong"},
+                  json={"image_jpeg_b64": REAL_JPEG}).status_code == 401
+    assert c.post("/bins/nope/drops/photo",
+                  json={"image_jpeg_b64": REAL_JPEG}).status_code == 404
+
+
+# --- what the model is allowed to decide ----------------------------------------
+
+def test_the_rules_categorise_a_photo_not_the_model():
+    """The prompt forbids the model from judging; a keep-out item must come
+    back as avoid even though the model only supplied a label."""
+    from app.services import identify
+
+    items = identify.parse({"items": [
+        {"label": "cheese rind", "catalog_id": "unknown", "confidence": 0.8},
+        {"label": "banana peel", "catalog_id": "banana_peel", "confidence": 0.9},
+        {"label": "shredded cardboard", "catalog_id": "cardboard", "confidence": 0.7},
+    ]})
+
+    by_label = {i["label"]: i for i in items}
+    assert by_label["cheese rind"]["category"] == "avoid"
+    assert by_label["banana peel"]["category"] == "green"
+    assert by_label["shredded cardboard"]["category"] == "brown"
+
+
+def test_hands_and_the_bin_are_not_reported_as_items():
+    from app.services import identify
+
+    items = identify.parse({"items": [
+        {"label": "hand", "catalog_id": "unknown", "confidence": 0.99},
+        {"label": "banana peel", "catalog_id": "banana_peel", "confidence": 0.9},
+    ]})
+    assert [i["label"] for i in items] == ["banana peel"]
+
+
+def test_an_off_schema_answer_is_corrected_rather_than_trusted():
+    from app.services import identify
+
+    items = identify.parse({"items": [
+        {"label": "mystery", "catalog_id": "not_a_real_id", "confidence": 5,
+         "est_grams": 99999, "box_2d": [10, 10, 5, 5]},
+    ]})
+
+    it = items[0]
+    assert it["catalog_id"] == "unknown", "an invented id is not trusted"
+    assert it["confidence"] == 1.0, "clamped"
+    assert it["est_grams"] is None, "absurd weight dropped"
+    assert it["box_2d"] is None, "inverted box dropped"
+    assert it["category"] is None, "unknown, not guessed"
+
+
+def test_at_most_four_items_come_back():
+    from app.services import identify
+    raw = {"items": [{"label": f"item {i}", "catalog_id": "unknown", "confidence": 0.5}
+                     for i in range(9)]}
+    assert len(identify.parse(raw)) == 4

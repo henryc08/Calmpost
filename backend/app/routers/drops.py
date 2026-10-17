@@ -35,6 +35,7 @@ from .. import db
 from ..rules import compost
 from ..models import AdviceResponse, LogCreate, LogEntry
 from ..security import require_app_key
+from ..services import identify
 from . import advice, bins
 
 router = APIRouter(tags=["drops"], dependencies=[Depends(require_app_key)])
@@ -68,6 +69,12 @@ class DropReport(BaseModel):
     gemini_ok: bool
     model: str = ""
     error: str | None = Field(default=None, max_length=500)
+
+
+class PhotoSubmission(BaseModel):
+    """One photo the user took. The app should downscale to about 1024 px
+    before sending; identify.MAX_PHOTO_BYTES is the ceiling, not a target."""
+    image_jpeg_b64: str = Field(min_length=1)
 
 
 class SessionClose(BaseModel):
@@ -139,6 +146,9 @@ def _public(row) -> dict:
         "time": row["time"].isoformat(),
         "status": row["status"],
         "items": row["guess"],
+        # 'camera' or 'photo': the same sheet handles both, but a photo the
+        # user framed deserves different wording from one the bin noticed.
+        "source": row["source"],
         "gemini_ok": row["gemini_ok"],
         "model": row["model"],
         "error": row["error"],
@@ -269,7 +279,9 @@ async def accuracy(bin_id: str, days: int = 30) -> dict:
                   count(*) FILTER (WHERE status = 'confirmed' AND NOT corrected) AS as_seen,
                   count(*) FILTER (WHERE status = 'dismissed') AS dismissed,
                   avg(top_confidence) AS conf, avg(latency_ms) AS latency
-           FROM drop_events WHERE bin_id = $1 AND time > now() - make_interval(days => $2)"""
+           FROM drop_events
+           WHERE bin_id = $1 AND time > now() - make_interval(days => $2)
+             AND source = 'camera'"""
     r = await db.fetchrow(q, bin_id, days)
     return {
         "days": days, "drops": r["drops"], "confirmed": r["confirmed"], "dismissed": r["dismissed"],
@@ -277,6 +289,52 @@ async def accuracy(bin_id: str, days: int = 30) -> dict:
         "avg_confidence": round(r["conf"], 2) if r["conf"] is not None else None,
         "avg_latency_ms": round(r["latency"]) if r["latency"] is not None else None,
     }
+
+
+@router.post("/bins/{bin_id}/drops/photo", status_code=201)
+async def submit_photo(bin_id: str, body: PhotoSubmission) -> dict:
+    """Identify one photo the user took, as a pending drop.
+
+    The camera decides for itself that something arrived; this is the user
+    pointing a phone at something and asking what it is. It becomes an ordinary
+    pending drop_events row, so confirm, dismiss, history, the add_log rows and
+    the XP rules all work on it unchanged -- the only difference is source.
+
+    No session is involved. Arming exists so vision/ knows when to look, and
+    there is nothing to tell when the photo is already in hand.
+
+    Gemini failing is not an error here: the row is still stored with no items,
+    and the user names the item themselves. That is the same path an unknown
+    catalog_id already takes, so the sheet needs no new state for it.
+    """
+    await _bin_or_404(bin_id)
+
+    try:
+        jpeg = base64.b64decode(body.image_jpeg_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="image is not base64")
+    if not jpeg:
+        raise HTTPException(status_code=422, detail="image is empty")
+    if len(jpeg) > identify.MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"image is {len(jpeg)} bytes; downscale to about 1024 px "
+                   f"(limit {identify.MAX_PHOTO_BYTES})")
+
+    started = _now()
+    items, model, error = await identify.identify(jpeg)
+    latency_ms = int((_now() - started).total_seconds() * 1000)
+    top = max((i["confidence"] for i in items), default=None)
+
+    row = await db.fetchrow(
+        """INSERT INTO drop_events
+               (bin_id, session_id, status, guess, top_confidence, gemini_ok,
+                model, error, latency_ms, thumbnail_jpeg, source)
+           VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, 'photo')
+           RETURNING *""",
+        bin_id, f"photo-{secrets.token_hex(4)}", items, top,
+        error is None, model, error, latency_ms, jpeg)
+    return _public(row)
 
 
 @router.get("/bins/{bin_id}/drops/history")
@@ -301,7 +359,7 @@ async def history(
     await _bin_or_404(bin_id)
     rows = await db.fetch(
         """SELECT id, time, session_id, status, guess, final_items, corrected,
-                  gemini_ok, model, error, latency_ms, top_confidence, resolved_at,
+                  source, gemini_ok, model, error, latency_ms, top_confidence, resolved_at,
                   thumbnail_jpeg IS NOT NULL AS has_photo
            FROM drop_events
            WHERE bin_id = $1
@@ -318,6 +376,7 @@ async def history(
             "time": r["time"].isoformat(),
             "status": r["status"],
             "items": r["guess"],
+            "source": r["source"],
             # What the user settled on, null while still pending. Worth having
             # beside `items`: together they show where the camera was wrong.
             "final_items": r["final_items"],

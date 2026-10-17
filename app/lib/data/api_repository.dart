@@ -220,6 +220,14 @@ class ApiRepository implements CalmpostRepository {
   @override
   Future<void> dismissDrop(int dropId) => _post('/drops/$dropId/dismiss', const <String, dynamic>{});
 
+  @override
+  Future<CameraDrop> submitPhoto(Uint8List jpeg) async {
+    final j = await _post('/bins/${config.binId}/drops/photo', {
+      'image_jpeg_b64': base64Encode(jpeg),
+    }) as Map<String, dynamic>;
+    return dropFromJson(j);
+  }
+
   // --- Trunc -------------------------------------------------------------------------
 
   @override
@@ -346,6 +354,7 @@ CameraDrop dropFromJson(Map<String, dynamic> j) {
     sessionId: (j['session_id'] as String?) ?? '',
     time: DateTime.parse(j['time'] as String).toLocal(),
     status: DropStatus.values.firstWhere((s) => s.name == j['status'], orElse: () => DropStatus.pending),
+    source: (j['source'] as String?) ?? 'camera',
     guesses: guesses,
     geminiOk: j['gemini_ok'] == true,
     latencyMs: (j['latency_ms'] as num?)?.toInt() ?? 0,

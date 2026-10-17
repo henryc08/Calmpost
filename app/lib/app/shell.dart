@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../data/mock_repository.dart';
 import '../domain/models.dart';
+import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
 import '../state/game.dart';
 import '../state/providers.dart';
@@ -44,6 +45,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final s = Scenario.values.where((s) => s.name == q['scenario']).firstOrNull;
     if (s != null) ref.read(scenarioProvider.notifier).state = s;
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
+    BinWorld.debugHour = double.tryParse(q['hour'] ?? '');
   }
 
   @override
@@ -120,7 +122,7 @@ class _NavBar extends StatelessWidget {
                   button: true,
                   selected: e.key == current,
                   label: e.value.$1,
-                excludeSemantics: true,
+                  excludeSemantics: true,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {

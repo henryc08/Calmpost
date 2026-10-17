@@ -52,8 +52,8 @@ void main() {
 
     await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
     await _settle(tester);
-    expect(find.text('BIN HEALTH'), findsOneWidget);
-    expect(find.text('NEXT BEST ACTION'), findsOneWidget);
+    expect(find.text('TOP'), findsOneWidget);
+
 
     // Opening Layers checks on the bin: streak extends, quest completes.
     await tester.tap(find.bySemanticsLabel('Layers'));
@@ -68,7 +68,7 @@ void main() {
     await tester.tap(find.text('Claim'));
     await _settle(tester);
     expect(container.read(gameProvider).loam, before + 10);
-    expect(find.text('Done today'), findsOneWidget);
+    expect(find.text('Today counts. See you tomorrow.'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 5));

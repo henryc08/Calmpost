@@ -19,24 +19,18 @@ class TodayQuests extends ConsumerWidget {
     final left = DateTime(now.year, now.month, now.day + 1).difference(now);
     final done = quests.where((q) => q.claimed).length;
 
-    return Panel(
-      padding: const EdgeInsets.fromLTRB(S.x5, S.x5, S.x5, S.x2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: Text('Today', style: T.title)),
-              Text('$done of ${quests.length} done', style: T.small),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text('Resets in ${left.inHours}h ${left.inMinutes % 60}m', style: T.small.copyWith(color: C.faint)),
-          const SizedBox(height: S.x2),
-          for (final (i, q) in quests.indexed) ...[if (i > 0) const Hairline(), _QuestRow(q)],
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('TODAY', style: T.caps)),
+            Text('$done of ${quests.length} · resets in ${left.inHours}h ${left.inMinutes % 60}m', style: T.small),
+          ],
+        ),
+        const SizedBox(height: S.x1),
+        for (final (i, q) in quests.indexed) ...[if (i > 0) const Hairline(), _QuestRow(q)],
+      ],
     );
   }
 }

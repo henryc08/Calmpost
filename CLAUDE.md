@@ -98,7 +98,8 @@ Rarity colours: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic
 
 - **Type** (`ui/type.dart`): **Fraunces** (soft serif, weights 400/500) for the hero number (84), screen greetings (32), card titles (23) and stats (24). **Manrope** (500–800) for everything else: heading 16, body 14.5, label 13, small 12, caps 11 with 1.2 letter-spacing. Numbers use tabular figures. Fraunces has no `₂`, so never put "CO₂" in a serif style.
 - **Spacing:** 4/8 grid, 20 px side gutter. **Radii:** 10 chips · 16 tiles · 22 panels · 28 hero · pills fully round.
-- **Surfaces:** white `Panel` with a 1 px `line` border. One dark `forest` hero per screen at most.
+- **Surfaces:** prefer **open layout over boxes**: sections sit straight on the paper, separated by space and full-width hairlines, with a caps label (`NEXT BEST ACTION`, `STREAK`, `TODAY`). No rounded "bubbly" cards on Home. `Panel` exists for sheets and dense screens only, and should be rare.
+- **Hero = a living illustration, Flora-style.** Each main screen gets at most one animated `CustomPainter` scene as its focal point; everything else stays quiet.
 - **Icons:** Phosphor **Regular** for UI, **Fill** for the active nav tab and small status marks. No emoji anywhere in the UI.
 - **Motion:** `flutter_animate` fade + 4% slide-up on entry, 50 ms stagger, curve `M.ease` (0.2, 0.8, 0.2, 1). Numbers count up. Presses scale to 0.98 with a selection haptic. Nothing bounces or wobbles.
 
@@ -120,13 +121,15 @@ Rarity colours: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic
 
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ designed | date + greeting · Loam balance · rewards inbox (badge = unopened items) · **forest health hero** (score, state pill, one-line status, 4 factor bars, live dot) · 3 layer tiles (top / bottom / air, value + 24 h sparkline) · **Next best action** (title, why, suggested items, +15 XP, "Log an item") · **streak calendar** (month grid, streak runs joined, Lid Lock days, "done today") · **Today** quests (claim for XP + Loam) · impact line |
+| **Home** | ✅ designed | **HUD** (level ring + title + XP bar · streak · Loam · rewards gift with dot) · **Bin World** (animated circular cross-section, see below) · score + state + one-line status · readings row (top / bottom / air, open columns) · **Next best action** (serif title, why, suggested items as a plain list, "Log something else") · **streak calendar** (this week, expands to the month; runs joined, Lid Lock days) · **Today** quests (claim for XP + Loam). Impact moved to Profile |
 | Layers | to design | per-zone live values, 24 h / 7 d charts with healthy band, what it means |
 | Log | to design | search + camera → verdict (great / careful / avoid), reason, pair-with items, XP. **Demo moment** |
 | Social | to design | weekly league table with promotion/demotion zones, friends, co-op friend quests |
 | Profile | to design | level + title, stats, achievements (with their crate rewards), collection, impact, settings |
 | Rewards inbox | to design | unopened crates and packets, open animation, history of celebrations |
 | Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counter, collection by rarity |
+
+**Bin World** (`features/home/bin_world.dart`): a Flora-style circle with a cross-section of the bin. The sky follows the time of day (sun / dusk / moon, stars and fireflies at night). A plant on the horizon grows with the batch, blooms at Thriving and droops when the bin is dry or struggling. The two soil bands are the real top and bottom layers: CO₂ bubbles rise faster when microbes are busy, rain falls when it's too wet, and the soil cracks when it's too dry. Around it, a watch-style bezel of 50 ticks with a forest arc is the health score, with a pulsing marker at the tip. Tap it to open Layers; long-press it for the demo scenario picker. Web preview: `?hour=13` forces the time of day.
 
 The **Duolingo-style journey path is gone**. Life-cycle stage shows as a line in the hero and on Layers.
 The **mascot is gone**. The bin speaks through plain copy ("The top layer is 76% wet…").
@@ -238,13 +241,13 @@ A Seed Packet reveals one **collectible**. Collectibles are **cosmetic only**: t
 
 ## Mock data & demo scenarios
 
-`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following the next action visibly raises the health score. Switch scenarios from the hidden demo picker: **long-press the health hero** on Home.
+`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following the next action visibly raises the health score. Switch scenarios from the hidden demo picker: **long-press the Bin World** on Home.
 
 Seed state for the demo: 6-day streak (best 21) that extends to 7 on the first care action, 1 Lid Lock, 240 Loam, 2 unopened crates (Sprout, Grove) + 1 Seed Packet, Level 9.
 
 Verdicts in the app are `great` / `careful` / `avoid`; `careful` covers the backend's `add_with_browns` and `add_with_greens` (the `pairWith` list says which). The rule engine lives in `domain/advice_rules.dart`.
 
-**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`. On a wide window the app renders in a phone-sized frame.
+**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`. On a wide window the app renders in a phone-sized frame.
 
 **Demo script:** Home in `tooDry` → next action says "Add fresh scraps" → log banana peel → "great". Switch to `tooWet` → same peel → "careful, add browns first". Open Layers → today's calendar day fills in, quest claimable → claim → Loam ticks up → open a crate in the Rewards inbox → pull a Seed Packet.
 

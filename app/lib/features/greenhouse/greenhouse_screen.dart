@@ -132,7 +132,8 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: S.x4,
             crossAxisSpacing: S.x2,
-            childAspectRatio: 0.72,
+            // Tall enough for a two-line name at 1.3x text on a 360dp screen.
+            childAspectRatio: 0.68,
             children: [
               for (final c in items)
                 _CollectionTile(

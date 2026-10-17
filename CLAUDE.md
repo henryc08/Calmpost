@@ -310,13 +310,13 @@ Everything visual comes from `lib/ui/`. **Never use raw Material widgets with de
 
 | Token | Hex | Use |
 |---|---|---|
-| `paper` | `#4BBC77` | bright leaf-green app background |
-| `surface` / `sunk` / `line` | `#5BC584` / `#3EA867` / `#389F60` | sheets, nav bar / tracks / hairlines |
-| `ink` / `ink2` / `muted` / `faint` | `#0D2416` / `#15402A` / `#1E5838` / `#2F7C51` | text hierarchy (deep greens, all readable on the green paper) |
+| `paper` | `#58CC02` | bright lime-green app background |
+| `surface` / `sunk` / `line` | `#66D414` / `#4CB402` / `#46A802` | sheets, nav bar / tracks / hairlines |
+| `ink` / `ink2` / `muted` / `faint` | `#10240A` / `#1B3D0D` / `#285711` / `#3B820E` | text hierarchy (deep greens, all readable on the green paper) |
 | `forest` / `forest2` / `onForest` | `#1F3A2E` / `#2B4D3E` / `#EDEFE6` | primary actions, dark surfaces |
 | `sprout` | `#B9DD7B` | positive accent on forest |
 | `pink` / `pinkSoft` / `pinkDeep` | `#FF66C4` / `#F3A6D6` / `#B8327F` | **the reward accent**: streak days and flame, XP pills, rewards badge, health-ring marker, the plant's bloom. Use as a fill with dark text on it, never as text on green |
-| `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#0E5A32` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · too dry · moisture / too wet · warnings |
+| `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#1A4F0A` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · too dry · moisture / too wet · warnings |
 | `loam` | `#6B3F22` | currency |
 
 Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623F` · Legendary `#D9A426`. **No purple, gradients, glass or drop shadows.**

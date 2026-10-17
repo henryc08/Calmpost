@@ -6,16 +6,16 @@ import '../domain/models.dart' show Rarity;
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFF4BBC77);
-  static const surface = Color(0xFF5BC584);
-  static const sunk = Color(0xFF3EA867);
-  static const line = Color(0xFF389F60);
+  static const paper = Color(0xFF58CC02);
+  static const surface = Color(0xFF66D414);
+  static const sunk = Color(0xFF4CB402);
+  static const line = Color(0xFF46A802);
 
   // Text
-  static const ink = Color(0xFF0D2416);
-  static const ink2 = Color(0xFF15402A);
-  static const muted = Color(0xFF1E5838);
-  static const faint = Color(0xFF2F7C51);
+  static const ink = Color(0xFF10240A);
+  static const ink2 = Color(0xFF1B3D0D);
+  static const muted = Color(0xFF285711);
+  static const faint = Color(0xFF3B820E);
 
   // Forest: the hero surface and primary actions
   static const forest = Color(0xFF1F3A2E);
@@ -25,8 +25,8 @@ abstract final class C {
 
   // Accents
   static const sprout = Color(0xFFB9DD7B); // positive on dark
-  static const leaf = Color(0xFF0E5A32); // positive on the green paper
-  static const leafSoft = Color(0xFF8FD9A8);
+  static const leaf = Color(0xFF1A4F0A); // positive on the green paper
+  static const leafSoft = Color(0xFFA6E86A);
   static const amber = Color(0xFFE39B3A); // streak
   static const amberSoft = Color(0xFFF6E6CC);
   static const water = Color(0xFF4F8FC9); // moisture / too wet

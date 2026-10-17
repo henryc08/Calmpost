@@ -9,6 +9,7 @@ import '../../data/collectibles.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
@@ -74,6 +75,12 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
       children: [
+        if (ref.watch(socialSessionProvider).valueOrNull case final account?) ...[
+          PillButton(label: 'My shared progress', onTap: () => Routes.socialProfile(context, account.userId)),
+          const SizedBox(height: S.x3),
+          Text('Care progress and private leaderboards live in Social. The rewards below are your local demo garden.', style: T.small),
+          const SectionBreak(),
+        ],
         _Rewards(g: g),
         const SectionBreak(),
         _Impact(g: g),

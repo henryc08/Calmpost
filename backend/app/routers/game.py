@@ -133,8 +133,9 @@ async def check_in(user_id: str) -> dict:
     Separate from /live so merely polling the API does not tick the streak.
     """
     today = date.today().isoformat()
-    async with db.pool().acquire() as conn:
+    async with db.pool().acquire() as conn, conn.transaction():
         await ledger.ensure_user(conn, user_id)
+        await conn.fetchval("SELECT user_id FROM user_state WHERE user_id=$1 FOR UPDATE", user_id)
         xp = await ledger.award(conn, user_id, "check_in", dedupe_key=f"checkin:{today}")
     current, _ = await ledger.streaks(user_id)
     return {"user_id": user_id, "xp_awarded": xp, "day": today, "streak_days": current}

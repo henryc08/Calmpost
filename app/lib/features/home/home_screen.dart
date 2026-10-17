@@ -26,6 +26,7 @@ import 'what_to_add.dart';
 import 'readings_row.dart';
 import 'streak_calendar.dart';
 import 'today_quests.dart';
+import '../../ui/info_dot.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -319,10 +320,18 @@ class _ScoreBlock extends StatelessWidget {
         const SizedBox(height: S.x3),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: S.x4),
-          child: Text(
-            _status(s),
-            textAlign: TextAlign.center,
-            style: T.body.copyWith(color: C.onBrand),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  _status(s),
+                  textAlign: TextAlign.center,
+                  style: T.body.copyWith(color: C.onBrand),
+                ),
+              ),
+              const InfoDot(InfoTip.score, onBrand: true),
+            ],
           ),
         ),
       ],

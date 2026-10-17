@@ -10,6 +10,7 @@ import '../../state/game.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
+import '../../ui/info_dot.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 
@@ -96,11 +97,18 @@ class _DemoLeagueScreenState extends ConsumerState<DemoLeagueScreen> {
         ],
       ),
       children: [
-        PaperSegments<_View>(
-          values: _View.values,
-          selected: _view,
-          label: (v) => v == _View.league ? 'This week' : 'Friends',
-          onChanged: (v) => setState(() => _view = v),
+        Row(
+          children: [
+            Expanded(
+              child: PaperSegments<_View>(
+                values: _View.values,
+                selected: _view,
+                label: (v) => v == _View.league ? 'This week' : 'Friends',
+                onChanged: (v) => setState(() => _view = v),
+              ),
+            ),
+            const InfoDot(InfoTip.league),
+          ],
         ),
         const SizedBox(height: S.x4),
         if (_view == _View.league) ..._league(st) else ..._friends(st),

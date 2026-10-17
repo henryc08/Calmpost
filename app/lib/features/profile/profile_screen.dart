@@ -14,6 +14,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 String crateName(CrateTier t) => switch (t) {
   CrateTier.sprout => 'Sprout crate',
@@ -201,7 +202,7 @@ class _Impact extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('YOUR IMPACT'),
+        const SectionLabel('YOUR IMPACT', info: InfoTip.impact),
         const SizedBox(height: S.x3),
         IntrinsicHeight(
           child: Row(

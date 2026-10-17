@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'info_dot.dart';
 import 'tokens.dart';
 import 'type.dart';
 
@@ -113,15 +114,22 @@ class BrandPage extends StatelessWidget {
 
 /// Caps section label with an optional trailing widget, used on the paper.
 class SectionLabel extends StatelessWidget {
-  const SectionLabel(this.text, {super.key, this.trailing});
+  const SectionLabel(this.text, {super.key, this.trailing, this.info});
   final String text;
   final Widget? trailing;
+
+  /// Optional "what does this mean?" dot after the label. Use sparingly.
+  final InfoTip? info;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(text, style: T.caps)),
+        Expanded(
+          child: info == null
+              ? Text(text, style: T.caps)
+              : Row(children: [Flexible(child: Text(text, style: T.caps)), InfoDot(info!)]),
+        ),
         ?trailing,
       ],
     );

@@ -7,7 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
-load_dotenv(HERE / ".env")
+# override: vision/.env beats stale keys left in the shell environment.
+load_dotenv(HERE / ".env", override=True)
 
 
 def _source(raw: str) -> int | str:

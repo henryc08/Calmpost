@@ -165,6 +165,6 @@ class Identifier:
             except Exception as e:  # auth, quota, network, bad JSON
                 error = f"{type(e).__name__}: {e}"[:300]
                 log.warning("gemini attempt %d failed: %s", attempt + 1, error)
-                if getattr(e, "code", None) in (400, 401, 403):
-                    break  # bad key or bad request: retrying won't help
+                if getattr(e, "code", None) in (400, 401, 403, 429):
+                    break  # bad key, bad request or quota: retrying now won't help
         return Result([], int((time.monotonic() - t0) * 1000), ok=False, error=error, model=self.model)

@@ -94,5 +94,11 @@ class Watcher:
             before = after  # motion began during the grace period; best we have
         self.on_frame(after, "identifying…", 0.0)
         result = asyncio.run(self.identifier.identify(fr.jpeg(before), fr.jpeg(after), hints))
+        # One item: box it from the pixel difference (exact) instead of Gemini's (drifts).
+        # Several items: one changed region can't be split between them, so keep Gemini's.
+        if len(result.items) == 1:
+            local = fr.change_box(before, after, self.trigger.roi)
+            if local:
+                result.items[0].box_2d = local
         motion_s = (self.clock() - t0) - (started_at or 0.0)
         return Outcome("drop", result, before, after, motion_s)

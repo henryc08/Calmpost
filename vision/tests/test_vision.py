@@ -153,6 +153,36 @@ def test_watcher_reports_drop_with_before_and_after():
     assert out.after[int(480 * 0.55) - 5:int(480 * 0.55) + 5, 340:360].mean(axis=(0, 1))[2] > 180  # yellow peel
 
 
+def iou(a, b):
+    y0, x0, y1, x1 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, y1 - y0) * max(0, x1 - x0)
+    area = lambda r: (r[2] - r[0]) * (r[3] - r[1])
+    return inter / (area(a) + area(b) - inter)
+
+
+# The synthetic peel: ellipse at (350, 264) px, axes 70 x 22, rotated 20 degrees.
+PEEL_BOX = [int(1000 * 236 / 480), int(1000 * 282 / 640), int(1000 * 292 / 480), int(1000 * 418 / 640)]
+
+
+def test_change_box_finds_the_peel():
+    bg = background()
+    box = fr.change_box(frame_at(3.0, bg, 4.0, seed=1), frame_at(9.0, bg, 4.0, seed=2))
+    assert box is not None and iou(box, PEEL_BOX) > 0.7
+
+
+def test_change_box_none_for_no_change_or_lighting_shift():
+    bg = background()
+    assert fr.change_box(frame_at(1.0, bg, None, seed=1), frame_at(2.0, bg, None, seed=2)) is None
+    brighter = cv2.convertScaleAbs(bg, alpha=1.0, beta=60)
+    assert fr.change_box(bg, brighter) is None
+
+
+def test_watcher_uses_local_box_for_single_item():
+    cam = FakeCamera(drop_at=3.0)
+    out = Watcher(cam, MotionTrigger(), FakeIdentifier(), clock=cam.clock).watch(60)
+    assert iou(out.result.items[0].box_2d, PEEL_BOX) > 0.7
+
+
 def test_watcher_closes_quietly_without_motion():
     cam, ident = FakeCamera(drop_at=None), FakeIdentifier()
     out = Watcher(cam, MotionTrigger(), ident, clock=cam.clock).watch(5)

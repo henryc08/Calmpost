@@ -13,6 +13,8 @@ import '../features/log/log_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/social/social_screen.dart';
 import '../state/game.dart';
+import '../state/social.dart';
+import '../data/social_repository.dart';
 import '../state/providers.dart';
 import '../ui/backdrop.dart';
 import '../ui/tokens.dart';
@@ -77,7 +79,15 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     // Opening Layers counts as checking on the bin.
     ref.listen(tabProvider, (prev, next) {
-      if (next == AppTab.layers) ref.read(gameProvider.notifier).checkIn();
+      if (next == AppTab.layers) {
+        ref.read(gameProvider.notifier).checkIn();
+        if (ref.read(socialSessionProvider).valueOrNull?.binId != null && ref.read(dataSourceProvider) == DataSource.live) {
+          socialWrite(ref, 'POST', '/check-in').catchError((Object error) {
+            if (mounted) showToast(ref, error is SocialFailure ? error.message : 'Care check-in could not be saved. Try again in Social.');
+            return null;
+          });
+        }
+      }
     });
 
     ref.listen(binProvider, (prev, next) {

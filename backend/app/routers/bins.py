@@ -67,7 +67,7 @@ async def list_bins() -> list[dict]:
     rows = await db.fetch(
         """
         SELECT bin_id, display_name, owner_id, calibrated, created_at, last_seen_at
-        FROM bins ORDER BY created_at
+        FROM bins WHERE owner_id NOT IN (SELECT user_id FROM social_profiles) ORDER BY created_at
         """
     )
     return [dict(r) for r in rows]

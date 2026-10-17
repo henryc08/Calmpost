@@ -21,7 +21,9 @@ from motion import MotionTrigger
 
 log = logging.getLogger(__name__)
 
-AFTER_FRAMES = 6         # frames sampled after motion stops; the sharpest wins
+AFTER_FRAMES = 3         # frames sampled after motion stops; the sharpest wins.
+                         # Each costs a camera read (~33 ms) and the scene is
+                         # already still, so extra frames buy little sharpness.
 MAX_DROP_S = 15.0        # someone leaning over the bin: give up waiting for stillness
 BEFORE_MARGIN_S = 0.3    # BEFORE comes from this long before motion was first seen
 

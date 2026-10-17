@@ -5,6 +5,7 @@ import 'package:calmpost/domain/models.dart';
 import 'package:calmpost/main.dart';
 import 'package:calmpost/state/game.dart';
 import 'package:calmpost/state/providers.dart';
+import 'package:calmpost/ui/components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -128,6 +129,40 @@ void main() {
       }
       container.read(tabProvider.notifier).state = AppTab.home;
     }
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('greenhouse: open from the Loam coin, pull, no overflows on small screens', (tester) async {
+    tester.view.physicalSize = const Size(360 * 3, 740 * 3);
+    tester.view.devicePixelRatio = 3;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final container = _container();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
+    await _settle(tester);
+    await tester.tap(find.byType(LoamCoin).first);
+    await _settle(tester, 1000);
+    expect(find.text('Greenhouse'), findsOneWidget);
+    final scrollable = find.byType(Scrollable).hitTestable().first;
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(scrollable, const Offset(0, -500), warnIfMissed: false);
+      await _settle(tester, 300);
+    }
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(scrollable, const Offset(0, 500), warnIfMissed: false);
+    }
+    await _settle(tester, 300);
+    final packets = container.read(gameProvider).packets;
+    await tester.tap(find.text('Open your Seed Packet'));
+    await _settle(tester, 2500);
+    expect(container.read(gameProvider).packets, packets - 1);
+    await tester.tap(find.text('Collect'));
+    await _settle(tester, 800);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 5));

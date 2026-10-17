@@ -18,6 +18,8 @@ import '../ui/backdrop.dart';
 import '../ui/tokens.dart';
 import '../ui/type.dart';
 import 'notifications.dart';
+import 'routes.dart';
+import '../features/greenhouse/pull_reveal.dart';
 import 'toast.dart';
 
 /// Five tabs: Home · Layers · Log · Social · Profile.
@@ -52,6 +54,18 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
     final item = ref.read(repositoryProvider).food(q['item'] ?? '');
     if (item != null) ref.read(logIntentProvider.notifier).state = item;
+    final loam = int.tryParse(q['loam'] ?? '');
+    if (loam != null) ref.read(gameProvider.notifier).debugGrantLoam(loam);
+    if (q['greenhouse'] == '1') {
+      Routes.greenhouse(context);
+      final pulls = int.tryParse(q['pull'] ?? '');
+      if (pulls != null) {
+        Future.delayed(const Duration(milliseconds: 700), () {
+          final out = ref.read(gameProvider.notifier).pull(pulls, fromPackets: false);
+          if (out != null && mounted) showPullReveal(context, out);
+        });
+      }
+    }
     BinWorld.debugHour = double.tryParse(q['hour'] ?? '');
   }
 

@@ -13,7 +13,16 @@ import '../../ui/tokens.dart';
 /// - The bezel ring around it is the health score, like a game gauge.
 /// - The sky follows the time of day (stars and fireflies at night).
 class BinWorld extends StatefulWidget {
-  const BinWorld({super.key, required this.score, required this.mood, required this.growth, required this.co2, this.size = 300, this.onBrand = false});
+  const BinWorld({
+    super.key,
+    required this.score,
+    required this.mood,
+    required this.growth,
+    required this.co2,
+    this.size = 300,
+    this.onBrand = false,
+    this.ringColor = const Color(0xFFFFFFFF),
+  });
 
   final int score;
   final BinMood mood;
@@ -25,6 +34,9 @@ class BinWorld extends StatefulWidget {
 
   /// Draw the bezel in white for the green brand band.
   final bool onBrand;
+
+  /// Equipped bin finish: colour of the health arc and lit ticks on the band.
+  final Color ringColor;
 
   /// Web preview override (`?hour=14`) to review day/dusk/night skies.
   static double? debugHour;
@@ -63,6 +75,7 @@ class _BinWorldState extends State<BinWorld> with TickerProviderStateMixin {
               growth: widget.growth,
               co2: widget.co2,
               onBrand: widget.onBrand,
+              ring: widget.ringColor,
               hour: BinWorld.debugHour ?? DateTime.now().hour + DateTime.now().minute / 60,
             ),
           ),
@@ -82,6 +95,7 @@ class _WorldPainter extends CustomPainter {
     required this.co2,
     required this.hour,
     this.onBrand = false,
+    this.ring = const Color(0xFFFFFFFF),
   });
 
   final double t; // seconds
@@ -92,6 +106,7 @@ class _WorldPainter extends CustomPainter {
   final double co2;
   final double hour;
   final bool onBrand;
+  final Color ring;
 
   bool get night => hour < 6.5 || hour >= 19.5;
   bool get dusk => !night && (hour >= 17.5 || hour < 8);
@@ -135,7 +150,7 @@ class _WorldPainter extends CustomPainter {
       final major = i % 10 == 0;
       final d = Offset(math.cos(a), math.sin(a));
       final lit = i <= score * intro;
-      final litColor = onBrand ? C.onBrand : C.forest;
+      final litColor = onBrand ? ring : C.forest;
       tick.color = lit ? litColor.withValues(alpha: major ? 0.95 : 0.55) : (onBrand ? C.onBrand.withValues(alpha: 0.28) : C.line);
       tick.strokeWidth = major ? 1.8 : 1.2;
       canvas.drawLine(c + d * (ringR - (major ? 7 : 4)), c + d * (ringR + (major ? 2 : 0)), tick);
@@ -158,7 +173,7 @@ class _WorldPainter extends CustomPainter {
       sweep,
       false,
       Paint()
-        ..color = (onBrand ? C.onBrand : C.forest)
+        ..color = (onBrand ? ring : C.forest)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round,
@@ -168,7 +183,7 @@ class _WorldPainter extends CustomPainter {
     final m = c + Offset(math.cos(end), math.sin(end)) * (ringR + 9);
     final pulse = (t % 2) / 2;
     canvas.drawCircle(m, 6 + pulse * 8, Paint()..color = C.pink.withValues(alpha: 0.55 * (1 - pulse) * intro));
-    canvas.drawCircle(m, 6, Paint()..color = onBrand ? C.onBrand : C.forest);
+    canvas.drawCircle(m, 6, Paint()..color = onBrand ? ring : C.forest);
     canvas.drawCircle(m, 3, Paint()..color = C.pink);
   }
 

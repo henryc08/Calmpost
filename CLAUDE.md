@@ -41,7 +41,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
-| 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile + rules · ⏳ Rewards inbox, Greenhouse |
+| 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
 
 ### 2.1 Live sensing & Bin Health Score
@@ -270,7 +270,8 @@ calmpost/
       features/log/         # ✅ log_screen (search, recommended, lists), verdict_sheet
       features/social/      # ✅ social_screen (league table, ladder, friends, friend quest)
       features/profile/     # ✅ profile_screen (stats, rewards waiting, impact, achievements, collection, settings)
-      features/<…>/         # drop/ rewards/ greenhouse/ (to build)
+      features/greenhouse/  # ✅ greenhouse_screen, pull_reveal, collectible_art (badges, Seed Packet art)
+      features/<…>/         # drop/ rewards/ (to build)
     assets/                 # fonts/, sfx/
     test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow, real fonts)
   backend/                  # FastAPI + SQL migrations
@@ -300,7 +301,7 @@ Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBan
 | **Profile** | ✅ | Band: avatar, level + title, XP bar, streak / total XP / harvests / Loam. Then rewards waiting (crates + packets, Open), impact, achievements (tier dots, progress, next crate), collection by rarity, settings |
 | Drop-in | 📝 | "Watching the bin…" sheet with preview + countdown → "Something was added" pop-up → verdict |
 | Rewards inbox | to design | unopened crates and packets, quiet open reveal, celebration history |
-| Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counters, collection by rarity |
+| **Greenhouse** | ✅ | Opened from the **Loam coin** on Home, the **Seed Packet** in Rewards ready, the gift button (when only packets are waiting), and Profile → Collection. Band: Loam balance, floating Seed Packet, **Open your Seed Packets** (pink), **1 pull · 100** / **10 pulls · 900**, pity counters. Then **What Loam is for** (Seed Packets, Lid Lock with a Buy button, how you earn it), **Collection** (40 items; All / Plants / Finishes / Titles; unowned slots are `???` with a rarity-coloured ring; tap an owned finish or title to **Equip**), **Odds per pull** table. Pulls play the **pull reveal**: the packet shakes (longer and harder for Epic+), bursts in the best item's rarity colour, then one big card or a 5×2 grid with NEW tags and duplicate refunds |
 
 **Bin World** (`features/home/bin_world.dart`): a Flora-style circle showing a cross-section of the bin.
 - The sky follows the time of day: sun, dusk, or moon with stars and fireflies.
@@ -393,7 +394,12 @@ Today's XP (from any source) fills a track with three rewards, each claimed once
 | Collector | 10 / 30 / all collectibles | Sprout / Grove / Canopy |
 
 ### Seed Packets (gacha, in the Greenhouse)
-Cosmetic only: **specimens** (plants), **bin finishes** (colour of the Bin World bezel), **profile frames and titles**.
+Cosmetic only. The catalog is `data/collectibles.dart` (40 items), and the rules are in `domain/gacha.dart` (pure, unit-tested):
+- **24 specimens** (plants: Fern … Ghost Orchid, Golden Sprout) for the collection.
+- **10 bin finishes**: equipping one recolours the health ring and marker on the Home band (Classic white, Mint, Sky, Blossom, Copper, Aurora, Gold…).
+- **6 titles**: equipping one replaces the level title in the HUD and on Profile (Early Riser, Night Composter, Worm Whisperer, Keeper of Balance, Mycelium Mind, Loam Sage).
+
+**What Loam is for:** Seed Packets (100, or 900 for ten) and Lid Locks (60). Both are bought in the Greenhouse.
 
 | Rarity | Odds | Duplicate refund |
 |---|---|---|
@@ -412,7 +418,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 - **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
 - **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
 - **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
-- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict) (planned: `?drop=1` fakes a camera detection).
+- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull) (planned: `?drop=1` fakes a camera detection).
 
 **Demo script**
 1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
@@ -449,7 +455,7 @@ cd vision && python main.py
 1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
 2. **Drop-in UI on mocks** (sheet, pop-up, edit form).
 3. **Backend + Tiger Data** (ingest, readings, logs, drops, advice) and **vision service** (webcam + motion + Gemini).
-4. Rewards inbox + crates, Greenhouse (Seed Packets).
+4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · Rewards inbox history.
 5. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
 
 ### Working together

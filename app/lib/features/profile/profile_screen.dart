@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/reward_reveal.dart';
-import '../../app/toast.dart';
+import '../../app/routes.dart';
+import '../../data/collectibles.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
@@ -43,7 +44,7 @@ class ProfileScreen extends ConsumerWidget {
 
     return BrandPage(
       title: 'You',
-      subtitle: 'Level $level · ${titleForLevel(level)}',
+      subtitle: 'Level $level · ${g.displayTitle}',
       trailing: const Avatar('You', size: 56, onBrand: true),
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,11 +85,11 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: S.x3),
         Row(
           children: [
-            Text('9', style: T.stat.copyWith(fontSize: 30)),
-            Text(' / 60 collectibles', style: T.label.copyWith(color: C.ink2)),
+            Text('${g.collected}', style: T.stat.copyWith(fontSize: 30)),
+            Text(' / ${collectibles.length} collectibles', style: T.label.copyWith(color: C.ink2)),
             const Spacer(),
             Pressable(
-              onTap: () => showToast(ref, 'The Greenhouse is next'),
+              onTap: () => Routes.greenhouse(context),
               child: Row(
                 children: [
                   Text('Greenhouse', style: T.button.copyWith(color: C.forest)),
@@ -100,7 +101,7 @@ class ProfileScreen extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: S.x3),
-        const _RarityStrip(),
+        _RarityStrip(owned: g.owned),
         const SectionBreak(),
         const SectionLabel('SETTINGS'),
         const SizedBox(height: S.x2),
@@ -135,7 +136,7 @@ class _Rewards extends ConsumerWidget {
               label: 'Open',
               dense: true,
               onTap: g.crates.isEmpty
-                  ? () => showToast(ref, 'Open Seed Packets in the Greenhouse (next)')
+                  ? () => Routes.greenhouse(context)
                   : () async {
                       final o = ref.read(gameProvider.notifier).openCrate(0);
                       if (o != null) await revealCrate(context, o.tier, o.loam, o.packets);
@@ -286,9 +287,13 @@ class _AchievementRow extends StatelessWidget {
 
 /// Collected count per rarity as a small strip of dots.
 class _RarityStrip extends StatelessWidget {
-  const _RarityStrip();
+  const _RarityStrip({required this.owned});
+  final Map<String, int> owned;
 
-  static const _counts = {Rarity.common: (5, 24), Rarity.uncommon: (2, 16), Rarity.rare: (1, 10), Rarity.epic: (1, 6), Rarity.legendary: (0, 4)};
+  Map<Rarity, (int, int)> get _counts => {
+    for (final r in Rarity.values)
+      r: (collectibles.where((c) => c.rarity == r && (owned[c.id] ?? 0) > 0).length, collectibles.where((c) => c.rarity == r).length),
+  };
 
   @override
   Widget build(BuildContext context) {

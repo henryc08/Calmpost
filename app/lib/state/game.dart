@@ -1,7 +1,12 @@
+import 'dart:math' as math;
+import 'dart:ui' show Color;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../data/collectibles.dart';
 import '../data/food_catalog.dart';
+import '../domain/gacha.dart';
 import '../domain/models.dart';
 import '../domain/xp_rules.dart';
 import 'celebrations.dart';
@@ -24,6 +29,10 @@ class GameState {
     required this.crates,
     required this.packets,
     required this.xpToday,
+    required this.owned,
+    required this.pity,
+    required this.equippedFinish,
+    this.equippedTitle,
     required this.dailyClaimed,
     required this.harvests,
     required this.kgDiverted,
@@ -56,6 +65,16 @@ class GameState {
 
   /// XP earned today (drives the daily goal track) and which of its rewards are claimed.
   final int xpToday;
+
+  /// Greenhouse: collectible id → copies owned, pity counters, what's equipped.
+  final Map<String, int> owned;
+  final PityState pity;
+  final String equippedFinish;
+  final String? equippedTitle;
+
+  int get collected => owned.values.where((n) => n > 0).length;
+  Color get ringColor => collectibleById[equippedFinish]?.color ?? const Color(0xFFFFFFFF);
+  String get displayTitle => equippedTitle == null ? titleForLevel(level) : (collectibleById[equippedTitle]?.name ?? titleForLevel(level));
   final Set<int> dailyClaimed;
   final int harvests;
   final double kgDiverted;
@@ -82,6 +101,10 @@ class GameState {
     List<CrateTier>? crates,
     int? packets,
     int? xpToday,
+    Map<String, int>? owned,
+    PityState? pity,
+    String? equippedFinish,
+    String? equippedTitle,
     Set<int>? dailyClaimed,
     int? harvests,
     double? kgDiverted,
@@ -102,6 +125,10 @@ class GameState {
     crates: crates ?? this.crates,
     packets: packets ?? this.packets,
     xpToday: xpToday ?? this.xpToday,
+    owned: owned ?? this.owned,
+    pity: pity ?? this.pity,
+    equippedFinish: equippedFinish ?? this.equippedFinish,
+    equippedTitle: equippedTitle ?? this.equippedTitle,
     dailyClaimed: dailyClaimed ?? this.dailyClaimed,
     harvests: harvests ?? this.harvests,
     kgDiverted: kgDiverted ?? this.kgDiverted,
@@ -252,6 +279,9 @@ GameState _initial() {
     crates: const [CrateTier.sprout, CrateTier.grove],
     packets: 1,
     xpToday: 0,
+    owned: const {'fern': 2, 'clover': 1, 'sprout': 3, 'acorn': 1, 'basil': 1, 'tulip': 1, 'cactus': 1, 'oak': 1, 'finish_classic': 1, 'finish_mint': 1},
+    pity: const PityState(sinceEpic: 7, sinceLegendary: 19),
+    equippedFinish: 'finish_classic',
     dailyClaimed: const {},
     harvests: 2,
     kgDiverted: 14.6,
@@ -426,6 +456,45 @@ class GameController extends Notifier<GameState> {
     state = state.copyWith(crates: crates, loam: state.loam + loam, packets: state.packets + packets);
     return CrateOpening(tier, loam, packets);
   }
+
+  final _rng = math.Random();
+
+  /// Opens [count] Seed Packets, either from the inbox ([fromPackets]) or by
+  /// spending Loam (100 each, 900 for ten). Duplicates refund Loam.
+  List<PullOutcome>? pull(int count, {required bool fromPackets}) {
+    final cost = fromPackets ? 0 : (count >= 10 ? tenPackPrice : packetPrice * count);
+    if (fromPackets ? state.packets < count : state.loam < cost) return null;
+    final (rarities, pity) = rollPulls(_rng, state.pity, count);
+    final owned = {...state.owned};
+    var refunds = 0;
+    final out = <PullOutcome>[];
+    for (final r in rarities) {
+      final item = pickOfRarity(_rng, collectibles, r);
+      final isNew = (owned[item.id] ?? 0) == 0;
+      owned[item.id] = (owned[item.id] ?? 0) + 1;
+      final refund = isNew ? 0 : duplicateRefund[r]!;
+      refunds += refund;
+      out.add(PullOutcome(item, isNew: isNew, refund: refund));
+    }
+    state = state.copyWith(owned: owned, pity: pity, packets: fromPackets ? state.packets - count : state.packets, loam: state.loam - cost + refunds);
+    return out;
+  }
+
+  /// Equips a finish (Bin World ring colour) or a title (shown under your name).
+  void equip(Collectible c) {
+    if ((state.owned[c.id] ?? 0) == 0) return;
+    switch (c.type) {
+      case CollectibleType.finish:
+        state = state.copyWith(equippedFinish: c.id);
+      case CollectibleType.title:
+        state = state.copyWith(equippedTitle: c.id);
+      case CollectibleType.specimen:
+        break;
+    }
+  }
+
+  /// Demo / preview only: top up Loam.
+  void debugGrantLoam(int n) => state = state.copyWith(loam: state.loam + n);
 
   void resetDemo() => state = _initial();
 }

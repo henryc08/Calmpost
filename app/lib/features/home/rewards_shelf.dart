@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/reward_reveal.dart';
-import '../../app/toast.dart';
+import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../state/game.dart';
 import '../../ui/brand.dart';
@@ -55,7 +55,7 @@ class RewardsShelf extends ConsumerWidget {
                   sub: packets == 1 ? 'Seed Packet' : 'Seed Packets',
                   big: false,
                   delay: crates.length * 400,
-                  onTap: () => showToast(ref, 'Open Seed Packets in the Greenhouse (next)'),
+                  onTap: () => Routes.greenhouse(context),
                 ),
             ],
           ),

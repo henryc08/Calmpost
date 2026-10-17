@@ -10,11 +10,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Category = Literal["green", "brown", "avoid", "unknown"]
-Verdict = Literal["add", "add_with_browns", "avoid"]
-Balance = Literal["needs_greens", "needs_browns", "balanced", "unknown"]
-Stage = Literal["started", "active", "hot", "curing", "ready", "harvested"]
+Verdict = Literal["great", "careful", "avoid"]
+Balance = Literal["needs_greens", "needs_browns", "balanced"]
+Stage = Literal["started", "active", "hot", "cooling", "curing", "ready", "harvested"]
 MoistureState = Literal["dry", "ok", "wet", "unknown"]
-Metric = Literal["moisture_pct", "probe_temp_c", "co2_ppm", "air_temp_c", "air_humidity_pct"]
+Metric = Literal["moisture", "temperature", "co2", "air_temp", "air_humidity"]
 
 
 # --- ingest (ESP32 -> backend) ---------------------------------------------
@@ -69,35 +69,48 @@ class LayerLive(BaseModel):
 
 
 class HealthComponents(BaseModel):
-    """Inputs for domain/health_score.dart, which owns the formula:
-    0.45*moisture + 0.20*temperature + 0.15*co2_trend + 0.20*balance.
-    Any field may be null when its sensor has not reported.
+    """Inputs for HealthBreakdown in domain/health_score.dart, which owns the
+    formula: 0.45*moisture + 0.20*temperature + 0.15*co2 + 0.20*balance.
+
+    Computed the app's way -- temperature is a rise above ambient, not an
+    absolute reading. Any field is null when its sensor has not reported, and
+    the app should leave that term out rather than score it 0.
     """
 
     moisture: float | None = None
     temperature: float | None = None
-    co2_trend: float | None = None
+    co2: float | None = None
     balance: float | None = None
     weights: dict[str, float] = {
         "moisture": 0.45,
         "temperature": 0.20,
-        "co2_trend": 0.15,
+        "co2": 0.15,
         "balance": 0.20,
     }
 
 
 class AirLive(BaseModel):
     co2_ppm: float | None = None
-    # False when the sensor flags itself unhealthy (co2_status != 0).
+    # False when there is no value, or the sensor flagged an error.
     co2_ok: bool = True
     co2_status: int | None = None
-    co2_slope_per_hour: float | None = None
-    air_temp_c: float | None = None
+    # PERCENT PER DAY over 48h, matching the app's co2SlopePerDay.
+    co2_slope_per_day: float | None = None
+    # The app's ambientTemp: the reference the layer temperatures are scored
+    # against, since compost heat is a rise above the surrounding air.
+    ambient_temp_c: float | None = None
     air_humidity_pct: float | None = None
 
 
 class LiveResponse(BaseModel):
+    """Fills BinSnapshot in app/lib/domain/models.dart.
+
+    greens_7d / browns_7d are rough CUPS of volume, not item counts, because
+    that is what the app's balance ratio compares.
+    """
+
     bin_id: str
+    time: datetime
     last_seen_at: datetime | None
     # True when the bin has not reported for a while; the app shows "offline".
     stale: bool
@@ -105,11 +118,12 @@ class LiveResponse(BaseModel):
     air: AirLive
     health_components: HealthComponents
     balance: Balance
-    greens_7d: int
-    browns_7d: int
+    greens_7d: float
+    browns_7d: float
     healthy_band: list[float]
     moisture_calibrated: bool
-    hours_in_healthy_band_24h: float | None = None
+    # The app's healthyHoursToday: hours since midnight inside the band.
+    healthy_hours_today: float | None = None
     notes: list[str] = []
 
 
@@ -159,7 +173,8 @@ class LogEntry(BaseModel):
     was_advised: bool
     notes: str | None = None
     xp_awarded: int = 0
-    seeds_awarded: int = 0
+    # The app calls the soft currency loam.
+    loam_awarded: int = 0
 
 
 # --- advice ----------------------------------------------------------------
@@ -182,7 +197,11 @@ class AdviceResponse(BaseModel):
     cached: bool
     model: str
     verdict: Verdict
+    # 2-4 words, for the verdict sheet's title.
+    headline: str = ""
     reason: str
+    # Items to add alongside this one (the app's Advice.pairWith).
+    pair_with: list[str] = []
     suggest_add: list[str] = []
     suggest_avoid: list[str] = []
     balance: Balance
@@ -201,11 +220,12 @@ class QuestProgress(BaseModel):
     key: str
     title: str
     detail: str
-    target: int
+    # The app's Quest uses goal/progress.
+    goal: int
     progress: int
-    complete: bool
+    done: bool
     xp: int
-    seeds: int
+    loam: int
 
 
 class QuestsResponse(BaseModel):
@@ -235,7 +255,7 @@ class GameResponse(BaseModel):
     title: str
     xp_into_level: int
     xp_for_next_level: int
-    seeds: int
+    loam: int
     streak_days: int
     best_streak: int
     lid_locks: int
@@ -246,15 +266,22 @@ class GameResponse(BaseModel):
 
 class LeagueMember(BaseModel):
     user_id: str
+    # The app's LeagueMember.name.
     display_name: str
     xp: int
     rank: int
     is_you: bool = False
-    zone: Literal["promotion", "safe", "demotion"] = "safe"
+    is_friend: bool = False
+    streak: int = 0
+    # Stable per-member index for the app's avatar palette.
+    color_index: int = 0
+    zone: Literal["promote", "safe", "demote"] = "safe"
 
 
 class LeagueResponse(BaseModel):
     tier: str
+    # Position in leagueTiers, so the app knows if promotion/demotion applies.
+    tier_index: int = 0
     week_start: date
     resets_at: datetime
     size: int

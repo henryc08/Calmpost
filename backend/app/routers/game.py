@@ -31,7 +31,7 @@ async def game(user_id: str) -> GameResponse:
     # Credit anything the user has earned but not yet been paid for.
     await _settle_daily_awards(user_id)
 
-    total_xp, seeds = await ledger.totals(user_id)
+    total_xp, loam = await ledger.totals(user_id)
     current_streak, best_streak = await ledger.streaks(user_id)
     at_risk = await ledger.streak_at_risk(user_id)
 
@@ -88,7 +88,7 @@ async def game(user_id: str) -> GameResponse:
         title=compost.title_for_level(level),
         xp_into_level=max(0, total_xp - floor_xp),
         xp_for_next_level=max(1, next_xp - floor_xp),
-        seeds=seeds,
+        loam=loam,
         streak_days=current_streak,
         best_streak=best_streak,
         lid_locks=lid_locks,
@@ -125,7 +125,8 @@ async def _settle_daily_awards(user_id: str) -> None:
                     meta={"layer": layer, "moisture_pct": v["moisture_pct"]},
                 )
 
-            # Weekly balance: last 7 days' greens:browns inside the target.
+            # Weekly balance: last 7 days' greens:browns inside the target
+            # band the app scores against.
             greens, browns = snap["greens_7d"], snap["browns_7d"]
             if greens and compost.balance_component(greens, browns) == 100.0:
                 week = date.today().isocalendar()
@@ -151,7 +152,7 @@ async def quests_today(user_id: str = Query(...)) -> QuestsResponse:
     async with db.pool().acquire() as conn:
         for q in picks:
             progress = await _quest_progress(user_id, q["key"])
-            complete = progress >= q["target"]
+            complete = progress >= q["goal"]
             if complete:
                 # Pay on completion, once per quest per day.
                 await ledger.award(
@@ -166,11 +167,11 @@ async def quests_today(user_id: str = Query(...)) -> QuestsResponse:
                     key=q["key"],
                     title=q["title"],
                     detail=q["detail"],
-                    target=q["target"],
-                    progress=min(progress, q["target"]),
-                    complete=complete,
+                    goal=q["goal"],
+                    progress=min(progress, q["goal"]),
+                    done=complete,
                     xp=compost.XP["daily_quest"],
-                    seeds=compost.SEEDS["daily_quest"],
+                    loam=compost.LOAM["daily_quest"],
                 )
             )
 
@@ -238,11 +239,12 @@ async def check_in(user_id: str) -> dict:
     """
     today = date.today().isoformat()
     async with db.pool().acquire() as conn:
+        # Worth 5 XP once a day (xp_rules.dart checkIn), and it counts as a
+        # care action so it keeps a streak alive.
         xp = await ledger.award(
-            conn, user_id, "check_in", xp=0, seeds=0,
-            dedupe_key=f"checkin:{today}",
+            conn, user_id, "check_in", dedupe_key=f"checkin:{today}"
         )
-    return {"user_id": user_id, "counted": xp == 0, "day": today}
+    return {"user_id": user_id, "xp_awarded": xp, "day": today}
 
 
 # --- leagues ---------------------------------------------------------------
@@ -280,7 +282,9 @@ async def current_league(user_id: str = Query(...)) -> LeagueResponse:
     members = await db.fetch(
         """
         SELECT m.user_id, m.display_name, m.is_bot,
-               coalesce(x.xp, 0)::int AS xp
+               coalesce(x.xp, 0)::int AS xp,
+               coalesce(m.streak, 0)  AS streak,
+               m.is_friend
         FROM league_members m
         LEFT JOIN xp_weekly x
                ON x.user_id = m.user_id
@@ -293,15 +297,18 @@ async def current_league(user_id: str = Query(...)) -> LeagueResponse:
     )
 
     size = len(members)
+    tier_index = (
+        compost.LEAGUE_TIERS.index(row["tier"])
+        if row["tier"] in compost.LEAGUE_TIERS
+        else 0
+    )
+
     out: list[LeagueMember] = []
     your_rank = None
     for i, m in enumerate(members, start=1):
-        if i <= compost.LEAGUE_PROMOTE:
-            zone = "promotion"
-        elif i > size - compost.LEAGUE_DEMOTE:
-            zone = "demotion"
-        else:
-            zone = "safe"
+        # zoneForRank(): no promotion out of the top tier, no demotion out of
+        # the bottom one.
+        zone = compost.league_zone(i, size, tier_index)
         is_you = m["user_id"] == user_id
         if is_you:
             your_rank = i
@@ -312,6 +319,11 @@ async def current_league(user_id: str = Query(...)) -> LeagueResponse:
                 xp=m["xp"],
                 rank=i,
                 is_you=is_you,
+                is_friend=m["is_friend"],
+                streak=m["streak"] or 0,
+                # Stable per-user palette index, so a member keeps the same
+                # avatar colour between refreshes.
+                color_index=sum(m["user_id"].encode()) % 8,
                 zone=zone,
             )
         )
@@ -322,6 +334,7 @@ async def current_league(user_id: str = Query(...)) -> LeagueResponse:
 
     return LeagueResponse(
         tier=row["tier"],
+        tier_index=tier_index,
         week_start=week_start,
         resets_at=resets_at,
         size=size,

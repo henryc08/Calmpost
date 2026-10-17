@@ -30,7 +30,22 @@ async def award(
     place rather than being retyped at each call site.
     """
     xp = compost.XP.get(kind, 0) if xp is None else xp
-    seeds = compost.SEEDS.get(kind, 0) if seeds is None else seeds
+    loam = compost.LOAM.get(kind, 0) if seeds is None else seeds
+
+    # Action XP is capped per day (xp_rules.dart dailyActionCap) so it cannot
+    # be farmed by tapping. Sensor-driven awards sit outside the cap.
+    if xp and kind in compost.CAPPED_KINDS:
+        row = await conn.fetchrow(
+            """
+            SELECT coalesce(sum(xp), 0)::int AS earned
+            FROM point_events
+            WHERE user_id = $1 AND kind = ANY($2::text[])
+              AND time >= date_trunc('day', now())
+            """,
+            user_id,
+            list(compost.CAPPED_KINDS),
+        )
+        xp = compost.cap_xp(xp, row["earned"] if row else 0)
 
     if dedupe_key is not None:
         existing = await conn.fetchrow(
@@ -50,7 +65,7 @@ async def award(
         bin_id,
         kind,
         xp,
-        seeds,
+        loam,
         dedupe_key,
         meta or {},
     )
@@ -58,7 +73,7 @@ async def award(
 
 
 async def totals(user_id: str) -> tuple[int, int]:
-    """Lifetime XP and Seeds."""
+    """Lifetime XP and loam."""
     row = await db.fetchrow(
         """
         SELECT coalesce(sum(xp), 0)::int AS xp, coalesce(sum(seeds), 0)::int AS seeds
@@ -80,6 +95,9 @@ CARE_KINDS = (
     "harvest",
     "check_in",
 )
+
+# Lid Locks cover missed days, as applyCareAction() does in xp_rules.dart.
+MAX_LID_LOCKS = 2
 
 
 async def streaks(user_id: str) -> tuple[int, int]:

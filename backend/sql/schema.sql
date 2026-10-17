@@ -118,7 +118,10 @@ CREATE TABLE IF NOT EXISTS advice (
     item           text,
     model          text        NOT NULL,
     state_hash     text        NOT NULL,
-    verdict        text        CHECK (verdict IS NULL OR verdict IN ('add', 'add_with_browns', 'avoid')),
+    -- Verdict values are the app's (models.dart Verdict).
+    verdict        text        CHECK (verdict IS NULL OR verdict IN ('great', 'careful', 'avoid')),
+    headline       text,
+    pair_with      jsonb       NOT NULL DEFAULT '[]'::jsonb,
     reason         text,
     balance        text,
     stage_top      text,
@@ -170,7 +173,8 @@ CREATE TABLE IF NOT EXISTS stage_history (
     time     timestamptz NOT NULL DEFAULT now(),
     bin_id   text        NOT NULL REFERENCES bins (bin_id) ON DELETE CASCADE,
     layer    text        NOT NULL DEFAULT 'top',
-    stage    text        NOT NULL CHECK (stage IN ('started', 'active', 'hot', 'curing', 'ready', 'harvested')),
+    -- Stage values are the app's (models.dart Stage), including 'cooling'.
+    stage    text        NOT NULL CHECK (stage IN ('started', 'active', 'hot', 'cooling', 'curing', 'ready', 'harvested')),
     source   text        NOT NULL DEFAULT 'sensor' CHECK (source IN ('sensor', 'user')),
     evidence jsonb       NOT NULL DEFAULT '{}'::jsonb,
     PRIMARY KEY (time, id)
@@ -193,18 +197,28 @@ CREATE TABLE IF NOT EXISTS user_state (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS leagues (
     id         bigserial PRIMARY KEY,
-    tier       text NOT NULL CHECK (tier IN ('seedling', 'sprout', 'fern', 'sapling', 'oak', 'sequoia')),
+    -- Tier names match leagueTiers in xp_rules.dart, capitalised, so the app
+    -- can show them without a lookup table.
+    tier       text NOT NULL CHECK (tier IN ('Seedling', 'Sprout', 'Fern', 'Sapling', 'Oak', 'Sequoia')),
     week_start date NOT NULL,
     UNIQUE (tier, week_start)
 );
 
 CREATE TABLE IF NOT EXISTS league_members (
-    league_id   bigint  NOT NULL REFERENCES leagues (id) ON DELETE CASCADE,
-    user_id     text    NOT NULL,
-    display_name text   NOT NULL,
-    is_bot      boolean NOT NULL DEFAULT false,
+    league_id    bigint  NOT NULL REFERENCES leagues (id) ON DELETE CASCADE,
+    user_id      text    NOT NULL,
+    display_name text    NOT NULL,
+    is_bot       boolean NOT NULL DEFAULT false,
+    is_friend    boolean NOT NULL DEFAULT false,
+    -- Shown beside the name in the cohort list; for bots it is just flavour.
+    streak       integer NOT NULL DEFAULT 0,
     PRIMARY KEY (league_id, user_id)
 );
+
+-- Added after the table shipped, so existing databases pick them up without
+-- a reset. (schema.sql runs on every boot.)
+ALTER TABLE league_members ADD COLUMN IF NOT EXISTS is_friend boolean NOT NULL DEFAULT false;
+ALTER TABLE league_members ADD COLUMN IF NOT EXISTS streak integer NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS league_members_user_idx ON league_members (user_id);
 
@@ -289,3 +303,35 @@ ALTER TABLE readings SET (
 CALL add_columnstore_policy('readings', after => INTERVAL '7 days', if_not_exists => TRUE);
 
 SELECT add_retention_policy('readings', INTERVAL '90 days', if_not_exists => TRUE);
+
+-- ---------------------------------------------------------------------------
+-- In-place migrations for databases created before the enums were aligned
+-- with app/lib/domain/models.dart. Idempotent, like everything above.
+-- ---------------------------------------------------------------------------
+ALTER TABLE advice ADD COLUMN IF NOT EXISTS headline text;
+ALTER TABLE advice ADD COLUMN IF NOT EXISTS pair_with jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE advice DROP CONSTRAINT IF EXISTS advice_verdict_check;
+
+-- Translate verdicts written before the enum matched the app's:
+--   add -> great, add_with_browns -> careful (avoid is unchanged).
+UPDATE advice SET verdict = 'great'   WHERE verdict = 'add';
+UPDATE advice SET verdict = 'careful' WHERE verdict = 'add_with_browns';
+UPDATE advice SET verdict = NULL
+    WHERE verdict IS NOT NULL AND verdict NOT IN ('great', 'careful', 'avoid');
+
+ALTER TABLE advice ADD CONSTRAINT advice_verdict_check
+    CHECK (verdict IS NULL OR verdict IN ('great', 'careful', 'avoid'));
+
+ALTER TABLE stage_history DROP CONSTRAINT IF EXISTS stage_history_stage_check;
+DELETE FROM stage_history
+    WHERE stage NOT IN ('started', 'active', 'hot', 'cooling', 'curing', 'ready', 'harvested');
+ALTER TABLE stage_history ADD CONSTRAINT stage_history_stage_check
+    CHECK (stage IN ('started', 'active', 'hot', 'cooling', 'curing', 'ready', 'harvested'));
+
+-- Tier names were lowercase before they were aligned with xp_rules.dart.
+-- Capitalise any existing rows, then swap the constraint.
+ALTER TABLE leagues DROP CONSTRAINT IF EXISTS leagues_tier_check;
+UPDATE leagues SET tier = initcap(tier) WHERE tier <> initcap(tier);
+ALTER TABLE leagues ADD CONSTRAINT leagues_tier_check
+    CHECK (tier IN ('Seedling', 'Sprout', 'Fern', 'Sapling', 'Oak', 'Sequoia'));

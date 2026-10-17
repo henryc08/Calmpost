@@ -167,7 +167,7 @@ async def seed_league(user_id: str) -> None:
         async with conn.transaction():
             league = await conn.fetchrow(
                 """
-                INSERT INTO leagues (tier, week_start) VALUES ('fern', $1)
+                INSERT INTO leagues (tier, week_start) VALUES ('Fern', $1)
                 ON CONFLICT (tier, week_start) DO UPDATE SET tier = EXCLUDED.tier
                 RETURNING id
                 """,
@@ -186,13 +186,17 @@ async def seed_league(user_id: str) -> None:
                 bot_id = f"bot-{i:02d}"
                 await conn.execute(
                     """
-                    INSERT INTO league_members (league_id, user_id, display_name, is_bot)
-                    VALUES ($1, $2, $3, true)
-                    ON CONFLICT (league_id, user_id) DO NOTHING
+                    INSERT INTO league_members
+                        (league_id, user_id, display_name, is_bot, is_friend, streak)
+                    VALUES ($1, $2, $3, true, $4, $5)
+                    ON CONFLICT (league_id, user_id) DO UPDATE
+                        SET is_friend = EXCLUDED.is_friend, streak = EXCLUDED.streak
                     """,
                     league["id"],
                     bot_id,
                     name,
+                    i % 5 == 0,           # a few of them read as friends
+                    random.randint(0, 24),
                 )
                 # Give the bots a plausible spread of weekly XP.
                 xp = max(0, int(random.gauss(120, 70)))
@@ -210,7 +214,7 @@ async def seed_league(user_id: str) -> None:
         # refresh_continuous_aggregate cannot run inside a transaction, so it
         # happens after the block above commits.
         await conn.execute("CALL refresh_continuous_aggregate('xp_weekly', NULL, NULL)")
-    print(f"seeded 'fern' league for week of {week_start} with 29 bots")
+    print(f"seeded 'Fern' league for week of {week_start} with 29 bots")
 
 
 if __name__ == "__main__":

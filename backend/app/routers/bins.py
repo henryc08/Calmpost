@@ -137,51 +137,43 @@ async def live(bin_id: str) -> LiveResponse:
         raise HTTPException(status_code=409, detail="no readings for this bin yet")
 
     air = snap["air"]
-    layers = []
-    for layer in ("top", "bottom"):
-        v = snap["layers"][layer]
-        stage = (
-            compost.stage(
-                v["temp_c"],
-                air["co2_ppm"],
-                v["moisture_pct"],
-                air["co2_slope_per_hour"],
-                air["co2_ok"],
-            )
-            if v["measured"]
-            else "started"
+    layers = [
+        LayerLive(
+            layer=layer,
+            label=LAYER_LABELS[layer],
+            measured=snap["layers"][layer]["measured"],
+            moisture_pct=(
+                round(snap["layers"][layer]["moisture_pct"], 1)
+                if snap["layers"][layer]["moisture_pct"] is not None
+                else None
+            ),
+            moisture_raw=snap["layers"][layer]["moisture_raw"],
+            moisture_state=snap["layers"][layer]["moisture_state"],
+            temp_c=snap["layers"][layer]["temp_c"],
+            stage=snap["stages"][layer],
         )
-        layers.append(
-            LayerLive(
-                layer=layer,
-                label=LAYER_LABELS[layer],
-                measured=v["measured"],
-                moisture_pct=round(v["moisture_pct"], 1) if v["moisture_pct"] is not None else None,
-                moisture_raw=v["moisture_raw"],
-                moisture_state=v["moisture_state"],
-                temp_c=v["temp_c"],
-                stage=stage,
-            )
-        )
+        for layer in ("top", "bottom")
+    ]
 
     # A stage change is worth recording so the Journey path has history.
     await _record_stage(bin_id, layers)
 
     return LiveResponse(
         bin_id=bin_id,
+        time=snap["time"],
         last_seen_at=snap["last_seen_at"],
         stale=snap["stale"],
         layers=layers,
         air=AirLive(**air),
         health_components=HealthComponents(**binstate.health_components(snap)),
-        balance=compost.balance_verdict(
+        balance=compost.balance_of(
             snap["layers"]["top"]["moisture_pct"], snap["greens_7d"], snap["browns_7d"]
         ),
         greens_7d=snap["greens_7d"],
         browns_7d=snap["browns_7d"],
         healthy_band=snap["healthy_band"],
         moisture_calibrated=snap["moisture_calibrated"],
-        hours_in_healthy_band_24h=snap["hours_in_healthy_band_24h"],
+        healthy_hours_today=snap["healthy_hours_today"],
         notes=snap["notes"],
     )
 
@@ -222,21 +214,22 @@ async def _record_stage(bin_id: str, layers: list[LayerLive]) -> None:
 
 # --- trends ----------------------------------------------------------------
 
-DEFAULT_METRICS: list[Metric] = ["moisture_pct", "probe_temp_c", "co2_ppm"]
+DEFAULT_METRICS: list[Metric] = ["moisture", "temperature", "co2"]
 
-# Column names differ between the two continuous aggregates.
+# The app's Metric enum -> the aggregate column holding it. Column names
+# differ between the two continuous aggregates.
 AGG_COLUMNS = {
     "15m": {
-        "moisture_pct": "moisture_pct_avg",
-        "probe_temp_c": "probe_temp_c_avg",
-        "co2_ppm": "co2_ppm_avg",
-        "air_temp_c": "air_temp_c_avg",
-        "air_humidity_pct": "air_humidity_pct_avg",
+        "moisture": "moisture_pct_avg",
+        "temperature": "probe_temp_c_avg",
+        "co2": "co2_ppm_avg",
+        "air_temp": "air_temp_c_avg",
+        "air_humidity": "air_humidity_pct_avg",
     },
     "1d": {
-        "moisture_pct": "moisture_pct_avg",
-        "probe_temp_c": "probe_temp_c_avg",
-        "co2_ppm": "co2_ppm_avg",
+        "moisture": "moisture_pct_avg",
+        "temperature": "probe_temp_c_avg",
+        "co2": "co2_ppm_avg",
     },
 }
 
@@ -262,7 +255,7 @@ async def trends(
     view = "readings_15m" if resolution == "15m" else "readings_1d"
     columns = AGG_COLUMNS[resolution]
 
-    wanted = [m for m in metrics if m in columns] or ["moisture_pct"]
+    wanted = [m for m in metrics if m in columns] or ["moisture"]
 
     series: list[TrendSeries] = []
     for metric in wanted:
@@ -303,7 +296,9 @@ async def trends(
         bin_id=bin_id,
         hours=hours,
         resolution=resolution,
-        healthy_band=list(compost.MOISTURE_BAND) if "moisture_pct" in wanted else None,
+        healthy_band=(
+            [compost.MOISTURE_LO, compost.MOISTURE_HI] if "moisture" in wanted else None
+        ),
         series=series,
     )
 
@@ -367,7 +362,8 @@ async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
                     conn, user_id, kind, bin_id=bin_id,
                     meta={"item": body.item, "log_id": row["id"]},
                 )
-                seeds = compost.SEEDS.get(kind, 0)
+                # Loam is only paid when XP was (the daily cap can zero it).
+                seeds = compost.LOAM.get(kind, 0) if xp else 0
 
     return LogEntry(
         id=row["id"],
@@ -381,7 +377,7 @@ async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
         was_advised=body.was_advised,
         notes=body.notes,
         xp_awarded=xp,
-        seeds_awarded=seeds,
+        loam_awarded=seeds,
     )
 
 
@@ -424,26 +420,16 @@ async def harvest(bin_id: str, body: HarvestRequest) -> HarvestResponse:
         note = "No readings yet, so readiness could not be checked."
     else:
         layer = snap["layers"][body.layer]
+        # Stages are already computed in the snapshot, the same way /live
+        # reports them, so the celebration cannot disagree with the screen.
+        was_ready = snap["stages"][body.layer] == "ready"
         if not layer["measured"]:
             note = (
-                f"The {body.layer} layer has no probe, so readiness is a guess "
-                "from the air-gap readings."
+                f"The {body.layer} layer has no probe, so readiness could not be "
+                "measured. Harvesting on your own judgement."
             )
-            air = snap["air"]
-            was_ready = compost.stage(
-                None, air["co2_ppm"], None, air["co2_slope_per_hour"], air["co2_ok"]
-            ) == "ready"
-        else:
-            air = snap["air"]
-            was_ready = compost.stage(
-                layer["temp_c"],
-                air["co2_ppm"],
-                layer["moisture_pct"],
-                air["co2_slope_per_hour"],
-                air["co2_ok"],
-            ) == "ready"
-            if not was_ready:
-                note = "Sensors did not say ready yet, so this batch may need longer."
+        elif not was_ready:
+            note = "Sensors did not say ready yet, so this batch may need longer."
 
     now = datetime.now(timezone.utc)
     async with db.pool().acquire() as conn:
@@ -467,7 +453,7 @@ async def harvest(bin_id: str, body: HarvestRequest) -> HarvestResponse:
         layer=body.layer,
         harvested_at=now,
         xp_awarded=xp,
-        seeds_awarded=compost.SEEDS["harvest"],
+        seeds_awarded=compost.LOAM["harvest"],
         was_ready=was_ready,
         note=note,
     )

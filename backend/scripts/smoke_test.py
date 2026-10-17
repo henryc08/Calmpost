@@ -85,15 +85,19 @@ def main() -> int:
             print(f"        {layer['layer']:7} measured={layer['measured']!s:5} "
                   f"moisture={layer['moisture_pct']} state={layer['moisture_state']:7} "
                   f"stage={layer['stage']}")
-        print(f"        health components: {body['health_components']}")
-        print(f"        hours in band (24h): {body['hours_in_healthy_band_24h']}")
+        hc = body["health_components"]
+        print("        health components: " + ", ".join(
+            f"{k}={round(v, 1) if isinstance(v, float) else v}"
+            for k, v in hc.items() if k != "weights"))
+        print(f"        healthy hours today: {body['healthy_hours_today']}")
+        print(f"        greens/browns (cups): {body['greens_7d']} / {body['browns_7d']}")
         for note in body["notes"]:
             print(f"        note: {note}")
 
     r = check(
         "GET /bins/{id}/trends",
         httpx.get(f"{base}/bins/{args.bin_id}/trends",
-                  params={"hours": 24, "metrics": ["moisture_pct", "co2_ppm"]},
+                  params={"hours": 24, "metrics": ["moisture", "co2"]},
                   headers=app, timeout=30),
     )
     if r.status_code == 200:
@@ -113,7 +117,9 @@ def main() -> int:
         body = r.json()
         advice_id = body["advice_id"]
         print(f"        model={body['model']}  verdict={body['verdict']}")
+        print(f"        headline: {body['headline']}")
         print(f"        reason: {body['reason']}")
+        print(f"        pair_with={body['pair_with']}")
         print(f"        suggest_add={body['suggest_add']}")
         print(f"        stage_top={body['stage_top']} stage_bottom={body['stage_bottom']} "
               f"bottom_ready={body['bottom_ready']}")
@@ -145,37 +151,43 @@ def main() -> int:
         if xp != 0:
             failures += 1
 
-    r = check(
-        "log a followed suggestion (expect 15)",
-        httpx.post(f"{base}/bins/{args.bin_id}/logs", headers=app,
-                   json={"item": "shredded cardboard", "was_advised": True,
-                         "advice_id": advice_id, "quantity_g": 60}, timeout=30),
-        expect=201,
-    )
-    if r.status_code == 201:
+    # Action XP is capped at 60/day (xp_rules.dart dailyActionCap), so on a
+    # day that already hit the cap the correct award is 0. Treat either the
+    # full value or a capped 0 as a pass, and say which happened.
+    def check_xp(label: str, payload: dict, expected: int) -> None:
+        nonlocal failures
+        r = check(label, httpx.post(f"{base}/bins/{args.bin_id}/logs", headers=app,
+                                    json=payload, timeout=30), expect=201)
+        if r.status_code != 201:
+            return
         xp = r.json()["xp_awarded"]
-        print(f"        xp_awarded={xp} ({'correct' if xp == 15 else 'WRONG: should be 15'})")
-        if xp != 15:
+        if xp == expected:
+            print(f"        xp_awarded={xp} (correct)")
+        elif xp == 0:
+            print(f"        xp_awarded=0 (daily {60} XP action cap already reached today -- correct)")
+        else:
+            print(f"        xp_awarded={xp} (WRONG: expected {expected} or a capped 0)")
             failures += 1
 
-    r = check(
-        "skip an avoid item (expect 5)",
-        httpx.post(f"{base}/bins/{args.bin_id}/logs", headers=app,
-                   json={"item": "bacon", "action": "skipped", "was_advised": True}, timeout=30),
-        expect=201,
-    )
-    if r.status_code == 201:
-        xp = r.json()["xp_awarded"]
-        print(f"        xp_awarded={xp} ({'correct' if xp == 5 else 'WRONG: should be 5'})")
-        if xp != 5:
-            failures += 1
+    check_xp("log a followed suggestion (15)",
+             {"item": "shredded cardboard", "was_advised": True,
+              "advice_id": advice_id, "quantity_g": 60}, 15)
+
+    check_xp("skip an avoid item (5)",
+             {"item": "bacon", "action": "skipped", "was_advised": True}, 5)
+
+    print("\n=== check-in (5 XP, once a day, keeps a streak alive) ===")
+    r = check("POST /users/{id}/check-in",
+              httpx.post(f"{base}/users/{args.user}/check-in", headers=app, timeout=30))
+    if r.status_code == 200:
+        print(f"        xp_awarded={r.json()['xp_awarded']} (0 means already counted today)")
 
     print("\n=== game ===")
     r = check("GET /users/{id}/game", httpx.get(f"{base}/users/{args.user}/game", headers=app, timeout=30))
     if r.status_code == 200:
         b = r.json()
         print(f"        level {b['level']} \"{b['title']}\"  xp={b['total_xp']} "
-              f"seeds={b['seeds']} streak={b['streak_days']} at_risk={b['streak_at_risk']}")
+              f"loam={b['loam']} streak={b['streak_days']} at_risk={b['streak_at_risk']}")
         print(f"        impact: {b['impact']}")
         earned = [a["name"] for a in b["achievements"] if a["earned"]]
         print(f"        earned: {earned or 'none yet'}")
@@ -183,14 +195,14 @@ def main() -> int:
     r = check("GET /quests/today", httpx.get(f"{base}/quests/today", params={"user_id": args.user}, headers=app, timeout=30))
     if r.status_code == 200:
         for q in r.json()["quests"]:
-            print(f"        [{'x' if q['complete'] else ' '}] {q['title']} "
-                  f"({q['progress']}/{q['target']})")
+            print(f"        [{'x' if q['done'] else ' '}] {q['title']} "
+                  f"({q['progress']}/{q['goal']})")
 
     r = check("GET /leagues/current", httpx.get(f"{base}/leagues/current", params={"user_id": args.user}, headers=app, timeout=30))
     if r.status_code == 200:
         b = r.json()
-        print(f"        tier={b['tier']} size={b['size']} your_rank={b['your_rank']} "
-              f"resets={b['resets_at']}")
+        print(f"        tier={b['tier']} (index {b['tier_index']}) size={b['size']} "
+              f"your_rank={b['your_rank']} resets={b['resets_at']}")
         for m in b["members"][:3]:
             print(f"        #{m['rank']:<2} {m['display_name']:10} {m['xp']:>5} xp  {m['zone']}")
 

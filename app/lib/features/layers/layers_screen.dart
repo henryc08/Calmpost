@@ -35,7 +35,9 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
     final trend = ref.watch(trendProvider((_zone, metric))).valueOrNull ?? const <TrendPoint>[];
     final logs = ref.watch(gameProvider.select((g) => g.logs));
 
+    final unmeasured = _zone == Zone.bottom && !s.bottomMeasured;
     final (value, unit) = switch (metric) {
+      _ when unmeasured => ('—', ''),
       Metric.moisture => ('${s.moisture(_zone).round()}', '%'),
       Metric.temperature => (s.temp(_zone).toStringAsFixed(1), '°C'),
       Metric.co2 => ('${s.co2.round()}', ' ppm'),
@@ -45,14 +47,15 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
       ZoneState.wet => ('Too wet', C.water),
       ZoneState.dry => ('Too dry', C.amber),
       ZoneState.hot => ('High', C.clay),
+      ZoneState.unknown => ('Not measured', C.muted),
       _ => ('In range', C.brandDeep),
     };
     final stage = _zone == Zone.bottom ? s.bottomStage : s.topStage;
 
     return BrandPage(
       title: 'Layers',
-      subtitle: 'Kitchen bin · live',
-      trailing: const LiveDot(color: C.onBrand),
+      subtitle: s.stale ? 'Kitchen bin · last reading ${s.ageLabel(DateTime.now())}' : 'Kitchen bin · live',
+      trailing: s.stale ? null : const LiveDot(color: C.onBrand),
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -149,6 +152,7 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
 
   static String _heroLine(Zone z, BinSnapshot s) => switch (z) {
     Zone.top => 'Fresh scraps and browns · ${s.topTemp.round()}°C, ${(s.topTemp - s.ambientTemp).round()}° above the room',
+    Zone.bottom when !s.bottomMeasured => 'Older compost, slowly finishing · no probe here yet',
     Zone.bottom => 'Older compost, slowly finishing · ${s.bottomTemp.round()}°C',
     Zone.air => 'CO₂ in the gap under the lid · ${s.co2SlopePerDay >= 0 ? 'rising' : 'falling'} ${s.co2SlopePerDay.abs().round()}% a day',
   };
@@ -164,6 +168,8 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
           : s.topMoisture < moistureLo - 4
           ? 'Too dry for the microbes to work. Wet greens or a splash of water will get it going again.'
           : 'Damp like a wrung-out sponge, which is exactly right. The warmth means it is breaking down nicely.',
+    Zone.bottom when !s.bottomMeasured =>
+      'There is no probe in this layer yet, so its moisture and temperature are unknown. Its stage is a guide from the top layer and the CO₂.',
     Zone.bottom =>
       s.bottomStage == Stage.ready
           ? 'This layer is done: cool, dark and crumbly. Harvest it for your plants.'

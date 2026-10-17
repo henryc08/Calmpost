@@ -20,11 +20,11 @@ class LeagueRace extends ConsumerWidget {
     final st = ref.watch(standingsProvider);
     final idx = st.yourRank - 1;
     final me = st.members[idx];
-    final from = (idx - 1).clamp(0, st.members.length - 3);
-    final window = st.members.sublist(from, from + 3);
-    final seventh = st.members[promoteCount - 1].xp;
+    final size = st.members.length < 3 ? st.members.length : 3;
+    final from = (idx - 1).clamp(0, st.members.length - size);
+    final window = st.members.sublist(from, from + size);
     final inZone = st.yourRank <= promoteCount;
-    final toGo = inZone ? 0 : seventh - me.xp + 1;
+    final toGo = inZone ? 0 : st.promotionCutoffXp - me.xp + 1;
     final now = DateTime.now();
     final left = DateTime(now.year, now.month, now.day + (8 - now.weekday)).difference(now);
 
@@ -63,7 +63,7 @@ class LeagueRace extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: S.x3),
-        ThinBar(value: inZone ? 1 : (me.xp / seventh).clamp(0, 1), color: C.pink, height: 6),
+        ThinBar(value: inZone ? 1 : (st.promotionCutoffXp <= 0 ? 0.0 : me.xp / st.promotionCutoffXp).clamp(0, 1), color: C.pink, height: 6),
         const SizedBox(height: S.x3),
         for (final (i, m) in window.indexed)
           Container(

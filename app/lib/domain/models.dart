@@ -17,7 +17,7 @@ enum Balance { needsGreens, needsBrowns, balanced }
 /// The bin's overall state, driven by the health score and moisture.
 enum BinMood { thriving, healthy, fair, dry, wet, struggling }
 
-/// One reading from the ESP32: two layers + the air gap.
+/// One reading from the bin: two layers + the air gap.
 class BinSnapshot {
   const BinSnapshot({
     required this.time,
@@ -33,6 +33,8 @@ class BinSnapshot {
     required this.topStage,
     required this.bottomStage,
     required this.healthyHoursToday,
+    this.bottomMeasured = true,
+    this.stale = false,
   });
 
   final DateTime time;
@@ -59,6 +61,22 @@ class BinSnapshot {
 
   /// Hours today both layers spent in the healthy moisture band.
   final double healthyHoursToday;
+
+  /// False while no probe reports the bottom layer (the real bin has one
+  /// probe, in the top layer). Its moisture and temperature are then
+  /// unknown: show them as not measured, never as a number.
+  final bool bottomMeasured;
+
+  /// The bin hasn't reported for a while (live data only).
+  final bool stale;
+
+  /// How old the reading is, e.g. "12 min ago" (shown when [stale]).
+  String ageLabel(DateTime now) {
+    final m = now.difference(time).inMinutes;
+    if (m < 60) return '${m < 1 ? 1 : m} min ago';
+    final h = m ~/ 60;
+    return h < 48 ? '$h h ago' : '${h ~/ 24} days ago';
+  }
 
   double moisture(Zone z) => z == Zone.bottom ? bottomMoisture : topMoisture;
   double temp(Zone z) => z == Zone.bottom ? bottomTemp : topTemp;

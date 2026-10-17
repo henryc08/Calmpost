@@ -1,8 +1,9 @@
 import '../domain/models.dart';
 
 /// Everything the app needs from the outside world. Screens only ever talk to
-/// this interface: MockRepository today, ApiRepository (FastAPI + Tiger Data)
-/// later. Method shapes mirror the backend endpoints in CLAUDE.md.
+/// this interface: MockRepository (demo scenarios) or ApiRepository (the real
+/// bin, through FastAPI + Tiger Data). Method shapes mirror the backend
+/// endpoints in CLAUDE.md section 5.
 abstract class CalmpostRepository {
   /// GET /bins/{id}/live, polled.
   Stream<BinSnapshot> watchBin();
@@ -26,7 +27,7 @@ abstract class CalmpostRepository {
   Future<FoodItem> identifyPhoto();
 
   /// GET /leagues/current (everyone except you).
-  List<LeagueMember> leagueCohort();
+  Future<List<LeagueMember>> leagueCohort();
 
   FoodItem? food(String id);
 }

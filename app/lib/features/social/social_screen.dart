@@ -34,8 +34,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> {
     final reset = DateTime(now.year, now.month, now.day + (8 - now.weekday));
     final left = reset.difference(now);
     final next = leagueTiers[(st.tier.index + 1).clamp(0, leagueTiers.length - 1)];
-    final seventh = st.members[promoteCount - 1].xp;
-    final toPromo = st.yourRank <= promoteCount ? 0 : seventh - me.xp + 1;
+    final toPromo = st.yourRank <= promoteCount ? 0 : st.promotionCutoffXp - me.xp + 1;
 
     return BrandPage(
       title: '${st.tier.name} League',
@@ -98,7 +97,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> {
     for (var i = 0; i < n; i++) {
       final rank = i + 1;
       if (rank == promoteCount + 1) out.add(const _ZoneDivider(promote: true));
-      if (rank == n - demoteCount + 1) out.add(const _ZoneDivider(promote: false));
+      // Only when the zones don't overlap (small leagues have no demotion zone).
+      if (rank == n - demoteCount + 1 && rank > promoteCount + 1) out.add(const _ZoneDivider(promote: false));
       out.add(
         _MemberRow(
           member: st.members[i],

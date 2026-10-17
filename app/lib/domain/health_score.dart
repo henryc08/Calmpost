@@ -34,14 +34,16 @@ const moistureLo = 40.0;
 const moistureHi = 60.0;
 
 HealthBreakdown computeHealth(BinSnapshot s) {
-  final moisture = (bandScore(s.topMoisture, moistureLo, moistureHi, 25) + bandScore(s.bottomMoisture, moistureLo, moistureHi, 25)) / 2;
+  // An unmeasured layer is left out rather than scored.
+  final topM = bandScore(s.topMoisture, moistureLo, moistureHi, 25);
+  final moisture = s.bottomMeasured ? (topM + bandScore(s.bottomMoisture, moistureLo, moistureHi, 25)) / 2 : topM;
 
   final topDelta = s.topTemp - s.ambientTemp;
   final bottomDelta = s.bottomTemp - s.ambientTemp;
   final topT = bandScore(topDelta, 5, 25, 10);
   final bottomCuring = s.bottomStage.index >= Stage.curing.index;
   final bottomT = bottomCuring ? bandScore(bottomDelta, -2, 8, 10) : bandScore(bottomDelta, 3, 25, 10);
-  final temperature = (topT + bottomT) / 2;
+  final temperature = s.bottomMeasured ? (topT + bottomT) / 2 : topT;
 
   final active = s.topStage == Stage.active || s.topStage == Stage.hot;
   final activityScore = active ? bandScore(s.co2, 900, 6000, 900) : 100.0;
@@ -80,10 +82,12 @@ String moodLabel(BinMood m) => switch (m) {
 };
 
 /// Health state of a single zone, for tinting the bin illustration.
-enum ZoneState { good, wet, dry, cold, hot }
+/// `unknown`: no sensor in that zone.
+enum ZoneState { good, wet, dry, cold, hot, unknown }
 
 ZoneState zoneState(BinSnapshot s, Zone z) {
   if (z == Zone.air) return s.co2 > 7000 ? ZoneState.hot : ZoneState.good;
+  if (z == Zone.bottom && !s.bottomMeasured) return ZoneState.unknown;
   final m = s.moisture(z);
   if (m > moistureHi + 4) return ZoneState.wet;
   if (m < moistureLo - 4) return ZoneState.dry;

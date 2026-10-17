@@ -43,7 +43,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
   }
 
-  /// Web preview deep links for design review: ?tab=0-4 &scenario=tooWet &checkin=1
+  /// Web preview deep links for design review: ?tab=0-4 &scenario=tooWet &checkin=1 &source=mock|live
   void _applyDevLinks() {
     if (!kIsWeb) return;
     final q = Uri.base.queryParameters;
@@ -51,6 +51,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (tab != null && tab >= 0 && tab < AppTab.values.length) ref.read(tabProvider.notifier).state = AppTab.values[tab];
     final s = Scenario.values.where((s) => s.name == q['scenario']).firstOrNull;
     if (s != null) ref.read(scenarioProvider.notifier).state = s;
+    final source = DataSource.values.where((d) => d.name == q['source']).firstOrNull;
+    if (source != null) ref.read(dataSourceProvider.notifier).state = source;
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
     final item = ref.read(repositoryProvider).food(q['item'] ?? '');
     if (item != null) ref.read(logIntentProvider.notifier).state = item;

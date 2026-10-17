@@ -39,6 +39,8 @@ class HomeScreen extends ConsumerWidget {
     void goTo(AppTab tab) => ref.read(tabProvider.notifier).state = tab;
 
     if (health == null) {
+      final bin = ref.watch(binProvider);
+      if (bin.hasError) return _Offline(onUseDemo: () => ref.read(dataSourceProvider.notifier).state = DataSource.mock);
       return const Center(
         child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: C.brand)),
       );
@@ -297,9 +299,21 @@ class _ScoreBlock extends StatelessWidget {
               decoration: BoxDecoration(color: C.onBrand, borderRadius: BorderRadius.circular(R.pill)),
               child: Text(moodLabel(health.mood).toUpperCase(), style: T.caps.copyWith(color: pillText, fontSize: 10.5)),
             ),
-            Text('   KITCHEN BIN  ·  ', style: T.caps.copyWith(color: C.onBrandMuted)),
-            const LiveDot(color: C.onBrand, size: 5),
-            Text('LIVE', style: T.caps.copyWith(color: C.onBrandMuted)),
+            // An honest "live": a bin that stopped reporting says how old its numbers are.
+            if (s.stale)
+              Flexible(
+                child: Text(
+                  '   SEEN ${s.ageLabel(DateTime.now()).toUpperCase()}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: T.caps.copyWith(color: C.onBrandMuted),
+                ),
+              )
+            else ...[
+              Text('   KITCHEN BIN  ·  ', style: T.caps.copyWith(color: C.onBrandMuted)),
+              const LiveDot(color: C.onBrand, size: 5),
+              Text('LIVE', style: T.caps.copyWith(color: C.onBrandMuted)),
+            ],
           ],
         ),
         const SizedBox(height: S.x3),
@@ -323,6 +337,35 @@ class _ScoreBlock extends StatelessWidget {
     }
 
     if (s.bottomStage == Stage.ready) return 'The bottom layer has finished curing. Time to harvest.';
+    if (!s.bottomMeasured) return '${layer('Top layer', s.topMoisture)}.';
     return '${layer('Top layer', s.topMoisture)}, ${layer('bottom layer', s.bottomMoisture)}.';
+  }
+}
+
+/// First load failed: the phone can't reach the backend.
+class _Offline extends StatelessWidget {
+  const _Offline({required this.onUseDemo});
+  final VoidCallback onUseDemo;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(S.gutter),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(PhosphorIconsRegular.wifiSlash, size: 28, color: C.muted),
+            const SizedBox(height: S.x3),
+            Text("Can't reach the bin", style: T.title),
+            const SizedBox(height: S.x2),
+            Text('Check that the API is running on the laptop and that the phone is on the same network. Still trying every few seconds.', style: T.body),
+            const SizedBox(height: S.x5),
+            PillButton(label: 'Use demo data', onTap: onUseDemo),
+          ],
+        ),
+      ),
+    );
   }
 }

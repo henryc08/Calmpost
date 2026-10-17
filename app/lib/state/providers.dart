@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/api_config.dart';
+import '../data/api_repository.dart';
 import '../data/calmpost_repository.dart';
 import '../data/mock_repository.dart';
 import '../domain/health_score.dart';
@@ -7,11 +11,24 @@ import '../domain/models.dart';
 import '../domain/xp_rules.dart';
 import 'game.dart';
 
-/// Demo scenario for the mock bin. Ignored once ApiRepository is wired in.
+/// Demo scenario for the mock bin. Only used while [dataSourceProvider] is mock.
 final scenarioProvider = StateProvider<Scenario>((ref) => Scenario.healthy);
 
-/// Swap MockRepository for ApiRepository here: the only line that changes.
-final repositoryProvider = Provider<CalmpostRepository>((ref) => MockRepository(ref.watch(scenarioProvider)));
+/// Live = the real bin through the backend (needs a build with API_URL, see
+/// data/api_config.dart). Mock = the demo scenarios. Switch in the demo
+/// picker (long-press the Bin World), e.g. if the venue Wi-Fi drops.
+enum DataSource { live, mock }
+
+final dataSourceProvider = StateProvider<DataSource>((ref) => ApiConfig.configured ? DataSource.live : DataSource.mock);
+
+final repositoryProvider = Provider<CalmpostRepository>((ref) {
+  if (ref.watch(dataSourceProvider) == DataSource.live && ApiConfig.configured) {
+    final repo = ApiRepository(ApiConfig.fromEnvironment());
+    ref.onDispose(repo.close);
+    return repo;
+  }
+  return MockRepository(ref.watch(scenarioProvider));
+});
 
 final binProvider = StreamProvider<BinSnapshot>((ref) => ref.watch(repositoryProvider).watchBin());
 
@@ -36,17 +53,32 @@ final suggestionProvider = Provider<Suggestion?>((ref) {
   return ref.watch(repositoryProvider).suggestions(s);
 });
 
+/// Everyone else in your league this week. Live, it refreshes every 30 s so
+/// other players' XP moves; the mock league never changes.
+final cohortProvider = FutureProvider<List<LeagueMember>>((ref) {
+  final repo = ref.watch(repositoryProvider);
+  if (repo is ApiRepository) {
+    final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+  }
+  return repo.leagueCohort();
+});
+
 class Standing {
   const Standing(this.members, this.yourRank, this.tier);
   final List<LeagueMember> members;
   final int yourRank;
   final LeagueTier tier;
+
+  /// XP of the last place in the promotion zone. A league smaller than the
+  /// zone (a new live league, or one still loading) is all promotion zone.
+  int get promotionCutoffXp => members[(promoteCount < members.length ? promoteCount : members.length) - 1].xp;
 }
 
 final standingsProvider = Provider<Standing>((ref) {
   final weekXp = ref.watch(gameProvider.select((g) => g.weekXp));
   final streak = ref.watch(gameProvider.select((g) => g.streak.days));
-  final cohort = ref.watch(repositoryProvider).leagueCohort();
+  final cohort = ref.watch(cohortProvider).valueOrNull ?? const <LeagueMember>[];
   final you = LeagueMember(name: GameState.playerName, xp: weekXp, colorIndex: 0, isYou: true, streak: streak);
   final all = [...cohort, you]
     ..sort((a, b) {

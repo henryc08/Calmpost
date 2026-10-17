@@ -150,7 +150,7 @@ class MockRepository implements CalmpostRepository {
   FoodItem? food(String id) => foodById[id];
 
   @override
-  List<LeagueMember> leagueCohort() => _cohort;
+  Future<List<LeagueMember>> leagueCohort() async => _cohort;
 }
 
 const _names = [

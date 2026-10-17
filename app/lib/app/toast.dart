@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../data/api_config.dart';
 import '../data/mock_repository.dart';
 import '../state/celebrations.dart';
 import '../state/providers.dart';
@@ -72,7 +73,7 @@ class _ToastLayerState extends ConsumerState<ToastLayer> {
   }
 }
 
-/// Hidden demo control (long-press the health card): pick what the mock bin reports.
+/// Hidden demo control (long-press the Bin World): the live bin, or what the mock bin reports.
 Future<void> showScenarioPicker(BuildContext context, WidgetRef ref) {
   return showModalBottomSheet<void>(
     context: context,
@@ -87,29 +88,61 @@ Future<void> showScenarioPicker(BuildContext context, WidgetRef ref) {
           children: [
             Text('Demo scenario', style: T.title),
             const SizedBox(height: S.x1),
-            Text('Switch what the mock sensors report.', style: T.body),
+            Text(ApiConfig.configured ? 'Read the real bin, or switch to mock sensors.' : 'Switch what the mock sensors report.', style: T.body),
             const SizedBox(height: S.x4),
-            for (final s in Scenario.values)
-              Pressable(
+            if (ApiConfig.configured) ...[
+              _PickerRow(
+                label: 'Live bin',
+                detail: 'Real sensors through Tiger Data',
+                selected: ref.read(dataSourceProvider) == DataSource.live,
                 onTap: () {
-                  ref.read(scenarioProvider.notifier).state = s;
+                  ref.read(dataSourceProvider.notifier).state = DataSource.live;
                   Navigator.of(context).pop();
                 },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: S.x3),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(s.label, style: T.heading)),
-                      if (ref.read(scenarioProvider) == s) const Icon(PhosphorIconsBold.check, size: 18, color: C.leaf),
-                    ],
-                  ),
-                ),
+              ),
+              const Hairline(),
+            ],
+            for (final s in Scenario.values)
+              _PickerRow(
+                label: s.label,
+                detail: ApiConfig.configured ? 'Mock' : null,
+                selected: ref.read(dataSourceProvider) == DataSource.mock && ref.read(scenarioProvider) == s,
+                onTap: () {
+                  ref.read(scenarioProvider.notifier).state = s;
+                  ref.read(dataSourceProvider.notifier).state = DataSource.mock;
+                  Navigator.of(context).pop();
+                },
               ),
           ],
         ),
       ),
     ),
   );
+}
+
+class _PickerRow extends StatelessWidget {
+  const _PickerRow({required this.label, required this.selected, required this.onTap, this.detail});
+  final String label;
+  final String? detail;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: S.x3),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: T.heading)),
+            if (detail != null) ...[Text(detail!, style: T.small), const SizedBox(width: S.x3)],
+            if (selected) const Icon(PhosphorIconsBold.check, size: 18, color: C.leaf),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Placeholder for tabs that haven't been redesigned yet.

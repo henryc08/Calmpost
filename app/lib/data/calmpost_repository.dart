@@ -2,12 +2,14 @@ import 'dart:typed_data' show Uint8List;
 
 import '../domain/drop.dart';
 import '../domain/models.dart';
+import '../domain/inventory.dart';
 
 /// Everything the app needs from the outside world. Screens only ever talk to
 /// this interface: MockRepository (demo scenarios) or ApiRepository (the real
 /// bin, through FastAPI + Tiger Data). Method shapes mirror the backend
 /// endpoints in AGENTS.md section 5.
 abstract class CalmpostRepository {
+  Future<CompostInventory> inventory({String period = 'all'});
   bool get serverGame;
   Future<Map<String, dynamic>> loadGame();
   Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args);
@@ -24,7 +26,7 @@ abstract class CalmpostRepository {
   Future<Advice> checkItem(FoodItem item);
 
   /// POST /bins/{id}/logs: the user actually added this to the bin.
-  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false});
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, int? pieceCount, String? requestId, bool wasAdvised = false});
 
   /// GET /bins/{id}/advice
   Suggestion suggestions(BinSnapshot snapshot);

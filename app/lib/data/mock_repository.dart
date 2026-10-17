@@ -5,6 +5,7 @@ import 'dart:typed_data' show Uint8List;
 import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
+import '../domain/inventory.dart';
 import '../domain/xp_rules.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -57,6 +58,36 @@ class MockRepository implements CalmpostRepository {
   @override
   Future<Drop?> pendingDrop() async => null;
   MockRepository(this.scenario);
+
+  final _inventoryLogs = <({FoodItem item, double grams, int? pieces, DateTime time, String source})>[];
+  final _loggedRequests = <String>{};
+  final _reviewed = <int, List<Advice>>{};
+  final _confirmed = <int, DropResult>{};
+
+  @override
+  Future<CompostInventory> inventory({String period = 'all'}) async {
+    final now = DateTime.now().toUtc();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final start = today.subtract(Duration(days: now.weekday % 7));
+    final grouped = <String, InventoryItem>{};
+    for (final log in _inventoryLogs) {
+      if (period == 'week' && log.time.toUtc().isBefore(start)) continue;
+      final key = '${log.item.id}:${log.item.category.name}';
+      final old = grouped[key];
+      grouped[key] = InventoryItem(
+        key: key,
+        label: log.item.name,
+        category: log.item.category.name,
+        grams: (old?.grams ?? 0) + log.grams,
+        pieces: (old?.pieces ?? 0) + (log.pieces ?? 0),
+        entries: (old?.entries ?? 0) + 1,
+        uncountedEntries: (old?.uncountedEntries ?? 0) + (log.pieces == null ? 1 : 0),
+        visionEntries: (old?.visionEntries ?? 0) + (log.source == 'manual' ? 0 : 1),
+        lastAddedAt: log.time,
+      );
+    }
+    return CompostInventory(items: grouped.values.toList()..sort((a, b) => b.grams.compareTo(a.grams)));
+  }
 
   final Scenario scenario;
   final _rand = math.Random(7);
@@ -137,8 +168,17 @@ class MockRepository implements CalmpostRepository {
   }
 
   @override
-  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false}) async {
-    if (!added) return null;
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, int? pieceCount, String? requestId, bool wasAdvised = false}) async {
+    _recordItem(item, added: added, quantityG: quantityG, pieceCount: pieceCount, requestId: requestId);
+    return null;
+  }
+
+  void _recordItem(FoodItem item, {bool added = true, double? quantityG, int? pieceCount, String? requestId, String source = 'manual'}) {
+    if (!added) return;
+    if (requestId != null && !_loggedRequests.add(requestId)) return;
+    if (item.category != FoodCategory.avoid && (quantityG ?? item.grams) > 0) {
+      _inventoryLogs.add((item: item, grams: quantityG ?? item.grams, pieces: pieceCount, time: DateTime.now(), source: source));
+    }
     final cups = (quantityG ?? item.grams) / 110;
     switch (item.category) {
       case FoodCategory.brown:
@@ -150,7 +190,6 @@ class MockRepository implements CalmpostRepository {
       case FoodCategory.avoid:
         break;
     }
-    return null;
   }
 
   @override
@@ -191,10 +230,7 @@ class MockRepository implements CalmpostRepository {
       MockDrop.check => DropSeen(
         Drop(
           id: _dropId,
-          items: [
-            d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91),
-            d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44),
-          ],
+          items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91), d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44)],
         ),
       ),
       MockDrop.mixed => DropSeen(Drop(id: _dropId, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
@@ -206,6 +242,7 @@ class MockRepository implements CalmpostRepository {
   @override
   Future<List<Advice>> confirmReviewedDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (_reviewed.containsKey(drop.id)) return _reviewed[drop.id]!;
     final snap = _last ?? _snapshot(0);
     final out = <Advice>[];
     for (final l in lines) {
@@ -214,9 +251,10 @@ class MockRepository implements CalmpostRepository {
         continue;
       }
       out.add(adviseFor(l.item, snap, foodById));
-      await logItem(l.item, quantityG: amountGrams[l.amount]);
+      _recordItem(l.item, quantityG: l.grams, pieceCount: l.pieceCount, requestId: 'drop:${drop.id}:${out.length}', source: 'camera');
     }
     _pending.removeWhere((d) => d.id == drop.id);
+    _reviewed[drop.id] = out;
     return out;
   }
 
@@ -285,6 +323,7 @@ class MockRepository implements CalmpostRepository {
   @override
   Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items) async {
     await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (_confirmed.containsKey(dropId)) return _confirmed[dropId]!;
     final drop = _pending.where((d) => d.id == dropId).firstOrNull;
     _pending.removeWhere((d) => d.id == dropId);
 
@@ -303,13 +342,15 @@ class MockRepository implements CalmpostRepository {
       final advice = adviseFor(item, snap, foodById);
       var reward = 0;
       if (!i.removed) {
-        final grams = amountGrams[amount]!;
+        final grams = i.quantityG ?? amountGrams[amount]!;
         if (item.category != FoodCategory.avoid) {
           reward = volumeXp(grams, alreadyLogged: _confirmedGrams);
           _confirmedGrams += grams;
-          if (i.wasAdvised && suggestions(snap).add.any((f) => f.id == item.id)) reward += Xp.followedSuggestion;
+          if (i.wasAdvised && suggestions(snap).add.any((f) => f.id == item.id)) {
+            reward += Xp.followedSuggestion;
+          }
         }
-        await logItem(item, quantityG: grams);
+        _recordItem(item, quantityG: grams, pieceCount: i.pieceCount, source: drop?.source ?? 'camera');
         verdicts.add(advice);
       } else if (item.category == FoodCategory.avoid) {
         reward = Xp.avoidedBadAdd;
@@ -321,7 +362,7 @@ class MockRepository implements CalmpostRepository {
 
     final guessed = drop?.guesses.map((g) => (g.catalogId, g.label.toLowerCase())).toSet() ?? const {};
     final confirmed = items.map((i) => (i.catalogId, i.label.toLowerCase())).toSet();
-    return DropResult(dropId: dropId, corrected: guessed.isNotEmpty && !_setEquals(guessed, confirmed), verdicts: verdicts, xpAwarded: xp);
+    return _confirmed[dropId] = DropResult(dropId: dropId, corrected: guessed.isNotEmpty && !_setEquals(guessed, confirmed), verdicts: verdicts, xpAwarded: xp);
   }
 
   @override

@@ -40,6 +40,7 @@ async def latest_reading(bin_id: str):
     return await db.fetchrow(
         """
         SELECT time, probe_layer, probe_temp_c, moisture_raw, moisture_pct,
+               probe_temp_c_2, moisture_raw_2, moisture_pct_2,
                co2_ppm, air_temp_c, air_humidity_pct, co2_status
         FROM readings
         WHERE bin_id = $1
@@ -246,20 +247,48 @@ async def snapshot(bin_id: str) -> dict | None:
     probes = {r['probe_layer']: r for r in await db.fetch(
         "SELECT DISTINCT ON (probe_layer) * FROM readings WHERE bin_id=$1 ORDER BY probe_layer,time DESC", bin_id)}
 
+    # Two ways a layer can report, and both are live:
+    #
+    #   * its own rows, keyed by probe_layer -- what `probes` above finds, and
+    #     what a second probe posting independently would use
+    #   * the second-probe columns on the newest row, which is what the
+    #     firmware actually sends today: one wide sample carrying both probes
+    #     (moisture_raw/probe_temp_c = top, moisture_raw_2/probe_temp_c_2 =
+    #     bottom), because readings_bin_time_uniq is UNIQUE (bin_id, time)
+    #
+    # A dedicated fresh row wins; the same-row columns are the fallback. A
+    # layer counts as measured on MOISTURE alone, since probe_temp_c_2 arrives
+    # null today: a real percentage with no temperature beats "unknown".
+    now_ = datetime.now(timezone.utc)
+    # Which layer probe 1 sits in, so probe 2 belongs to the other one.
+    probe_layer = latest["probe_layer"]
+    other = "bottom" if probe_layer == "top" else "top"
+    fresh = now_ - latest["time"] <= STALE_AFTER
+
     layers: dict[str, dict] = {}
     for layer in ("top", "bottom"):
         probe = probes.get(layer)
-        if probe is not None and datetime.now(timezone.utc) - probe['time'] <= STALE_AFTER:
-            pct = probe['moisture_pct']
+        if probe is not None and now_ - probe["time"] <= STALE_AFTER:
+            lpct = probe["moisture_pct"]
             layers[layer] = {
                 "measured": True,
-                "moisture_pct": pct,
+                "moisture_pct": lpct,
                 "moisture_raw": probe["moisture_raw"],
-                "moisture_state": compost.moisture_state(pct),
+                "moisture_state": compost.moisture_state(lpct),
                 "temp_c": probe["probe_temp_c"],
             }
+        elif layer == other and fresh and latest["moisture_raw_2"] is not None:
+            pct2 = latest["moisture_pct_2"]
+            layers[layer] = {
+                "measured": True,
+                "moisture_pct": pct2,
+                "moisture_raw": latest["moisture_raw_2"],
+                "moisture_state": compost.moisture_state(pct2),
+                "temp_c": latest["probe_temp_c_2"],
+            }
         else:
-            # No second probe in this build. Say so rather than imply 0.
+            # No probe for this layer, or it has gone quiet. Say so rather
+            # than imply 0.
             layers[layer] = {
                 "measured": False,
                 "moisture_pct": None,

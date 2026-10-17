@@ -34,6 +34,21 @@ def sample(n):
     return bridge.to_payload({'moisture_raw': n}, 'test-bin')
 
 
+def test_second_probe_fields_survive_bridge_filtering():
+    payload = bridge.to_payload({
+        'moisture_raw': 464, 'probe_temp_c': 22.25,
+        'moisture_raw_2': 482, 'probe_temp_c_2': 21.5, 'debug': 'ignored',
+    }, 'test-bin')
+    assert payload['moisture_raw'] == 464
+    assert payload['moisture_raw_2'] == 482
+    assert payload['probe_temp_c_2'] == 21.5
+    assert 'debug' not in payload
+    # A missing top sensor must not discard a valid bottom-only sample.
+    bottom = bridge.to_payload({'moisture_raw_2': 482, 'probe_temp_c_2': None}, 'test-bin')
+    assert bottom['moisture_raw_2'] == 482
+    assert 'probe_temp_c_2' not in bottom
+
+
 def test_slow_upload_does_not_block_serial_reads(monkeypatch):
     entered, release, all_sent = Event(), Event(), Event()
     sent = []

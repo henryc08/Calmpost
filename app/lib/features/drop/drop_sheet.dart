@@ -53,7 +53,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   List<Advice> _verdicts = const [];
   int _xp = 0;
   bool _saving = false;
-  bool _accountCameraUnavailable = false;
+  bool _needsBin = false;
   StreamSubscription<DropEvent>? _sub;
   Timer? _tick;
   late CalmpostRepository _repo;
@@ -80,15 +80,16 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     _sub?.cancel();
     _tick?.cancel();
     setState(() => _phase = _Phase.arming);
-    if (ref.read(socialSessionProvider).valueOrNull != null && ref.read(dataSourceProvider) == DataSource.live) {
-      setState(() {
-        _accountCameraUnavailable = true;
-        _phase = _Phase.failed;
-      });
-      return;
-    }
-    final repo = ref.read(repositoryProvider);
     try {
+      final account = await ref.read(socialSessionProvider.future);
+      if (!mounted) return;
+      _needsBin = account != null && ref.read(dataSourceProvider) == DataSource.live && account.binId == null;
+      if (_needsBin) {
+        setState(() => _phase = _Phase.failed);
+        return;
+      }
+      _repo = ref.read(repositoryProvider);
+      final repo = _repo;
       final pending = await repo.pendingDrop();
       if (!mounted) return;
       if (pending != null) {
@@ -147,13 +148,9 @@ class _DropSheetState extends ConsumerState<DropSheet> {
       final xp = _repo.serverGame
           ? verdicts.fold<int>(0, (sum, a) => sum + (a.xpAwarded ?? 0))
           : game
-                .recordDrop(
-                  verdicts,
-                  added: [for (final l in _lines) !l.removed],
-                  suggestedIds: tips,
-                  quantities: [for (final l in _lines) amountGrams[l.amount]!],
-                )
+                .recordDrop(verdicts, added: [for (final l in _lines) !l.removed], suggestedIds: tips, quantities: [for (final l in _lines) l.grams])
                 .fold<int>(0, (sum, o) => sum + o.xp);
+      ref.invalidate(inventoryProvider);
       if (_repo.serverGame) await game.refreshLive();
       if (!mounted) return;
       HapticFeedback.mediumImpact();
@@ -233,9 +230,9 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     ),
     _Phase.failed => _message(
       icon: PhosphorIconsRegular.cameraSlash,
-      title: _accountCameraUnavailable ? 'Use the Log tab for this bin' : 'Couldn\'t reach the camera',
-      body: _accountCameraUnavailable
-          ? 'Camera capture for player-owned bins is not connected yet. Manual additions still save to your Social profile.'
+      title: _needsBin ? 'Connect your bin first' : 'Couldn\'t reach the camera',
+      body: _needsBin
+          ? 'Connect your bin in Social, then return to review camera additions.'
           : 'The camera service on the laptop isn\'t answering. You can still log this by hand.',
       primary: ('Log it by hand', _logByHand),
       secondary: ('Try again', _arm),
@@ -314,10 +311,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
         Text(_verdicts.length == 1 ? _verdicts.first.headline : 'Here\'s what that does', style: T.title),
         const SizedBox(height: S.x4),
         for (final (i, a) in _verdicts.indexed) ...[if (i > 0) const Hairline(), _VerdictRow(advice: a, removed: _lines[i].removed)],
-        if (fixed) ...[
-          const SizedBox(height: S.x4),
-          Text('Thanks for the fix. The camera uses corrections like this to get better in your bin.', style: T.small),
-        ],
+        if (fixed) ...[const SizedBox(height: S.x4), Text('Thanks for the fix. The camera uses corrections like this to get better in your bin.', style: T.small)],
         const SizedBox(height: S.x5),
         SizedBox(
           width: double.infinity,
@@ -327,14 +321,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     );
   }
 
-  Widget _message({
-    required IconData icon,
-    required String title,
-    required String body,
-    bool busy = false,
-    (String, VoidCallback)? primary,
-    (String, VoidCallback)? secondary,
-  }) {
+  Widget _message({required IconData icon, required String title, required String body, bool busy = false, (String, VoidCallback)? primary, (String, VoidCallback)? secondary}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

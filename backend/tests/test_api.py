@@ -6,6 +6,7 @@ streaks and Lid Locks -> quests -> daily goal -> crates -> Seed Packets ->
 equipping -> leagues.
 """
 
+import pytest
 import json
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -331,3 +332,119 @@ def test_recent_adds_is_empty_rather_than_absent_for_a_fresh_bin(c, monkeypatch)
 
     payload = json.loads(seen["text"].split("Bin state as JSON:\n", 1)[1].rsplit("\n\n", 1)[0])
     assert payload["recent_adds"] == []
+
+
+# --- second moisture probe -------------------------------------------------------
+#
+# The firmware now sends both probes in one sample. Probe 1 is the top layer,
+# probe 2 the bottom; probe_temp_c_2 arrives null today because the second
+# probe reports moisture but not temperature.
+
+NEW_FORMAT = {
+    "device_id": "bin-001", "probe_temp_c": 22.25, "moisture_raw": 464,
+    "probe_temp_c_2": None, "moisture_raw_2": 482,
+    "co2_ppm": 1498, "air_temp_c": 22.67, "air_humidity_pct": 40.83, "co2_status": 0,
+}
+
+
+def post_reading(c, body):
+    return c.post("/ingest", headers={"X-Device-Token": c.device_token}, json=body)
+
+
+def test_the_new_firmware_payload_is_accepted_verbatim(c):
+    r = post_reading(c, NEW_FORMAT)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["accepted"] is True
+    # Both probes get a percentage, each from its own calibration.
+    assert body["moisture_pct"] is not None
+    assert body["moisture_pct_2"] is not None
+
+
+def test_the_second_probe_makes_the_bottom_layer_measured(c):
+    """It used to be hardcoded unmeasured: "No second probe in this build"."""
+    post_reading(c, NEW_FORMAT)
+
+    live = c.get("/bins/bin-001/live").json()
+    bottom = [l for l in live["layers"] if l["layer"] == "bottom"][0]
+
+    assert bottom["measured"] is True
+    assert bottom["moisture_raw"] == 482
+    assert bottom["moisture_pct"] is not None
+    assert bottom["moisture_state"] in ("dry", "ok", "wet")
+    # Moisture alone is enough to count as measured; temperature is still null.
+    assert bottom["temp_c"] is None
+
+    top = [l for l in live["layers"] if l["layer"] == "top"][0]
+    assert top["moisture_raw"] == 464, "probe 1 still drives the top layer"
+
+
+def test_both_probes_survive_the_usb_bridge_to_live_view(c):
+    from scripts.serial_bridge import to_payload
+
+    assert post_reading(c, to_payload(NEW_FORMAT, 'bin-001')).status_code == 200
+    layers = {l['layer']: l for l in c.get('/bins/bin-001/live').json()['layers']}
+    assert layers['top']['moisture_raw'] == 464
+    assert layers['bottom']['measured'] is True
+    assert layers['bottom']['moisture_raw'] == 482
+    assert layers['bottom']['temp_c'] is None
+
+
+def test_a_sample_without_the_second_probe_leaves_the_bottom_unknown(c):
+    """The old payload must keep working: nothing should imply 0."""
+    old = {k: v for k, v in NEW_FORMAT.items() if not k.endswith("_2")}
+    assert post_reading(c, old).status_code == 200
+
+    bottom = [l for l in c.get("/bins/bin-001/live").json()["layers"]
+              if l["layer"] == "bottom"][0]
+    assert bottom["measured"] is False
+    assert bottom["moisture_pct"] is None
+    assert bottom["moisture_state"] == "unknown"
+
+
+def test_each_probe_calibrates_separately(c):
+    """Different physical sensors, different dry/wet counts. Sharing probe 1's
+    would quietly mis-scale probe 2 -- the 10-bit ADC bug again."""
+    post_reading(c, NEW_FORMAT)
+
+    # Probe 2 reads 482. Calibrate it so that lands mid-range.
+    r = c.post("/bins/bin-001/calibration",
+               json={"moisture_raw_dry": 600, "moisture_raw_wet": 300, "probe": 2})
+    assert r.status_code == 200 and r.json()["probe"] == 2
+    assert r.json()["readings_recomputed"] >= 1, "history replayed"
+
+    layers = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    # (600-482)/(600-300) = 39.3%
+    assert layers["bottom"]["moisture_pct"] == pytest.approx(39.3, abs=0.5)
+
+    # Probe 1 must be untouched by that call.
+    before = layers["top"]["moisture_pct"]
+    c.post("/bins/bin-001/calibration",
+           json={"moisture_raw_dry": 475, "moisture_raw_wet": 177, "probe": 1})
+    after = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    assert after["bottom"]["moisture_pct"] == pytest.approx(39.3, abs=0.5), \
+        "calibrating probe 1 must not move probe 2"
+    assert after["top"]["moisture_pct"] != before
+
+
+def test_a_resend_of_the_same_timestamp_fills_the_second_probe_in(c):
+    """ON CONFLICT must cover the new columns, or a bridge retry would drop
+    whichever probe arrived second."""
+    # Relative, not a wall-clock literal: binstate.STALE_AFTER is two minutes,
+    # so a fixed timestamp makes this test rot.
+    ts = datetime.now(timezone.utc).isoformat()
+    first = {k: v for k, v in NEW_FORMAT.items() if not k.endswith("_2")}
+    assert post_reading(c, {**first, "time": ts}).status_code == 200
+    assert post_reading(c, {**NEW_FORMAT, "time": ts}).status_code == 200
+
+    # Asserted through the live view rather than SQL: run_sql wraps
+    # conn.execute, which returns a status string rather than rows.
+    layers = {l["layer"]: l for l in c.get("/bins/bin-001/live").json()["layers"]}
+    assert layers["top"]["moisture_raw"] == 464, "probe 1 survived the resend"
+    assert layers["bottom"]["moisture_raw"] == 482, "probe 2 was filled in"
+
+
+def test_an_out_of_range_second_probe_is_rejected(c):
+    bad = {**NEW_FORMAT, "moisture_raw_2": 99999}
+    assert post_reading(c, bad).status_code == 422
+    assert post_reading(c, {**NEW_FORMAT, "probe_temp_c_2": 500}).status_code == 422

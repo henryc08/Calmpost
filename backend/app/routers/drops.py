@@ -56,6 +56,7 @@ class DropItem(BaseModel):
     label: str = Field(min_length=1, max_length=60)
     catalog_id: str = Field(default="unknown", max_length=40)
     category: Literal["green", "brown", "avoid"] | None = None
+    piece_count: int | None = Field(default=None, ge=1, le=999, strict=True)
     est_grams: float | None = Field(default=None, gt=0, lt=5000)
     amount: Amount | None = None
     confidence: float = Field(ge=0, le=1)
@@ -83,6 +84,8 @@ class SessionClose(BaseModel):
 
 
 class ConfirmItem(BaseModel):
+    piece_count: int | None = Field(default=None, ge=1, le=999, strict=True)
+    quantity_g: int | None = Field(default=None, ge=1, le=5000, strict=True)
     label: str = Field(min_length=1, max_length=60)
     catalog_id: str = Field(default="unknown", max_length=40)
     category: Literal["green", "brown", "avoid", "unknown"] = "unknown"
@@ -151,6 +154,8 @@ def _public(row) -> dict:
         "time": row["time"].isoformat(),
         "status": row["status"],
         "items": row["guess"],
+        "final_items": row["final_items"],
+        "corrected": row["corrected"],
         # 'camera' or 'photo': the same sheet handles both, but a photo the
         # user framed deserves different wording from one the bin noticed.
         "source": row["source"],
@@ -236,8 +241,15 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
             guess = next((i for i in drop['guess'] if i.get('catalog_id') == f['catalog_id']), None)
             f['amount'] = (guess or {}).get('amount') or 'handful'
     def comparable(items):
-        return [(i.get("catalog_id"), i.get("label", "").lower(), i.get("category"), i.get("amount"), i.get("removed", False)) for i in items]
+        return [(i.get("catalog_id"), i.get("label", "").lower(), i.get("category"),
+                 i.get("amount"), i.get("removed", False)) for i in items]
     corrected = comparable(drop["guess"]) != comparable(final)
+    for guess, accepted in zip(drop["guess"], final):
+        if guess.get("piece_count") is not None and guess["piece_count"] != accepted["piece_count"]:
+            corrected = True
+        accepted_grams = accepted["quantity_g"] or AMOUNT_GRAMS[accepted["amount"]]
+        if guess.get("est_grams") is not None and round(guess["est_grams"]) != accepted_grams:
+            corrected = True
     snap = await binstate.snapshot(drop["bin_id"])
     async with db.pool().acquire() as conn, conn.transaction():
         locked = await conn.fetchrow("SELECT * FROM drop_events WHERE id=$1 FOR UPDATE", drop_id)
@@ -247,10 +259,10 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
             raise HTTPException(409, "drop was already handled")
         out = []
         for item, f in zip(body.items, final):
-            grams = AMOUNT_GRAMS[f['amount']]
+            grams = item.quantity_g if item.quantity_g is not None else AMOUNT_GRAMS[f['amount']]
             log = await write_log(conn, drop["bin_id"], LogCreate(
                 item=item.label, catalog_id=item.catalog_id if item.catalog_id != "unknown" else None,
-                category=f["category"], action="skipped" if item.removed else "added", quantity_g=grams,
+                category=f["category"], action="skipped" if item.removed else "added", quantity_g=grams, piece_count=item.piece_count,
                 source=drop["source"], was_advised=item.was_advised, notes=f"{drop['source']} drop {drop_id}"), snap)
             await conn.execute("UPDATE add_log SET drop_id=$1 WHERE id=$2 AND time=$3", drop_id, log.id, log.time)
             verdict = None
@@ -428,7 +440,7 @@ async def photo(drop_id: int) -> Response:
     return Response(
         content=bytes(row["thumbnail_jpeg"]),
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=86400, immutable"},
+        headers={"Cache-Control": "private, max-age=86400, immutable"},
     )
 
 

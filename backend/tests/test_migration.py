@@ -76,5 +76,5 @@ async def _upgrade():
 def test_old_main_database_upgrades_in_place():
     cols, user_cols, loam, xp, bins = asyncio.run(_upgrade())
     assert "loam" in cols and "seeds" not in cols
-    assert {"lid_locks", "packets", "pity_since_epic", "equipped_finish"} <= user_cols
+    assert {"lid_locks", "packets", "pity_since_epic", "equipped_finish", "equipped_seed"} <= user_cols
     assert loam == 40 and xp == 15 and bins == 1

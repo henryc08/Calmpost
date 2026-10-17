@@ -42,6 +42,8 @@ INGEST_FIELDS = {
     "device_id",
     "probe_temp_c",
     "moisture_raw",
+    "probe_temp_c_2",
+    "moisture_raw_2",
     "co2_ppm",
     "air_temp_c",
     "air_humidity_pct",

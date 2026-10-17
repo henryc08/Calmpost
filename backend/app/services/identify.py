@@ -48,6 +48,7 @@ For each item:
 - label: what it is, in two or three plain words, lower case ("banana peel").
 - catalog_id: the closest id from the list, or "unknown" if none fits. Do not \
 force a poor match; "unknown" is the right answer for anything unusual.
+- piece_count: number of distinct pieces of this same item (1-999). Group identical items in one row. Omit if uncountable; never derive count from weight.
 - est_grams: a rough weight for what is visible.
 - confidence: how sure you are, 0 to 1. Be honest; a blurry or partly hidden \
 item should be low.
@@ -68,6 +69,7 @@ def schema() -> dict:
                     "properties": {
                         "label": {"type": "STRING"},
                         "catalog_id": {"type": "STRING", "enum": sorted(food.BY_ID) + [UNKNOWN]},
+                        "piece_count": {"type": "INTEGER"},
                         "est_grams": {"type": "NUMBER"},
                         "confidence": {"type": "NUMBER"},
                         "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
@@ -107,6 +109,8 @@ def parse(raw: dict) -> list[dict]:
         if not label or label.lower() in IGNORE_LABELS:
             continue
         cid = it.get("catalog_id") if it.get("catalog_id") in food.BY_ID else UNKNOWN
+        pieces = it.get("piece_count")
+        pieces = pieces if type(pieces) is int and 1 <= pieces <= 999 else None
         grams = it.get("est_grams")
         grams = float(grams) if isinstance(grams, (int, float)) and 0 < grams < 5000 else None
         if grams is None and cid != UNKNOWN:
@@ -122,6 +126,7 @@ def parse(raw: dict) -> list[dict]:
             # None for unknown, matching the camera's shape.
             "category": cat if (cat := compost.categorise(label)) != "unknown" else None,
             "est_grams": grams,
+            "piece_count": pieces,
             "confidence": conf,
             "box_2d": _box(it.get("box_2d")),
         })

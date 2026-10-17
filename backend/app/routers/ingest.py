@@ -35,7 +35,9 @@ async def ingest(
         raise HTTPException(status_code=403, detail="token does not match device_id")
 
     binr = await db.fetchrow(
-        "SELECT moisture_raw_dry, moisture_raw_wet, calibrated FROM bins WHERE bin_id = $1",
+        """SELECT moisture_raw_dry, moisture_raw_wet, calibrated,
+                  moisture_raw_dry_2, moisture_raw_wet_2, calibrated_2
+           FROM bins WHERE bin_id = $1""",
         auth_bin_id,
     )
     if binr is None:
@@ -51,6 +53,11 @@ async def ingest(
     # firmware never has to know its own calibration.
     pct = compost.moisture_pct(
         payload.moisture_raw, binr["moisture_raw_dry"], binr["moisture_raw_wet"]
+    )
+    # Probe 2 has its own calibration: different physical sensor, different
+    # dry/wet counts. Sharing probe 1's would quietly mis-scale it.
+    pct2 = compost.moisture_pct(
+        payload.moisture_raw_2, binr["moisture_raw_dry_2"], binr["moisture_raw_wet_2"]
     )
 
     if payload.co2_status not in (None, 0):
@@ -68,8 +75,9 @@ async def ingest(
                 """
                 INSERT INTO readings
                     (time, bin_id, probe_layer, probe_temp_c, moisture_raw,
-                     moisture_pct, co2_ppm, air_temp_c, air_humidity_pct, co2_status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     moisture_pct, co2_ppm, air_temp_c, air_humidity_pct, co2_status,
+                     probe_temp_c_2, moisture_raw_2, moisture_pct_2)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 ON CONFLICT (bin_id, time) DO UPDATE SET
                     probe_temp_c     = COALESCE(EXCLUDED.probe_temp_c,     readings.probe_temp_c),
                     moisture_raw     = COALESCE(EXCLUDED.moisture_raw,     readings.moisture_raw),
@@ -77,7 +85,10 @@ async def ingest(
                     co2_ppm          = COALESCE(EXCLUDED.co2_ppm,          readings.co2_ppm),
                     air_temp_c       = COALESCE(EXCLUDED.air_temp_c,       readings.air_temp_c),
                     air_humidity_pct = COALESCE(EXCLUDED.air_humidity_pct, readings.air_humidity_pct),
-                    co2_status       = COALESCE(EXCLUDED.co2_status,       readings.co2_status)
+                    co2_status       = COALESCE(EXCLUDED.co2_status,       readings.co2_status),
+                    probe_temp_c_2   = COALESCE(EXCLUDED.probe_temp_c_2,   readings.probe_temp_c_2),
+                    moisture_raw_2   = COALESCE(EXCLUDED.moisture_raw_2,   readings.moisture_raw_2),
+                    moisture_pct_2   = COALESCE(EXCLUDED.moisture_pct_2,   readings.moisture_pct_2)
                 """,
                 ts,
                 auth_bin_id,
@@ -89,6 +100,9 @@ async def ingest(
                 payload.air_temp_c,
                 payload.air_humidity_pct,
                 payload.co2_status,
+                payload.probe_temp_c_2,
+                payload.moisture_raw_2,
+                pct2,
             )
             await conn.execute(
                 "UPDATE bins SET last_seen_at = greatest(last_seen_at, $2) WHERE bin_id = $1", auth_bin_id, ts
@@ -116,6 +130,15 @@ async def ingest(
         bits.append(f"probe={payload.probe_temp_c:.1f}C{delta}")
     else:
         bits.append("probe=none")
+    if payload.moisture_raw_2 is not None:
+        bits.append(
+            f"raw2={payload.moisture_raw_2}->{pct2:.1f}%" if pct2 is not None
+            else f"raw2={payload.moisture_raw_2}->?"
+        )
+        if payload.probe_temp_c_2 is not None:
+            bits.append(f"probe2={payload.probe_temp_c_2:.1f}C")
+    else:
+        bits.append("raw2=none")
     if payload.co2_ppm is not None:
         flag = "" if payload.co2_status in (0, None) else f" !status={payload.co2_status}"
         bits.append(f"co2={payload.co2_ppm:.0f}ppm{flag}")
@@ -125,6 +148,8 @@ async def ingest(
         bits.append(f"rh={payload.air_humidity_pct:.0f}%")
     if not binr["calibrated"]:
         bits.append("[uncalibrated]")
+    if payload.moisture_raw_2 is not None and not binr["calibrated_2"]:
+        bits.append("[probe2 uncalibrated]")
 
     log.info("stored " + "  ".join(bits))
 
@@ -132,5 +157,6 @@ async def ingest(
         accepted=True,
         time=ts,
         moisture_pct=round(pct, 1) if pct is not None else None,
+        moisture_pct_2=round(pct2, 1) if pct2 is not None else None,
         calibrated=binr["calibrated"],
     )

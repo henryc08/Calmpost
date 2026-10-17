@@ -57,3 +57,15 @@ Long-press the Bin World on Home to open the demo picker:
 - The mock scenarios: healthy, too wet, too dry, curing and ready. Use them if the venue network drops.
 
 Web preview links (also `?source=mock|live`) are listed in the agent doc, section 9.
+
+### Compost inventory
+
+Open **Compost inventory** in Log or Profile for grouped item counts, estimated
+weight, green/brown totals and weekly/all-time history. Camera/photo review and
+manual logging include editable pieces/portions and **total** weight; a count
+change does not multiply grams. Only confirmed compostable additions count.
+Older logs without counts remain labelled as such.
+
+Live inventory and group rankings show the server's amount XP + care/reward XP
+breakdown. The sensor-based health score stays separate. Demo inventory works
+without a backend and lasts for the mock repository session.

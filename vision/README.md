@@ -81,8 +81,8 @@ Implemented by `mock_backend.py`. The routes are from AGENTS.md section 4, plus 
 | POST | `/drops/{id}/dismiss` | app | "Nothing was added" |
 | GET | `/bins/{id}/drops/hints` | vision | *new*, optional: recent corrections fed back to Gemini |
 
-Each item has the shape `{label, catalog_id, category, est_grams, amount: small|handful|large, confidence 0-1, box_2d: [ymin, xmin, ymax, xmax] on 0-1000}`.
-The vision service sends `X-API-Key: $APP_API_KEY` when it's set.
+Each item has the shape `{label, catalog_id, category, piece_count (optional), est_grams, amount: small|handful|large, confidence 0-1, box_2d: [ymin, xmin, ymax, xmax] on 0-1000}`.
+The vision service sends `X-Device-Token: $DEVICE_TOKEN` for player-owned bins, or `X-API-Key: $APP_API_KEY` for demo bins.
 
 ## Tests
 
@@ -91,3 +91,15 @@ pytest     # 23 tests: motion trigger, frames, catalog/Gemini validation, watche
 ```
 
 They use synthetic footage (`tests/synth.py`): a textured bin, with a yellow peel and a hand falling in. No webcam or Gemini key is needed.
+
+### Inventory counts and player-owned bins
+
+Vision groups identical new scraps into rows and proposes optional `piece_count`
+alongside the total `est_grams`. Uncountable material has no model count; the app
+asks the user to review pieces/portions and total weight before saving. No guess
+counts as compost until confirmed, and original guesses are retained separately.
+
+For a player-owned bin, set `DEVICE_TOKEN` in `vision/.env` to that bin's device
+token. The client sends `X-Device-Token`, scoped to active sessions, reports,
+closing sessions and correction hints. `APP_API_KEY` remains the demo fallback.
+The service cannot confirm detections or read the user's inventory.

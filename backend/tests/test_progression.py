@@ -100,6 +100,36 @@ def test_owned_seed_buffs_pay_actual_rewards_once(c, seed, check_xp, quest_xp, l
 
 
 @needs_db
+def test_seed_rewards_and_owned_camera_share_inventory_score_without_duplicate_counts(c):
+    uid, headers = account(c, 'integrated')
+    device = {'X-Device-Token': c.device_token}
+    assert c.post('/social/bin', headers=headers, json={'device_token': c.device_token}).status_code == 200
+    assert c.post(f'/users/{uid}/levels/1/claim', headers=device).status_code == 403
+    assert c.post(f'/users/{uid}/levels/1/claim', headers=headers).status_code == 200
+    assert c.post(f'/users/{uid}/equip', headers=headers, json={'collectible_id': 'sprout'}).status_code == 200
+    assert c.post('/social/check-in', headers=headers).json()['xp_awarded'] == 5
+    assert c.post(f'/quests/checkin/claim?user_id={uid}', headers=headers).json()['xp_awarded'] == 11
+    sid = c.post('/bins/bin-001/drops/session', headers=headers).json()['session_id']
+    report = c.post('/bins/bin-001/drops', headers=device, json={
+        'session_id': sid, 'latency_ms': 100, 'gemini_ok': True,
+        'items': [{'label': 'banana peel', 'catalog_id': 'banana_peel', 'confidence': .9, 'piece_count': 2, 'est_grams': 100}],
+    })
+    assert report.status_code == 201, report.text
+    path = f"/drops/{report.json()['drop_id']}/confirm"
+    body = {'items': [{'label': 'Banana peel', 'catalog_id': 'banana_peel', 'piece_count': 2, 'quantity_g': 100}]}
+    assert c.post(path, headers=device, json=body).status_code == 403
+    first = c.post(path, headers=headers, json=body)
+    assert first.status_code == 200, first.text
+    assert c.post(path, headers=headers, json=body).json() == first.json()
+    inventory = c.get('/bins/bin-001/inventory', headers=headers).json()
+    assert (inventory['grams'], inventory['pieces'], inventory['entries']) == (100, 2, 1)
+    assert (inventory['total_xp'], inventory['volume_xp'], inventory['care_xp']) == (21, 5, 16)
+    profile = c.get(f'/users/{uid}/game', headers=headers).json()
+    assert profile['total_xp'] == inventory['total_xp']
+    assert profile['level_claimed'] == [1] and profile['equipped_seed'] == 'sprout'
+
+
+@needs_db
 def test_specialized_quest_bonus_and_seed_switch_do_not_repay_old_rewards(c):
     uid, headers = account(c, 'specialist')
     for seed in ('firefern', 'sprout'):

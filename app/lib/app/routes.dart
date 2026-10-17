@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/drop/drop_sheet.dart';
+import '../features/inventory/inventory_screen.dart';
 import '../features/greenhouse/greenhouse_screen.dart';
 import '../features/social/social_screen.dart';
 import '../features/levels/level_map.dart';
@@ -11,6 +12,7 @@ import '../data/collectibles.dart';
 abstract final class Routes {
   static Future<void> levels(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LevelMapScreen()));
   static Future<void> seed(BuildContext context, String id) => showCollectibleDetails(context, collectibleById[id]!);
+  static Future<void> inventory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const InventoryScreen()));
 
   /// Camera drop-in: arm the camera, then review what it saw.
   static Future<void> drop(BuildContext context) => showDropSheet(context);

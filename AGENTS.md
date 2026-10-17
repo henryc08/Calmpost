@@ -496,3 +496,45 @@ cd vision && python main.py
 - If you change a token, rule, endpoint or mechanic, **update this file in the same commit**.
 
 **Owners** (fill in names): Design system & app — ___ · Backend & Tiger — ___ · Vision & Gemini — ___ · Firmware & hardware — ___
+
+
+## Multiplayer (branch `multiplayer`)
+
+Social is now a persistent, authenticated feature, backed by `005_social.sql` and
+`app/routers/social.py`. The former social league screen is an explicitly labelled
+**demo league**, accessible from signed-out Social. The old friends/nudge demo is
+not used for multiplayer.
+
+- A person registers a unique username and password, then signs in on any device.
+  Passwords use salted PBKDF2-SHA256 (600,000 rounds); session tokens are random,
+  hashed in the database, expire after 30 days, and are kept in secure device storage.
+  Authentication attempts are throttled in Postgres. Social does not use the shared app key.
+- Profiles default to **private**. Names and usernames are searchable; activity,
+  XP, levels, streaks, and care calendar require an accepted follow. Public profiles
+  are optional. Follow requests can be accepted/declined, followers removed, and follows cancelled.
+- Friend invite codes establish mutual approved follows. Group codes grant membership
+  only, never access to private profile history. Codes expire in 7 days; issuing a new
+  code rotates the old one. Codes are copied for the user to share; no messages are sent automatically.
+- Private groups support up to 50 people, weekly/all-time leaderboards, shared ranks
+  for tied XP, and a team XP total. Weekly boundaries are Sunday 00:00 UTC. Only owners
+  create group invites, remove others, or delete the group. Members can leave; removals
+  revoke existing invites. Each user can own up to 20 groups.
+- Feed and profiles read actual `point_events`. Cheers are idempotent and award no XP.
+  Scores are never uploaded by the phone. A check-in earns 5 XP once per UTC day,
+  serialized to prevent duplicate concurrent rewards.
+- Pairing a bin requires its device token; an existing player-owned bin cannot be claimed
+  by another account. The app then reads that bin with its user session. Checking Layers
+  saves a check-in, and Log saves via `/social/care-log`: server rules determine advised
+  additions/avoids, requests are idempotent, and stale readings are rejected.
+- Legacy API-key routes cannot read or mutate registered players' private state or bins.
+  Player sessions can read their owned bin and request advice; legacy reward writes are
+  demo-only, so repeatable demo harvests cannot inflate multiplayer scores.
+  Demo clients keep access to demo users and bins. Arduino ingestion is unchanged.
+- The local Home/Greenhouse game economy remains a demo. Its XP, crate rolls and Loam are
+  **not submitted to social rankings**. Profile links to the account's actual shared progress
+  and labels the older local rewards. Do not imply these economies are synchronized.
+- UI uses `socialRepositoryProvider` and `socialDataProvider` as the social counterpart of
+  `repositoryProvider`: no HTTP in screens. Visible social data refreshes every 20 seconds,
+  after successful writes, and with manual refresh. Errors are shown with retry; no fake successes.
+- Supported/tested Flutter SDK: **3.41.9** (Dart 3.11). See `MULTIPLAYER.md` for setup and checks.
+- Account recovery, email invitations, push notifications and deployment are not implemented.

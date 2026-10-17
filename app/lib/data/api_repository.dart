@@ -29,7 +29,7 @@ class ApiRepository implements CalmpostRepository {
 
   void close() => _http.close();
 
-  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json'};
+  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json', if (config.token != null) 'Authorization': 'Bearer ${config.token}'};
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('${config.baseUrl}$path').replace(queryParameters: query);
 

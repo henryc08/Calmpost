@@ -75,7 +75,7 @@ async def _advise(bin_id: str, item: str | None, refresh: bool) -> AdviceRespons
                 cached["time"], True, cached["input_snapshot"],
             )
 
-    payload, model = await advisor.advise(snap, item)
+    payload, model = await advisor.advise(snap, item, await binstate.recent_adds(bin_id))
 
     # Store the snapshot as given to the model, minus the advisory prose.
     proof = {

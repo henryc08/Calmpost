@@ -6,6 +6,7 @@ streaks and Lid Locks -> quests -> daily goal -> crates -> Seed Packets ->
 equipping -> leagues.
 """
 
+import json
 from datetime import date, datetime, time, timedelta, timezone
 
 from app.rules import game, gacha
@@ -273,3 +274,60 @@ def test_starter_finish_can_always_be_re_equipped(c):
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_gold"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_classic"}).status_code == 200
     assert profile(c)["equipped_finish"] == "finish_classic"
+
+
+def test_the_model_is_given_the_items_that_actually_went_in(c, monkeypatch):
+    """The prompt promises "a log of what was recently added". It used to get
+    only greens_7d/browns_7d cup totals, so it could not name anything."""
+    from app.config import get_settings
+    from app.services import advisor
+
+    seen: dict = {}
+
+    async def capture(body):
+        seen["text"] = body["contents"][0]["parts"][0]["text"]
+        return {"verdict": "great", "headline": "Good add", "reason": "Fine.",
+                "pair_with": [], "suggest_add": [], "suggest_avoid": [], "balance": "balanced",
+                "stage_top": "active", "stage_bottom": "started", "bottom_ready": False, "tip": ""}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(advisor, "_ask_gemini", capture)
+
+    ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
+    c.post("/bins/bin-001/logs", json={"item": "Coffee grounds", "category": "green"})
+    c.post("/bins/bin-001/logs", json={"item": "Cheese", "category": "avoid", "action": "skipped"})
+
+    c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"})
+
+    payload = json.loads(seen["text"].split("Bin state as JSON:\n", 1)[1].rsplit("\n\n", 1)[0])
+    adds = payload["recent_adds"]
+    assert [a["item"] for a in adds] == ["Cheese", "Coffee grounds"], "newest first"
+    assert adds[0]["action"] == "skipped", "a kept-out item is part of the history"
+    assert adds[1]["category"] == "green"
+    assert all(a["hours_ago"] >= 0 for a in adds)
+
+
+def test_recent_adds_is_empty_rather_than_absent_for_a_fresh_bin(c, monkeypatch):
+    """An empty list tells the model to say nothing about recent additions;
+    a missing key would leave it guessing from the cup totals."""
+    from app.config import get_settings
+    from app.services import advisor
+
+    seen: dict = {}
+
+    async def capture(body):
+        seen["text"] = body["contents"][0]["parts"][0]["text"]
+        return {"verdict": "great", "headline": "Good add", "reason": "Fine.",
+                "pair_with": [], "suggest_add": [], "suggest_avoid": [], "balance": "balanced",
+                "stage_top": "active", "stage_bottom": "started", "bottom_ready": False, "tip": ""}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(advisor, "_ask_gemini", capture)
+
+    ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
+    c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"})
+
+    payload = json.loads(seen["text"].split("Bin state as JSON:\n", 1)[1].rsplit("\n\n", 1)[0])
+    assert payload["recent_adds"] == []

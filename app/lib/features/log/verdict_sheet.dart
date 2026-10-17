@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,11 +9,14 @@ import '../../app/toast.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
+import '../../data/social_repository.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -39,6 +43,9 @@ class _VerdictSheet extends ConsumerStatefulWidget {
 class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
   late FoodItem _item = widget.item;
   Advice? _advice;
+  bool _saving = false;
+  String? _error;
+  final _requestId = '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
 
   @override
   void initState() {
@@ -57,7 +64,24 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
     setState(() => _advice = advice);
   }
 
-  void _commit({required bool added}) {
+  Future<void> _commit({required bool added}) async {
+    if (_saving) return;
+    setState(() { _saving = true; _error = null; });
+    final account = ref.read(socialSessionProvider).valueOrNull;
+    if (account != null) {
+      try {
+        if (account.binId == null || ref.read(dataSourceProvider) != DataSource.live) {
+          throw const SocialFailure('Connect your bin in Social to save real care. Demo actions stay on this device.');
+        }
+        final result = await socialWrite(ref, 'POST', '/care-log', {'catalog_id': _advice!.item.id, 'action': added ? 'added' : 'skipped', 'request_id': _requestId}) as Json;
+        if (!mounted) return;
+        showToast(ref, 'Care saved to your profile', xp: result['xp_awarded'] as int);
+        Navigator.of(context).pop();
+      } catch (e) {
+        if (mounted) setState(() { _saving = false; _error = e is SocialFailure ? e.message : 'Could not save your care. Please try again'; });
+      }
+      return;
+    }
     final advice = _advice!;
     final tips = ref.read(suggestionProvider)?.add.map((f) => f.id) ?? const <String>[];
     final out = ref.read(gameProvider.notifier).recordLog(advice, added: added, suggestedIds: tips);
@@ -143,7 +167,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: T.caps.copyWith(color: color)),
+                  Row(children: [Text(label, style: T.caps.copyWith(color: color)), const InfoDot(InfoTip.verdict)]),
                   const SizedBox(height: 2),
                   Text(a.item.name, style: T.small.copyWith(color: C.ink2)),
                 ],
@@ -176,11 +200,13 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
           style: T.small,
         ),
         const SizedBox(height: S.x5),
+        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: S.x3), child: Text(_error!, style: T.small.copyWith(color: C.clay))),
+        if (_saving) const LinearProgressIndicator(color: C.forest, backgroundColor: C.sunk),
         SizedBox(
           width: double.infinity,
           child: avoid
-              ? PillButton(label: 'Keep it out', color: C.clay, textColor: Colors.white, onTap: () => _commit(added: false))
-              : PillButton(label: a.verdict == Verdict.great ? 'Add it' : 'Add it carefully', onTap: () => _commit(added: true)),
+              ? PillButton(label: 'Keep it out', color: C.clay, textColor: Colors.white, onTap: _saving ? null : () => _commit(added: false))
+              : PillButton(label: a.verdict == Verdict.great ? 'Add it' : 'Add it carefully', onTap: _saving ? null : () => _commit(added: true)),
         ),
         const SizedBox(height: S.x2),
         Center(

@@ -122,3 +122,8 @@ calibration, and debugging by symptom. API reference in
 Moisture is 45% of the health score and the default curve is a guess. Hold
 the probe in air, note `moisture_raw`; stand it in water, note it again; then
 post both. Steps in [backend/TESTING.md](backend/TESTING.md).
+
+## Multiplayer
+
+The `multiplayer` branch adds accounts, friend invitations, follows, shared progress,
+and private leaderboards. See [MULTIPLAYER.md](MULTIPLAYER.md) for setup and a two-person walkthrough.

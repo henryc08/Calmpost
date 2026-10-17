@@ -1,121 +1,52 @@
-"""Gemini-backed recommendations for the bin's current state."""
+"""POST /bins/{id}/advice/check -- the verdict sheet. Our demo moment.
 
-import hashlib
-import json
+Every answer is stored with the sensor snapshot it was based on, so when the
+same scrap gets a different verdict we can show *why* rather than asserting
+it.
+"""
+
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import db, gemini
+from .. import binstate, db, gemini
 from ..config import get_settings
-from ..models import AdviceResponse, Suggestion
+from ..models import AdviceCheck, AdviceResponse
 from ..security import require_app_key
 
-router = APIRouter(prefix="/v1", tags=["advice"], dependencies=[Depends(require_app_key)])
+router = APIRouter(tags=["advice"], dependencies=[Depends(require_app_key)])
 
 
-async def _collect_state(device_id: str) -> dict:
-    """The snapshot handed to Gemini: current readings, 6h trend, recent adds."""
-    zone_rows = await db.fetch(
-        """
-        SELECT DISTINCT ON (zone) zone, time, moisture_pct, temperature_c, co2_ppm
-        FROM readings
-        WHERE device_id = $1
-        ORDER BY zone, time DESC
-        """,
-        device_id,
-    )
-    trend_rows = await db.fetch(
-        """
-        SELECT zone,
-               avg(moisture_pct)  AS moisture_pct,
-               avg(temperature_c) AS temperature_c,
-               avg(co2_ppm)       AS co2_ppm
-        FROM readings
-        WHERE device_id = $1 AND time >= now() - interval '6 hours'
-        GROUP BY zone
-        """,
-        device_id,
-    )
-    log_rows = await db.fetch(
-        """
-        SELECT item, category, time
-        FROM add_log
-        WHERE device_id = $1 AND time >= now() - interval '7 days'
-        ORDER BY time DESC
-        LIMIT 20
-        """,
-        device_id,
-    )
-
-    greens = sum(1 for r in log_rows if r["category"] == "green")
-    browns = sum(1 for r in log_rows if r["category"] == "brown")
-
-    return {
-        "zones": {
-            r["zone"]: {
-                "moisture_pct": r["moisture_pct"],
-                "temperature_c": r["temperature_c"],
-                "co2_ppm": r["co2_ppm"],
-                "measured_at": r["time"],
-            }
-            for r in zone_rows
-        },
-        "six_hour_average": {
-            r["zone"]: {
-                "moisture_pct": r["moisture_pct"],
-                "temperature_c": r["temperature_c"],
-                "co2_ppm": r["co2_ppm"],
-            }
-            for r in trend_rows
-        },
-        "recent_adds": [
-            {"item": r["item"], "category": r["category"], "at": r["time"]}
-            for r in log_rows
-        ],
-        "recent_greens": greens,
-        "recent_browns": browns,
-        "healthy_moisture_pct": [40, 60],
-    }
-
-
-def _state_hash(state: dict) -> str:
-    """Fingerprint the numbers that should change the answer.
-
-    Moisture and temperature are rounded so sensor jitter alone does not
-    invalidate a cached answer, but a real change does.
-    """
-    coarse = {
-        zone: [
-            round(v["moisture_pct"] / 5) if v["moisture_pct"] is not None else None,
-            round(v["temperature_c"] / 2) if v["temperature_c"] is not None else None,
-            round(v["co2_ppm"] / 250) if v["co2_ppm"] is not None else None,
-        ]
-        for zone, v in sorted(state["zones"].items())
-    }
-    coarse["adds"] = len(state["recent_adds"])
-    return hashlib.sha256(
-        json.dumps(coarse, sort_keys=True, default=str).encode()
-    ).hexdigest()
-
-
-@router.get("/devices/{device_id}/advice", response_model=AdviceResponse)
-async def advice(
-    device_id: str,
-    refresh: bool = Query(False, description="skip the cache and re-ask Gemini"),
+@router.post("/bins/{bin_id}/advice/check", response_model=AdviceResponse)
+async def check(
+    bin_id: str,
+    body: AdviceCheck,
+    refresh: bool = Query(False, description="skip the cache and re-ask"),
 ) -> AdviceResponse:
+    return await _advise(bin_id, body.item, refresh)
+
+
+@router.get("/bins/{bin_id}/advice", response_model=AdviceResponse)
+async def whole_bin_advice(
+    bin_id: str,
+    refresh: bool = Query(False, description="skip the cache and re-ask"),
+) -> AdviceResponse:
+    """Whole-bin advice for the Home screen's "Wren suggests" card."""
+    return await _advise(bin_id, None, refresh)
+
+
+async def _advise(bin_id: str, item: str | None, refresh: bool) -> AdviceResponse:
     settings = get_settings()
-    device = await db.fetchrow(
-        "SELECT device_id FROM devices WHERE device_id = $1", device_id
-    )
-    if device is None:
-        raise HTTPException(status_code=404, detail="unknown device")
 
-    state = await _collect_state(device_id)
-    if not state["zones"]:
-        raise HTTPException(status_code=409, detail="no readings for this device yet")
+    binr = await binstate.bin_row(bin_id)
+    if binr is None:
+        raise HTTPException(status_code=404, detail="unknown bin")
 
-    state_hash = _state_hash(state)
+    snap = await binstate.snapshot(bin_id)
+    if snap is None:
+        raise HTTPException(status_code=409, detail="no readings for this bin yet")
+
+    state_hash = binstate.state_hash(snap, item)
 
     if not refresh:
         cutoff = datetime.now(timezone.utc) - timedelta(
@@ -123,51 +54,95 @@ async def advice(
         )
         cached = await db.fetchrow(
             """
-            SELECT created_at, model, payload
+            SELECT id, time, model, payload, input_snapshot
             FROM advice
-            WHERE device_id = $1 AND state_hash = $2 AND created_at >= $3
-            ORDER BY created_at DESC
+            WHERE bin_id = $1
+              AND state_hash = $2
+              AND item IS NOT DISTINCT FROM $3
+              AND time >= $4
+            ORDER BY time DESC
             LIMIT 1
             """,
-            device_id,
+            bin_id,
             state_hash,
+            item,
             cutoff,
         )
         if cached is not None:
-            return _to_response(device_id, cached["payload"], cached["model"], cached["created_at"], True)
+            return _to_response(
+                cached["id"], bin_id, item, cached["payload"], cached["model"],
+                cached["time"], True, cached["input_snapshot"],
+            )
 
-    payload, model = await gemini.advise(state)
+    payload, model = await gemini.advise(snap, item)
+
+    # Store the snapshot as given to the model, minus the advisory prose.
+    proof = {
+        "measured_at": snap["measured_at"],
+        "layers": snap["layers"],
+        "air": snap["air"],
+        "greens_7d": snap["greens_7d"],
+        "browns_7d": snap["browns_7d"],
+        "moisture_time_weighted_6h": snap["moisture_time_weighted_6h"],
+        "moisture_calibrated": snap["moisture_calibrated"],
+    }
 
     row = await db.fetchrow(
         """
         INSERT INTO advice
-            (device_id, model, state_hash, stage_top, stage_bottom, payload)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING created_at
+            (bin_id, item, model, state_hash, verdict, reason, balance,
+             stage_top, stage_bottom, bottom_ready, tip,
+             suggest_add, suggest_avoid, input_snapshot, payload)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id, time
         """,
-        device_id,
+        bin_id,
+        item,
         model,
         state_hash,
+        payload.get("verdict"),
+        payload.get("reason"),
+        payload.get("balance"),
         payload.get("stage_top"),
         payload.get("stage_bottom"),
+        bool(payload.get("bottom_ready", False)),
+        payload.get("tip"),
+        payload.get("suggest_add", []),
+        payload.get("suggest_avoid", []),
+        proof,
         payload,
     )
-    return _to_response(device_id, payload, model, row["created_at"], False)
+
+    return _to_response(
+        row["id"], bin_id, item, payload, model, row["time"], False, proof
+    )
 
 
 def _to_response(
-    device_id: str, payload: dict, model: str, created_at: datetime, cached: bool
+    advice_id: int,
+    bin_id: str,
+    item: str | None,
+    payload: dict,
+    model: str,
+    created_at: datetime,
+    cached: bool,
+    snapshot: dict | None,
 ) -> AdviceResponse:
     return AdviceResponse(
-        device_id=device_id,
+        advice_id=advice_id,
+        bin_id=bin_id,
+        item=item,
         created_at=created_at,
         cached=cached,
         model=model,
-        headline=payload.get("headline", ""),
+        verdict=payload.get("verdict", "add"),
+        reason=payload.get("reason", ""),
+        suggest_add=payload.get("suggest_add", []),
+        suggest_avoid=payload.get("suggest_avoid", []),
         balance=payload.get("balance", "unknown"),
-        stage_top=payload.get("stage_top", "unknown"),
-        stage_bottom=payload.get("stage_bottom", "unknown"),
+        stage_top=payload.get("stage_top", "started"),
+        stage_bottom=payload.get("stage_bottom", "started"),
         bottom_ready=bool(payload.get("bottom_ready", False)),
-        suggestions=[Suggestion(**s) for s in payload.get("suggestions", [])],
-        warnings=payload.get("warnings", []),
+        tip=payload.get("tip"),
+        input_snapshot=snapshot,
     )

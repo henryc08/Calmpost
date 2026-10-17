@@ -1,4 +1,9 @@
-"""Calmpost backend: sensor ingest + TigerData time-series + Gemini advice."""
+"""Calmpost backend: sensor ingest + Tiger Data time-series + Gemini advice.
+
+Thin API by design: it keeps the database and Gemini keys off the phone. The
+Flutter app never talks to Tiger Data directly -- it calls these endpoints,
+and ApiRepository mirrors CalmpostRepository method for method.
+"""
 
 import logging
 from contextlib import asynccontextmanager
@@ -8,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
-from .routers import advice, devices, ingest, logs, readings
+from .routers import advice, bins, game, ingest
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,7 +32,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="Calmpost API",
-    version="0.1.0",
+    version="0.2.0",
     description="Smart compost bin backend -- Hack the Valley 11",
     lifespan=lifespan,
 )
@@ -39,11 +44,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(devices.router)
 app.include_router(ingest.router)
-app.include_router(readings.router)
-app.include_router(logs.router)
+app.include_router(bins.router)
 app.include_router(advice.router)
+app.include_router(game.router)
 
 
 @app.get("/health", tags=["meta"])

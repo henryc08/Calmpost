@@ -15,10 +15,16 @@ _pool: asyncpg.Pool | None = None
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
 
 
+def _dump_json(value) -> str:
+    # default=str so timestamps inside a snapshot serialise instead of
+    # raising -- advice rows embed the measured_at they were based on.
+    return json.dumps(value, default=str)
+
+
 async def _init_connection(conn: asyncpg.Connection) -> None:
     # asyncpg hands jsonb back as a string unless we register a codec.
     await conn.set_type_codec(
-        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+        "jsonb", encoder=_dump_json, decoder=json.loads, schema="pg_catalog"
     )
 
 

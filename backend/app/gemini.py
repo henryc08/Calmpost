@@ -1,9 +1,15 @@
-"""Gemini call that turns bin state into plain-language advice.
+"""Gemini advice, in the response shape CLAUDE.md fixes.
 
-Hit over REST rather than through an SDK so the only dependency is httpx, and
-asked for structured JSON via responseSchema so the app never has to parse
-prose. If the key is missing or the call fails we fall back to the rules in
-compost.py -- the demo must not depend on the network.
+Three guarantees, in order of precedence:
+  1. Meat, dairy and oil are ALWAYS avoid, decided by rules. A model answer
+     can never override that.
+  2. If Gemini fails or there is no key, the rules answer instead. The demo
+     must never depend on the network.
+  3. Every answer records the sensor snapshot it was based on, so "same
+     scrap, different answer" is provable rather than asserted.
+
+Called over REST so httpx is the only dependency, with responseSchema so the
+app never parses prose.
 """
 
 import json
@@ -18,62 +24,82 @@ log = logging.getLogger(__name__)
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-SYSTEM_PROMPT = """You advise the owner of a small two-layer home compost bin \
-(about 19 L, sealed step-on lid with vent holes). You are given live sensor \
-readings and a log of what was recently added.
+SYSTEM_PROMPT = """You are Wren, a friendly worm who looks after someone's \
+small home compost bin (about 19 L, sealed step-on lid with vent holes, two \
+layers: fresh scraps on top, older compost at the bottom).
+
+You are given live sensor readings and a log of what was recently added, and \
+you answer whether a specific item should go in right now.
 
 Rules:
-- Recommend specific household items, not general composting theory.
 - Healthy moisture is 40-60%. Too wet needs dry browns; too dry needs greens or water.
-- Never recommend meat, fish, dairy, oily or greasy food, bones or pet waste in this bin.
-- The bottom layer is only "ready" when it has gone cool and quiet.
-- Say the readings are a guide, not a lab test, if you are unsure.
-- Keep every reason under 15 words and write for a beginner.
+- Each layer carries a moisture_state of "dry", "ok" or "wet". Describe the bin \
+to match it. NEVER call a layer healthy when its state is "dry" or "wet" -- if it \
+says dry, say the bin is dry; if wet, say it is wet.
+- NEVER tell them to add meat, fish, dairy, oily or greasy food, bones or pet waste.
+- verdict is "add" when it is fine, "add_with_browns" when it is fine but the \
+bin is too wet and needs dry material alongside it, "avoid" when it should not go in.
+- Recommend specific household items, never general composting theory.
+- A layer is only "ready" when it has gone cool and quiet.
+- If a reading is missing or flagged unreliable, say so instead of guessing.
+- If moisture_calibrated is false, treat the percentage as approximate.
+- Warm, encouraging, plain language. Keep reason under 20 words, tip under 15.
+- Readings are a guide, not a lab test. Never overclaim.
 """
 
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "headline": {"type": "string"},
+        "verdict": {"type": "string", "enum": ["add", "add_with_browns", "avoid"]},
+        "reason": {"type": "string"},
+        "suggest_add": {"type": "array", "items": {"type": "string"}},
+        "suggest_avoid": {"type": "array", "items": {"type": "string"}},
         "balance": {
             "type": "string",
             "enum": ["needs_greens", "needs_browns", "balanced", "unknown"],
         },
         "stage_top": {
             "type": "string",
-            "enum": ["active", "curing", "ready", "unknown"],
+            "enum": ["started", "active", "hot", "curing", "ready", "harvested"],
         },
         "stage_bottom": {
             "type": "string",
-            "enum": ["active", "curing", "ready", "unknown"],
+            "enum": ["started", "active", "hot", "curing", "ready", "harvested"],
         },
         "bottom_ready": {"type": "boolean"},
-        "suggestions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "item": {"type": "string"},
-                    "action": {"type": "string", "enum": ["add", "avoid"]},
-                    "reason": {"type": "string"},
-                },
-                "required": ["item", "action", "reason"],
-            },
-        },
-        "warnings": {"type": "array", "items": {"type": "string"}},
+        "tip": {"type": "string"},
     },
     "required": [
-        "headline", "balance", "stage_top", "stage_bottom",
-        "bottom_ready", "suggestions",
+        "verdict", "reason", "suggest_add", "suggest_avoid",
+        "balance", "stage_top", "stage_bottom", "bottom_ready",
     ],
 }
 
 
-async def advise(state: dict) -> tuple[dict, str]:
-    """Return (advice dict, model name). Falls back to local rules on failure."""
+async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
+    """Return (advice dict, model name).
+
+    `item` is the thing being checked, or None for whole-bin advice.
+    """
     settings = get_settings()
+
+    # Rule 1: hard avoids never reach the model.
+    if item:
+        reason = compost.avoid_reason(item)
+        if reason is not None:
+            answer = fallback(snapshot, item)
+            answer["verdict"] = "avoid"
+            answer["reason"] = f"{item.strip().capitalize()}: {reason}."
+            return answer, "rules-always-avoid"
+
     if not settings.gemini_api_key:
-        return fallback(state), "rules-fallback"
+        return fallback(snapshot, item), "rules-fallback"
+
+    question = (
+        f'Should they add "{item}" to the bin right now?'
+        if item
+        else "What should they add or avoid next?"
+    )
 
     body = {
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
@@ -82,9 +108,9 @@ async def advise(state: dict) -> tuple[dict, str]:
                 "role": "user",
                 "parts": [
                     {
-                        "text": "Current bin state as JSON:\n"
-                        + json.dumps(state, indent=2, default=str)
-                        + "\n\nGive 2-4 suggestions for what to add or avoid next."
+                        "text": "Bin state as JSON:\n"
+                        + json.dumps(snapshot, indent=2, default=str)
+                        + f"\n\n{question}"
                     }
                 ],
             }
@@ -100,93 +126,104 @@ async def advise(state: dict) -> tuple[dict, str]:
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
-                url,
-                params={"key": settings.gemini_api_key},
-                json=body,
+                url, params={"key": settings.gemini_api_key}, json=body
             )
             resp.raise_for_status()
             data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text), settings.gemini_model
+        answer = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
     except Exception:
-        # A judge watching the demo should see advice, not a stack trace.
+        # A judge should see advice, not a stack trace.
         log.exception("gemini call failed; using rules fallback")
-        return fallback(state), "rules-fallback"
+        return fallback(snapshot, item), "rules-fallback"
+
+    # Rule 1 again, defensively: strip anything on the never-add list out of
+    # the model's own suggestions.
+    answer["suggest_add"] = [
+        s for s in answer.get("suggest_add", []) if compost.avoid_reason(s) is None
+    ]
+    return answer, settings.gemini_model
 
 
-def fallback(state: dict) -> dict:
-    """Deterministic advice from compost.py, used offline and on error."""
-    top = state.get("zones", {}).get("top", {})
-    bottom = state.get("zones", {}).get("bottom", {})
-    airgap = state.get("zones", {}).get("airgap", {})
+def fallback(snapshot: dict, item: str | None) -> dict:
+    """Deterministic advice from the rules in compost.py."""
+    top = snapshot.get("layers", {}).get("top", {})
+    bottom = snapshot.get("layers", {}).get("bottom", {})
+    air = snapshot.get("air", {})
 
-    top_moisture = top.get("moisture_pct")
-    bal = compost.balance(
-        top_moisture,
-        state.get("recent_greens", 0),
-        state.get("recent_browns", 0),
-    )
+    pct = top.get("moisture_pct")
+    greens = snapshot.get("greens_7d", 0)
+    browns = snapshot.get("browns_7d", 0)
+    balance = compost.balance_verdict(pct, greens, browns)
+    state = compost.moisture_state(pct)
 
-    suggestions = []
-    if bal == "needs_browns":
-        suggestions = [
-            {
-                "item": "shredded cardboard",
-                "action": "add",
-                "reason": "soaks up extra moisture and lets air back in",
-            },
-            {
-                "item": "shredded paper",
-                "action": "add",
-                "reason": "dry carbon to balance wet food scraps",
-            },
-        ]
-        headline = "Top layer is wet -- add some dry browns."
-    elif bal == "needs_greens":
-        suggestions = [
-            {
-                "item": "vegetable peels",
-                "action": "add",
-                "reason": "adds nitrogen and moisture to a dry pile",
-            },
-            {
-                "item": "coffee grounds",
-                "action": "add",
-                "reason": "nitrogen-rich and holds water well",
-            },
-        ]
-        headline = "Top layer is dry -- add greens or a splash of water."
+    if balance == "needs_browns":
+        suggest_add = ["shredded cardboard", "shredded paper", "dry leaves"]
+        tip = "Tear the cardboard small so it mixes in."
+    elif balance == "needs_greens":
+        suggest_add = ["vegetable peels", "coffee grounds", "fruit scraps"]
+        tip = "A splash of water helps if it still feels dry."
     else:
-        suggestions = [
-            {
-                "item": "vegetable peels",
-                "action": "add",
-                "reason": "keeps the pile fed without upsetting the balance",
-            }
-        ]
-        headline = "Bin looks balanced -- keep layering greens and browns."
+        suggest_add = ["vegetable peels", "shredded cardboard"]
+        tip = "Keep layering greens with a bit of brown."
 
-    suggestions.append(
-        {
-            "item": "meat, dairy and oily food",
-            "action": "avoid",
-            "reason": "goes rancid and attracts pests in a sealed bin",
-        }
-    )
+    suggest_avoid = ["meat", "fish", "dairy", "oily or greasy food", "bones"]
 
-    stage_bottom = compost.stage(
-        bottom.get("temperature_c"),
-        airgap.get("co2_ppm"),
-        bottom.get("moisture_pct"),
+    # Verdict for the specific item, if one was asked about.
+    verdict = "add"
+    reason = "Looks fine for the bin right now."
+    if item:
+        avoid = compost.avoid_reason(item)
+        category = compost.categorise(item)
+        if avoid:
+            verdict = "avoid"
+            reason = f"{item.strip().capitalize()}: {avoid}."
+        elif category == "green" and state == "wet":
+            verdict = "add_with_browns"
+            reason = "The top layer is already wet, so add a dry brown with it."
+        elif category == "brown" and state == "dry":
+            verdict = "add"
+            reason = "Fine to add, though the bin could use greens or water too."
+        elif category == "green" and state == "dry":
+            verdict = "add"
+            reason = "Good choice -- the bin is dry and this adds moisture."
+        elif category == "unknown":
+            reason = "Not sure about this one, so add a little and watch the moisture."
+    else:
+        reason = {
+            "needs_browns": "The top layer is wet -- add some dry browns.",
+            "needs_greens": "The top layer is dry -- add greens or a splash of water.",
+            "balanced": "The bin looks balanced -- keep layering.",
+            "unknown": "Not enough readings yet to judge the balance.",
+        }[balance]
+
+    stage_top = compost.stage(
+        top.get("temp_c"),
+        air.get("co2_ppm"),
+        pct,
+        air.get("co2_slope_per_hour"),
+        air.get("co2_ok", True),
     )
+    # With a single probe the bottom layer is unmeasured; say "started"
+    # rather than inventing a stage for it.
+    if bottom.get("measured"):
+        stage_bottom = compost.stage(
+            bottom.get("temp_c"),
+            air.get("co2_ppm"),
+            bottom.get("moisture_pct"),
+            air.get("co2_slope_per_hour"),
+            air.get("co2_ok", True),
+        )
+    else:
+        stage_bottom = "started"
+
     return {
-        "headline": headline,
-        "balance": bal,
-        "stage_top": compost.stage(
-            top.get("temperature_c"), airgap.get("co2_ppm"), top_moisture
-        ),
+        "verdict": verdict,
+        "reason": reason,
+        "suggest_add": suggest_add,
+        "suggest_avoid": suggest_avoid,
+        "balance": balance,
+        "stage_top": stage_top,
         "stage_bottom": stage_bottom,
         "bottom_ready": stage_bottom == "ready",
-        "suggestions": suggestions,
-        "warnings": ["Readiness is a guide from sensor trends, not a lab test."],
+        "tip": tip,
     }

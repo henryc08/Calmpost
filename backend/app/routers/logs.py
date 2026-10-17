@@ -8,10 +8,12 @@ from ..security import require_app_key
 
 router = APIRouter(prefix="/v1", tags=["log"], dependencies=[Depends(require_app_key)])
 
-# Points reward balance, not volume: following advice and keeping the layers
-# in range pays, while logging an item on the avoid list does not.
+# XP rewards care, never volume (CLAUDE.md: "log = 0"). Logging a scrap earns
+# nothing on its own -- otherwise the game would pay people to waste more
+# food. XP comes only from following a suggestion here; the healthy-layer-day,
+# quest, balance and harvest awards are separate ledger writes.
 POINTS_FOLLOWED_ADVICE = 15
-POINTS_GOOD_LOG = 5
+POINTS_PLAIN_LOG = 0
 POINTS_AVOID_ITEM = 0
 
 
@@ -29,13 +31,14 @@ async def add_entry(body: AddLogCreate) -> AddLogEntry:
         category = compost.categorise(body.item)
 
     if category == "avoid":
+        # Added something the bin should not get -- no reward.
         points = POINTS_AVOID_ITEM
         reason = "logged an item to avoid"
     elif body.was_advised:
         points = POINTS_FOLLOWED_ADVICE
         reason = "followed a suggestion"
     else:
-        points = POINTS_GOOD_LOG
+        points = POINTS_PLAIN_LOG
         reason = "logged an add"
 
     async with db.pool().acquire() as conn:

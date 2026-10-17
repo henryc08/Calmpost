@@ -16,16 +16,11 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
+// Wi-Fi SSID/password, API_BASE and the device token live in secrets.h,
+// which is gitignored. Copy secrets.h.example to secrets.h and fill it in.
+#include "secrets.h"
+
 // ---- configuration ---------------------------------------------------------
-const char* WIFI_SSID     = "YOUR_WIFI";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-
-// Backend base URL. Use the LAN address of the laptop running uvicorn during
-// development, e.g. http://192.168.1.42:8000
-const char* API_BASE      = "http://192.168.1.42:8000";
-const char* DEVICE_ID     = "bin-01";
-const char* DEVICE_TOKEN  = "PASTE_TOKEN_FROM_init_db";
-
 const unsigned long SAMPLE_INTERVAL_MS = 5UL * 60UL * 1000UL;  // 5 minutes
 
 // ADC pins for the two moisture probes.

@@ -35,7 +35,12 @@ async def connect() -> asyncpg.Pool:
     # The service URL carries ?sslmode=require, which asyncpg does not parse;
     # strip it and pass a real SSL context instead.
     dsn = settings.database_url.split("?")[0]
+    # TigerData signs with its own private CA (ca.timescale.com), which no
+    # public trust store contains. sslmode=require means "encrypt, don't
+    # verify who's on the other end" -- matching that, not upgrading past it.
     ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
 
     _pool = await asyncpg.create_pool(
         dsn, ssl=ctx, min_size=1, max_size=10, init=_init_connection

@@ -265,6 +265,7 @@ GameState _initial() {
     logs: [
       LogEntry(item: foodById['cardboard']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 2, minutes: 10)), xp: 15, added: true),
       LogEntry(item: foodById['veg_peels']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 5, minutes: 40)), xp: 0, added: true),
+      LogEntry(item: foodById['banana_peel']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 9, minutes: 15)), xp: 0, added: true, source: LogSource.camera),
       LogEntry(item: foodById['cheese']!, verdict: Verdict.avoid, time: now.subtract(const Duration(hours: 21)), xp: 5, added: false),
       LogEntry(item: foodById['coffee_grounds']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 26)), xp: 0, added: true),
     ],
@@ -368,15 +369,15 @@ class GameController extends Notifier<GameState> {
 
   /// Logs a scrap. Adding earns nothing on its own: only following advice or
   /// keeping a bad item out does.
-  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds}) =>
-      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds));
+  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, LogSource source = LogSource.manual}) =>
+      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds, source: source));
 
-  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds}) {
+  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, required LogSource source}) {
     final followed = added && advice.verdict != Verdict.avoid && suggestedIds.contains(advice.item.id);
     final keptOut = !added && advice.verdict == Verdict.avoid;
     final base = followed ? Xp.followedSuggestion : (keptOut ? Xp.avoidedBadAdd : Xp.log);
     final xp = xpForAction(base: base, earnedToday: state.actionXpToday);
-    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added);
+    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added, source: source);
     state = state.copyWith(
       logs: [entry, ...state.logs],
       actionXpToday: state.actionXpToday + xp,

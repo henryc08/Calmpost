@@ -3,7 +3,7 @@
     "short_name": "Calmpost",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#58CC02",
+    "background_color": "#ADC8A0",
     "theme_color": "#1F3A2E",
     "description": "The compost bin that tells you what it needs.",
     "orientation": "portrait-primary",

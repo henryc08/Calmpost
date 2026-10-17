@@ -10,6 +10,7 @@ import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
 import '../state/game.dart';
 import '../state/providers.dart';
+import '../ui/backdrop.dart';
 import '../ui/tokens.dart';
 import '../ui/type.dart';
 import 'notifications.dart';
@@ -70,6 +71,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       backgroundColor: C.paper,
       body: Stack(
         children: [
+          const Positioned.fill(child: TopoBackdrop()),
           IndexedStack(
             index: tab.index,
             children: const [

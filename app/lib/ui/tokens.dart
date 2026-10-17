@@ -2,20 +2,20 @@ import 'package:flutter/widgets.dart';
 
 import '../domain/models.dart' show Rarity;
 
-/// Colour tokens. Bright leaf-green paper, deep green text, pink as the reward accent.
+/// Colour tokens. Muted sage paper, deep green text, pink as the reward accent.
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFF58CC02);
-  static const surface = Color(0xFF66D414);
-  static const sunk = Color(0xFF4CB402);
-  static const line = Color(0xFF46A802);
+  static const paper = Color(0xFFADC8A0);
+  static const surface = Color(0xFFB9D1AC);
+  static const sunk = Color(0xFF9AB98C);
+  static const line = Color(0xFF93B285);
 
   // Text
-  static const ink = Color(0xFF10240A);
-  static const ink2 = Color(0xFF1B3D0D);
-  static const muted = Color(0xFF285711);
-  static const faint = Color(0xFF3B820E);
+  static const ink = Color(0xFF12231A);
+  static const ink2 = Color(0xFF263F2F);
+  static const muted = Color(0xFF3F5B47);
+  static const faint = Color(0xFF64806B);
 
   // Forest: the hero surface and primary actions
   static const forest = Color(0xFF1F3A2E);
@@ -25,8 +25,8 @@ abstract final class C {
 
   // Accents
   static const sprout = Color(0xFFB9DD7B); // positive on dark
-  static const leaf = Color(0xFF1A4F0A); // positive on the green paper
-  static const leafSoft = Color(0xFFA6E86A);
+  static const leaf = Color(0xFF1E5534); // positive on the green paper
+  static const leafSoft = Color(0xFFC9DDBE);
   static const amber = Color(0xFFE39B3A); // streak
   static const amberSoft = Color(0xFFF6E6CC);
   static const water = Color(0xFF4F8FC9); // moisture / too wet

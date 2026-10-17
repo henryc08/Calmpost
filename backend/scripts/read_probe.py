@@ -45,7 +45,7 @@ def main() -> int:
         return 1
 
     print(f"reading {port} @ {args.baud} for {args.seconds:.0f}s")
-    print("(the sketch waits ~20s for the CO2 sensor on connect -- that silence is normal)\n")
+    print("(if the board was just plugged in, setup() waits ~20s for the CO2 sensor)\n")
 
     raws: list[int] = []
     temps: list[float] = []
@@ -54,7 +54,7 @@ def main() -> int:
     try:
         with serial.Serial(port, args.baud, timeout=2) as ser:
             # Don't start the clock until the first real sample arrives, so
-            # the sketch's 20s CO2 settle doesn't eat the sampling window.
+            # a power-up CO2 settle (20s in setup) does not eat the window.
             while deadline is None or time.monotonic() < deadline:
                 line = ser.readline().decode("utf-8", errors="replace").strip()
                 if not line or not line.startswith("{"):

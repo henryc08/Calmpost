@@ -109,8 +109,9 @@ copy .env.example .env      # then fill in DATABASE_URL and GEMINI_API_KEY (neve
 
 Windows allows one reader per serial port. Close the other thing.
 
-Also expect **~20 seconds of silence** after the bridge connects: opening the
-port resets the board, and its `setup()` waits for the CO₂ sensor to settle.
+The sketch's `setup()` waits ~20 s for the CO₂ sensor, but this board has
+native USB, so opening the port does not reset it: that wait only happens on
+power-up or after an upload, not on every reconnect.
 
 More in [backend/TESTING.md](backend/TESTING.md) — testing levels,
 calibration, and debugging by symptom. API reference in

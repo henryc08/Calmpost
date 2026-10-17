@@ -156,9 +156,11 @@ entirely:
 .venv\Scripts\python.exe -c "import serial; s=serial.Serial('COM3',115200,timeout=2); [print(s.readline().decode(errors='replace').strip()) for _ in range(5)]"
 ```
 
-Note: `setup()` waits **~20 s** for the CO₂ sensor to settle, and opening the
-port resets the board — so every reconnect costs another 20 s of silence
-before the first line. That silence is normal, not a hang.
+Note: the sketch's `setup()` waits ~20 s for the CO2 sensor to settle, but
+this board has native USB, so **opening the port does not reset it**. That
+wait happens on power-up and after an upload -- not on every reconnect, so a
+bridge restart gives you data within a second or two. If you do get a long
+silence, the board was just plugged in or reflashed.
 
 ## 4. The demo moment
 
@@ -211,7 +213,7 @@ reads 48%, the curve is still wrong.
 | ----- | --- |
 | Is the board on COM3? | `.venv\Scripts\python.exe -c "from serial.tools import list_ports; [print(p.device, p.description) for p in list_ports.comports()]"` |
 | Is the port already open? | Close the Arduino IDE **Serial Monitor** — Windows allows only one reader. This is the single most common cause. |
-| Still in the 20 s settle? | Wait 25 s after connecting before concluding anything. |
+| Just powered on or reflashed? | `setup()` waits ~20 s for the CO₂ sensor then. Not on a plain reconnect -- native USB means opening the port does not reset the board. |
 | Right baud? | Must be 115200. A wrong baud gives garbage characters, not silence. |
 
 ## `auth rejected (401)`

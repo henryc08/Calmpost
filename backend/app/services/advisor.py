@@ -1,4 +1,4 @@
-"""Gemini advice, in the shape the Flutter app's Advice model expects.
+"""Advice: Gemini when available, the rules otherwise. Shapes match the app's Advice.
 
 Verdict values are the app's: great / careful / avoid. The rules fallback
 mirrors adviseFor() in app/lib/domain/advice_rules.dart, so an offline answer
@@ -18,16 +18,17 @@ import logging
 
 import httpx
 
-from . import compost
-from .config import get_settings
+from ..config import get_settings
+from ..rules import compost
 
 log = logging.getLogger(__name__)
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-SYSTEM_PROMPT = """You are Wren, a friendly worm who looks after someone's \
-small home compost bin (about 19 L, sealed step-on lid with vent holes, two \
-layers: fresh scraps on top, older compost at the bottom).
+SYSTEM_PROMPT = """You are the voice of Calmpost, a smart compost bin. You help \
+someone look after their small home compost bin (about 19 L, sealed step-on \
+lid with vent holes, two layers: fresh scraps on top, older compost at the \
+bottom). Speak plainly and calmly, as the app does; no characters or mascots.
 
 You are given live sensor readings and a log of what was recently added, and \
 you answer whether a specific item should go in right now.

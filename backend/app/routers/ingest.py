@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import compost, db
+from .. import db
+from ..rules import compost
 from ..models import IngestPayload, IngestResult
 from ..security import require_device
 

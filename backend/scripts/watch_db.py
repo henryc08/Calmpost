@@ -62,10 +62,10 @@ TABLES = {
     ),
     "point_events": (
         """
-        SELECT time, kind, xp, seeds, user_id
+        SELECT time, kind, xp, loam, user_id
         FROM point_events WHERE time > $1 AND bin_id = $2 ORDER BY time
         """,
-        lambda r: f"{r['kind']:22} xp={r['xp']:>4} seeds={r['seeds']:>4}  {r['user_id']}",
+        lambda r: f"{r['kind']:22} xp={r['xp']:>4} loam={r['loam']:>4}  {r['user_id']}",
     ),
 }
 
@@ -93,7 +93,7 @@ async def stats(bin_id: str) -> None:
     )
     if r is None or r["n"] == 0:
         print(f"no readings at all for {bin_id}.")
-        print("  - is the serial bridge running?   python examples/serial_bridge.py --port COM3")
+        print("  - is the serial bridge running?   python scripts/serial_bridge.py --port COM3")
         print("  - is the bin registered?          python -m scripts.init_db --bin " + bin_id)
         return
 

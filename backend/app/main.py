@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
-from .routers import advice, bins, drops, game, ingest
+from .routers import advice, bins, drops, economy, game, ingest
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,10 +21,9 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.connect()
-    # schema.sql is idempotent, so applying it on boot keeps every teammate's
-    # database in step without a migration tool.
+    # sql/NNN_*.sql are idempotent, so applying them on boot keeps every
+    # teammate's database in step without a migration tool.
     await db.apply_schema()
-    await drops.apply_schema()
     yield
     await db.disconnect()
 
@@ -33,7 +32,7 @@ settings = get_settings()
 
 app = FastAPI(
     title="Calmpost API",
-    version="0.2.0",
+    version="0.3.0",
     description="Smart compost bin backend -- Hack the Valley 11",
     lifespan=lifespan,
 )
@@ -50,6 +49,7 @@ app.include_router(bins.router)
 app.include_router(advice.router)
 app.include_router(game.router)
 app.include_router(drops.router)
+app.include_router(economy.router)
 
 
 @app.get("/health", tags=["meta"])

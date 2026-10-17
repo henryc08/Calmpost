@@ -1,4 +1,4 @@
-"""Apply sql/schema.sql to Tiger Data and register a bin.
+"""Apply the schema (sql/0*.sql, in order) to Tiger Data and register a bin.
 
     python -m scripts.init_db                   # schema only
     python -m scripts.init_db --bin bin-001     # schema + mint a device token

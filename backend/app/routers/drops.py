@@ -19,21 +19,20 @@ import binascii
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import compost, db
+from .. import db
+from ..rules import compost
 from ..models import AdviceResponse, LogCreate, LogEntry
 from ..security import require_app_key
 from . import advice, bins
 
 router = APIRouter(tags=["drops"], dependencies=[Depends(require_app_key)])
 
-DROPS_SQL = Path(__file__).resolve().parent.parent.parent / "sql" / "drops.sql"
 ARM_SECONDS = 60
 MAX_THUMB_BYTES = 200_000
 HINTS = 5
@@ -98,13 +97,6 @@ class ConfirmResponse(BaseModel):
 
 
 # --- helpers ----------------------------------------------------------------------
-
-async def apply_schema() -> None:
-    """Run sql/drops.sql after schema.sql (idempotent, so it runs on every boot)."""
-    async with db.pool().acquire() as conn:
-        for statement in db._split_statements(DROPS_SQL.read_text(encoding="utf-8")):
-            await conn.execute(statement)
-
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -236,7 +228,7 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
     for item, f in zip(body.items, final):
         grams = AMOUNT_GRAMS.get(item.amount) if item.amount else None
         log = await bins.add_log_entry(drop["bin_id"], LogCreate(
-            item=item.label, category=f["category"], action="skipped" if item.removed else "added",
+            item=item.label, catalog_id=item.catalog_id if item.catalog_id != "unknown" else None, category=f["category"], action="skipped" if item.removed else "added",
             quantity_g=grams, source="camera", was_advised=item.was_advised, advice_id=item.advice_id,
             notes=f"camera drop {drop_id}"))
         await db.execute("UPDATE add_log SET drop_id = $1 WHERE id = $2 AND time = $3", drop_id, log.id, log.time)

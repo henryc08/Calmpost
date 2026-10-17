@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import binstate, compost, db, ledger
+from .. import db
+from ..catalog import food
+from ..rules import compost, game
+from ..services import binstate, ledger
 from ..models import (
     AirLive,
     BinCreate,
@@ -375,12 +378,22 @@ async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
         raise HTTPException(status_code=404, detail="unknown bin")
     user_id = binr["owner_id"]
 
+    # Rules decide the category: hard avoids always win, then the app's
+    # catalog (by id or name), then keywords.
+    item_for_rules = body.catalog_id or body.item
     category = body.category
-    if category == "unknown":
-        category = compost.categorise(body.item)
+    if compost.avoid_reason(body.item) or compost.avoid_reason(item_for_rules):
+        category = "avoid"
+    elif category == "unknown":
+        category = compost.categorise(item_for_rules)
+        if category == "unknown":
+            category = compost.categorise(body.item)
+    catalog = food.lookup(body.catalog_id) or food.lookup(body.item)
+    quantity_g = body.quantity_g
+    if quantity_g is None and catalog is not None and body.action == "added":
+        quantity_g = int(catalog["grams"])
 
     xp = 0
-    seeds = 0
     kind = None
     if body.action == "skipped":
         # Only an avoid-worthy item earns the skip reward; skipping a perfectly
@@ -395,29 +408,29 @@ async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
             row = await conn.fetchrow(
                 """
                 INSERT INTO add_log
-                    (bin_id, user_id, item, category, action, quantity_g,
+                    (bin_id, user_id, item, catalog_id, category, action, quantity_g,
                      source, was_advised, advice_id, notes)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING id, time
                 """,
                 bin_id,
                 user_id,
                 body.item,
+                catalog["id"] if catalog else body.catalog_id,
                 category,
                 body.action,
-                body.quantity_g,
+                quantity_g,
                 body.source,
                 body.was_advised,
                 body.advice_id,
                 body.notes,
             )
             if kind:
+                await ledger.ensure_user(conn, user_id)
                 xp = await ledger.award(
                     conn, user_id, kind, bin_id=bin_id,
                     meta={"item": body.item, "log_id": row["id"]},
                 )
-                # Loam is only paid when XP was (the daily cap can zero it).
-                seeds = compost.LOAM.get(kind, 0) if xp else 0
 
     return LogEntry(
         id=row["id"],
@@ -426,12 +439,12 @@ async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
         item=body.item,
         category=category,
         action=body.action,
-        quantity_g=body.quantity_g,
+        quantity_g=quantity_g,
         source=body.source,
         was_advised=body.was_advised,
         notes=body.notes,
         xp_awarded=xp,
-        loam_awarded=seeds,
+        loam_awarded=0,
     )
 
 
@@ -497,8 +510,9 @@ async def harvest(bin_id: str, body: HarvestRequest) -> HarvestResponse:
                 body.layer,
                 {"yield_g": body.yield_g, "sensors_said_ready": was_ready},
             )
+            await ledger.ensure_user(conn, user_id)
             xp = await ledger.award(
-                conn, user_id, "harvest", bin_id=bin_id,
+                conn, user_id, "harvest", bin_id=bin_id, loam=game.LOAM["harvest"],
                 meta={"layer": body.layer, "yield_g": body.yield_g},
             )
 
@@ -507,7 +521,7 @@ async def harvest(bin_id: str, body: HarvestRequest) -> HarvestResponse:
         layer=body.layer,
         harvested_at=now,
         xp_awarded=xp,
-        seeds_awarded=compost.LOAM["harvest"],
+        loam_awarded=game.LOAM["harvest"],
         was_ready=was_ready,
         note=note,
     )

@@ -3,8 +3,8 @@
     python -m scripts.smoke_test --token <device token>
 
 Walks the whole pipeline: ingest the firmware's exact JSON, read it back,
-check an item, log it, then the game endpoints. Finishes by proving the demo
-moment -- the same scrap getting a different verdict after the bin changes.
+check an item, log it, then the game and economy endpoints (read-only where
+they would spend: it never opens crates or pulls). Safe to run on the demo DB.
 """
 
 import argparse
@@ -186,17 +186,31 @@ def main() -> int:
     r = check("GET /users/{id}/game", httpx.get(f"{base}/users/{args.user}/game", headers=app, timeout=30))
     if r.status_code == 200:
         b = r.json()
-        print(f"        level {b['level']} \"{b['title']}\"  xp={b['total_xp']} "
+        print(f"        level {b['level']} \"{b['level_title']}\"  xp={b['total_xp']} "
               f"loam={b['loam']} streak={b['streak_days']} at_risk={b['streak_at_risk']}")
+        print(f"        packets={b['packets']} lid_locks={b['lid_locks']} crates_waiting={b['crates_waiting']}")
         print(f"        impact: {b['impact']}")
-        earned = [a["name"] for a in b["achievements"] if a["earned"]]
-        print(f"        earned: {earned or 'none yet'}")
+        earned = [f"{a['title']} {a['tier']}/3" for a in b["achievements"] if a["tier"]]
+        print(f"        achievements: {earned or 'none yet'}")
 
     r = check("GET /quests/today", httpx.get(f"{base}/quests/today", params={"user_id": args.user}, headers=app, timeout=30))
     if r.status_code == 200:
         for q in r.json()["quests"]:
             print(f"        [{'x' if q['done'] else ' '}] {q['title']} "
-                  f"({q['progress']}/{q['goal']})")
+                  f"({q['progress']}/{q['goal']}) claimed={q['claimed']}")
+
+    r = check("GET /users/{id}/daily-goal", httpx.get(f"{base}/users/{args.user}/daily-goal", headers=app, timeout=30))
+    if r.status_code == 200:
+        b = r.json()
+        print(f"        xp_today={b['xp_today']}  " + "  ".join(
+            f"{g['xp']}:{'claimed' if g['claimed'] else 'reached' if g['reached'] else '-'}" for g in b["goals"]))
+
+    r = check("GET /users/{id}/collection", httpx.get(f"{base}/users/{args.user}/collection", headers=app, timeout=30))
+    if r.status_code == 200:
+        b = r.json()
+        print(f"        collected {b['collected']}/{b['total']}  pity={b['pity']}")
+
+    check("GET /economy/rules", httpx.get(f"{base}/economy/rules", headers=app, timeout=30))
 
     r = check("GET /leagues/current", httpx.get(f"{base}/leagues/current", params={"user_id": args.user}, headers=app, timeout=30))
     if r.status_code == 200:

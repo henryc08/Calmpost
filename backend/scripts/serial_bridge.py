@@ -6,7 +6,7 @@ POSTing over Wi-Fi itself. The sketch already prints exactly the shape
 retry when the network blips.
 
     pip install pyserial requests
-    python serial_bridge.py --api http://127.0.0.1:8000
+    python scripts/serial_bridge.py --api http://127.0.0.1:8000
 
 The port is auto-detected; pass --port COM3 to pin it. Baud defaults to
 115200, matching SERIAL_BAUD in the sketch.

@@ -96,8 +96,8 @@ class CalmpostApi {
 
   /// Ask whether one item should go in right now.
   ///
-  /// Returns verdict ('add' | 'add_with_browns' | 'avoid'), reason,
-  /// suggest_add, suggest_avoid, balance, stage_top, stage_bottom,
+  /// Returns verdict ('great' | 'careful' | 'avoid'), headline, reason,
+  /// pair_with, suggest_add, suggest_avoid, balance, stage_top, stage_bottom,
   /// bottom_ready, tip -- and `input_snapshot`, the sensor state the answer
   /// was based on. Show that snapshot to prove the same scrap got a
   /// different answer because the bin changed.
@@ -111,7 +111,7 @@ class CalmpostApi {
         refresh ? {'refresh': 'true'} : null,
       ) as Map<String, dynamic>;
 
-  /// Whole-bin advice for Home's "Wren suggests" card.
+  /// Whole-bin advice for Home's "What to add" card.
   Future<Map<String, dynamic>> advice({bool refresh = false}) async =>
       await _get('/bins/$binId/advice', refresh ? {'refresh': 'true'} : null)
           as Map<String, dynamic>;
@@ -120,8 +120,11 @@ class CalmpostApi {
 
   /// Record an add. A plain log earns 0 XP by design; pass wasAdvised when
   /// the user followed a suggestion (+15).
+  /// Pass catalogId (food_catalog.dart's id) when the item came from the
+  /// catalog: the backend then uses its category and typical grams.
   Future<Map<String, dynamic>> logAdd({
     required String item,
+    String? catalogId,
     String category = 'unknown',
     int? quantityG,
     bool wasAdvised = false,
@@ -129,6 +132,7 @@ class CalmpostApi {
   }) async =>
       await _post('/bins/$binId/logs', {
         'item': item,
+        'catalog_id': catalogId,
         'category': category,
         'action': 'added',
         'quantity_g': quantityG,
@@ -153,13 +157,80 @@ class CalmpostApi {
 
   // --- game ----------------------------------------------------------------
 
-  /// Level, XP, Seeds, streak, lid locks, impact stats and achievements.
+  /// GameState: level, XP, Loam, Seed Packets, streak (+ care_days and
+  /// lock_days for the calendar), Lid Locks, daily goal, quests, crates
+  /// waiting, equipped finish/title, impact and tiered achievements.
+  /// Reading it also settles any achievement/streak rewards now due.
   Future<Map<String, dynamic>> gameState() async =>
       await _get('/users/$userId/game') as Map<String, dynamic>;
 
-  /// Today's three care-based quests with live progress.
+  /// Today's three care-based quests with live progress. Rewards are paid
+  /// only when claimed.
   Future<Map<String, dynamic>> questsToday() async =>
       await _get('/quests/today', {'user_id': userId}) as Map<String, dynamic>;
+
+  /// Claim a finished quest ('checkin' | 'follow' | 'healthy'). 409 if not
+  /// done yet or already claimed.
+  Future<Map<String, dynamic>> claimQuest(String key) async =>
+      await _post('/quests/$key/claim', null, {'user_id': userId})
+          as Map<String, dynamic>;
+
+  /// The 20 / 40 / 60 XP daily goal ladder.
+  Future<Map<String, dynamic>> dailyGoal() async =>
+      await _get('/users/$userId/daily-goal') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> claimDailyGoal(int index) async =>
+      await _post('/users/$userId/daily-goal/$index/claim')
+          as Map<String, dynamic>;
+
+  // --- economy: crates, Greenhouse, shop ----------------------------------
+
+  /// Unopened crates (achievements, streak milestones, the 60 XP goal).
+  Future<Map<String, dynamic>> rewards() async =>
+      await _get('/users/$userId/rewards') as Map<String, dynamic>;
+
+  /// Returns the Loam and Seed Packets inside.
+  Future<Map<String, dynamic>> openCrate(int crateId) async =>
+      await _post('/users/$userId/crates/$crateId/open') as Map<String, dynamic>;
+
+  /// Owned collectibles, copies, and pity counters.
+  Future<Map<String, dynamic>> collection() async =>
+      await _get('/users/$userId/collection') as Map<String, dynamic>;
+
+  /// Greenhouse pull. count is 1 or 10; paidWith is 'packet' or 'loam'.
+  /// The server rolls (odds, pity, duplicate refunds); the app only animates.
+  Future<Map<String, dynamic>> pull({int count = 1, String paidWith = 'packet'}) async =>
+      await _post('/users/$userId/gacha/pull', {'count': count, 'paid_with': paidWith})
+          as Map<String, dynamic>;
+
+  /// Equip an owned finish (Home ring colour) or title.
+  Future<Map<String, dynamic>> equip(String collectibleId) async =>
+      await _post('/users/$userId/equip', {'collectible_id': collectibleId})
+          as Map<String, dynamic>;
+
+  /// 60 Loam, hold at most 2. Spent automatically to cover a missed day.
+  Future<Map<String, dynamic>> buyLidLock() async =>
+      await _post('/users/$userId/lid-locks/buy') as Map<String, dynamic>;
+
+  /// Prices, odds, pity and reward tables, for display.
+  Future<Map<String, dynamic>> economyRules() async =>
+      await _get('/economy/rules') as Map<String, dynamic>;
+
+  // --- camera drop-in (vision/) -------------------------------------------
+
+  /// Arm the camera for one drop. Then watch dropsStream / pendingDrops.
+  Future<Map<String, dynamic>> startDropSession() async =>
+      await _post('/bins/$binId/drops/session') as Map<String, dynamic>;
+
+  Future<List<dynamic>> pendingDrops() async =>
+      await _get('/bins/$binId/drops/pending') as List<dynamic>;
+
+  /// items: [{label, catalog_id, category, amount, removed, was_advised}]
+  Future<Map<String, dynamic>> confirmDrop(int dropId, List<Map<String, dynamic>> items) async =>
+      await _post('/drops/$dropId/confirm', {'items': items}) as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> dismissDrop(int dropId) async =>
+      await _post('/drops/$dropId/dismiss') as Map<String, dynamic>;
 
   /// This week's league cohort, ranked, with promotion/demotion zones.
   Future<Map<String, dynamic>> currentLeague() async =>
@@ -170,7 +241,7 @@ class CalmpostApi {
   Future<Map<String, dynamic>> checkIn() async =>
       await _post('/users/$userId/check-in') as Map<String, dynamic>;
 
-  /// Harvest a layer (+100 XP). `was_ready` reports whether the sensors
+  /// Harvest a layer (+100 XP, +50 Loam). `was_ready` reports whether the sensors
   /// agreed, so the celebration can stay honest.
   Future<Map<String, dynamic>> harvest({
     String layer = 'bottom',

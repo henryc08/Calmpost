@@ -1,68 +1,20 @@
-"""End-to-end tests for the /drops router against a real Postgres.
+"""End-to-end tests for the camera drop-in router (CLAUDE.md 2.4).
 
-Set TEST_DATABASE_URL to a throwaway database; every test wipes it. Skipped
-when unset. Runs on plain Postgres: the TimescaleDB-only statements in
-schema.sql and drops.sql (hypertables, rollups, policies) are skipped, and
-the tables are otherwise exactly what the app creates.
+Uses the shared fixture in conftest.py: a fresh database per test with the
+real schema. See conftest.py for how the database is provided.
 """
 
 import base64
-import json
-import os
-from contextlib import asynccontextmanager
 
-import asyncpg
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from app import db
 from app.models import AdviceResponse
-from app.routers import advice, bins, drops
+from app.routers import advice
+from tests.conftest import needs_db
 
-TEST_DB = os.environ.get("TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(not TEST_DB, reason="TEST_DATABASE_URL not set")
+pytestmark = needs_db
 
-KEY = {"X-API-Key": "dev-change-me"}
-TIMESCALE_ONLY = ("timescaledb", "create_hypertable", "add_retention_policy", "add_continuous_aggregate_policy",
-                  "add_columnstore_policy", "add_compression_policy", "MATERIALIZED VIEW", "refresh_continuous")
 JPEG = base64.b64encode(b"\xff\xd8\xff\xe0fake-jpeg\xff\xd9").decode()
-
-
-async def _apply(conn, path):
-    for stmt in db._split_statements(path.read_text(encoding="utf-8")):
-        if not any(t in stmt for t in TIMESCALE_ONLY):
-            await conn.execute(stmt)
-
-
-@asynccontextmanager
-async def lifespan(app):
-    db._pool = await asyncpg.create_pool(
-        TEST_DB, min_size=1, max_size=5,
-        init=lambda c: c.set_type_codec("jsonb", encoder=db._dump_json, decoder=json.loads, schema="pg_catalog"))
-    async with db.pool().acquire() as conn:
-        await conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        await _apply(conn, db.SCHEMA_PATH)
-        await _apply(conn, drops.DROPS_SQL)
-        await _apply(conn, drops.DROPS_SQL)  # twice: must be idempotent
-    yield
-    await db.disconnect()
-
-
-test_app = FastAPI(lifespan=lifespan)
-for r in (bins.router, drops.router):
-    test_app.include_router(r)
-
-
-@pytest.fixture
-def c(monkeypatch):
-    monkeypatch.setenv("APP_API_KEY", "dev-change-me")
-    from app.config import get_settings
-    get_settings.cache_clear()
-    with TestClient(test_app, headers=KEY) as client:
-        r = client.post("/bins", json={"bin_id": "bin-001", "owner_id": "eesha"})
-        assert r.status_code == 201, r.text
-        yield client
 
 
 def arm(c):

@@ -12,7 +12,12 @@ from .config import get_settings
 
 _pool: asyncpg.Pool | None = None
 
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
+
+
+def schema_files() -> list[Path]:
+    """sql/NNN_*.sql in name order: 000_premigrate, 001_core, 002_game, ..."""
+    return sorted(SQL_DIR.glob("[0-9][0-9][0-9]_*.sql"))
 
 
 def _dump_json(value) -> str:
@@ -23,13 +28,11 @@ def _dump_json(value) -> str:
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
     # asyncpg hands jsonb back as a string unless we register a codec.
-    await conn.set_type_codec(
-        "jsonb", encoder=_dump_json, decoder=json.loads, schema="pg_catalog"
-    )
+    await conn.set_type_codec("jsonb", encoder=_dump_json, decoder=json.loads, schema="pg_catalog")
 
 
 async def connect() -> asyncpg.Pool:
-    """Open the pool. Timescale Cloud requires TLS."""
+    """Open the pool. Tiger Cloud requires TLS."""
     global _pool
     if _pool is not None:
         return _pool
@@ -41,16 +44,14 @@ async def connect() -> asyncpg.Pool:
     # The service URL carries ?sslmode=require, which asyncpg does not parse;
     # strip it and pass a real SSL context instead.
     dsn = settings.database_url.split("?")[0]
-    # TigerData signs with its own private CA (ca.timescale.com), which no
+    # Tiger Data signs with its own private CA (ca.timescale.com), which no
     # public trust store contains. sslmode=require means "encrypt, don't
     # verify who's on the other end" -- matching that, not upgrading past it.
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    _pool = await asyncpg.create_pool(
-        dsn, ssl=ctx, min_size=1, max_size=10, init=_init_connection
-    )
+    _pool = await asyncpg.create_pool(dsn, ssl=ctx, min_size=1, max_size=10, init=_init_connection)
     return _pool
 
 
@@ -77,44 +78,59 @@ async def fetchrow(query: str, *args: Any) -> asyncpg.Record | None:
         return await conn.fetchrow(query, *args)
 
 
+async def fetchval(query: str, *args: Any) -> Any:
+    async with pool().acquire() as conn:
+        return await conn.fetchval(query, *args)
+
+
 async def execute(query: str, *args: Any) -> str:
     async with pool().acquire() as conn:
         return await conn.execute(query, *args)
 
 
 async def apply_schema() -> None:
-    """Run sql/schema.sql. Idempotent, so it runs on every boot."""
-    sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    """Run every sql/NNN_*.sql in order. All idempotent, so it runs on every boot."""
     async with pool().acquire() as conn:
-        # Timescale's create_hypertable/policy helpers cannot run inside the
-        # implicit transaction asyncpg uses for multi-statement execute, so
-        # statements go one at a time.
-        for statement in _split_statements(sql):
-            await conn.execute(statement)
+        for path in schema_files():
+            # Timescale's create_hypertable/policy helpers cannot run inside
+            # the implicit transaction asyncpg uses for multi-statement
+            # execute, so statements go one at a time.
+            for statement in split_statements(path.read_text(encoding="utf-8")):
+                await conn.execute(statement)
 
 
-def _split_statements(sql: str) -> list[str]:
-    """Split schema.sql on statement boundaries.
+_DOLLAR_TAG = re.compile(r"\$[A-Za-z_]*\$")
 
-    Comments are stripped first: a semicolon inside a `--` comment would
-    otherwise split a statement in half. String literals are tracked so a
-    semicolon inside quotes is not treated as a boundary either.
+
+def split_statements(sql: str) -> list[str]:
+    """Split SQL text on statement boundaries.
+
+    `--` comments are stripped first, so a semicolon in a comment does not
+    split a statement. Single-quoted literals ('it''s') and dollar-quoted
+    bodies ($$ ... $$ or $tag$ ... $tag$, as in DO blocks) are tracked, so
+    semicolons inside them are not boundaries either.
     """
-    stripped = "\n".join(
-        re.sub(r"--.*$", "", line) for line in sql.splitlines()
-    )
+    stripped = "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
 
     out: list[str] = []
     current: list[str] = []
     in_string = False
-    i = 0
-    while i < len(stripped):
+    dollar_tag: str | None = None
+    i, n = 0, len(stripped)
+    while i < n:
         ch = stripped[i]
-        if in_string:
+        if dollar_tag is not None:
+            if stripped.startswith(dollar_tag, i):
+                current.append(dollar_tag)
+                i += len(dollar_tag)
+                dollar_tag = None
+                continue
+            current.append(ch)
+        elif in_string:
             current.append(ch)
             if ch == "'":
                 # '' is an escaped quote inside a literal, not the end of one.
-                if i + 1 < len(stripped) and stripped[i + 1] == "'":
+                if i + 1 < n and stripped[i + 1] == "'":
                     current.append("'")
                     i += 1
                 else:
@@ -122,6 +138,11 @@ def _split_statements(sql: str) -> list[str]:
         elif ch == "'":
             in_string = True
             current.append(ch)
+        elif ch == "$" and (m := _DOLLAR_TAG.match(stripped, i)):
+            dollar_tag = m.group(0)
+            current.append(dollar_tag)
+            i += len(dollar_tag)
+            continue
         elif ch == ";":
             stmt = "".join(current).strip()
             if stmt:
@@ -135,3 +156,7 @@ def _split_statements(sql: str) -> list[str]:
     if tail:
         out.append(tail)
     return out
+
+
+# Kept for older callers (tests and scripts written before the rename).
+_split_statements = split_statements

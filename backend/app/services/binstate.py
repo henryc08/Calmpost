@@ -18,7 +18,8 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import compost, db
+from .. import db
+from ..rules import compost
 
 # A bin that has not reported for this long is shown as offline.
 STALE_AFTER = timedelta(minutes=20)

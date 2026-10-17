@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import binstate, db, gemini
+from .. import db
+from ..services import advisor, binstate
 from ..config import get_settings
 from ..models import AdviceCheck, AdviceResponse
 from ..security import require_app_key
@@ -31,7 +32,7 @@ async def whole_bin_advice(
     bin_id: str,
     refresh: bool = Query(False, description="skip the cache and re-ask"),
 ) -> AdviceResponse:
-    """Whole-bin advice for the Home screen's "Wren suggests" card."""
+    """Whole-bin advice for Home's "What to add" section."""
     return await _advise(bin_id, None, refresh)
 
 
@@ -74,7 +75,7 @@ async def _advise(bin_id: str, item: str | None, refresh: bool) -> AdviceRespons
                 cached["time"], True, cached["input_snapshot"],
             )
 
-    payload, model = await gemini.advise(snap, item)
+    payload, model = await advisor.advise(snap, item)
 
     # Store the snapshot as given to the model, minus the advisory prose.
     proof = {

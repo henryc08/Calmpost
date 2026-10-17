@@ -46,7 +46,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 ### 2.1 Live sensing & Bin Health Score
 - **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
-- **How:** the ESP32 posts moisture + temperature for both layers and CO₂ for the air gap every 2–5 min. The score comes from `domain/health_score.dart`:
+- **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Today there is **one** probe, in the top layer; the bottom layer shows as *not measured*, never 0, until a second probe is added. The score comes from `domain/health_score.dart`:
   ```
   health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
   ```
@@ -61,7 +61,7 @@ Each feature lists what the user sees, how it works, and its status.
 - **How:** `domain/advice_rules.dart` decides from the live snapshot. Meat, dairy, oil, pet waste and glossy paper are **always avoid**. Gemini rewrites the reason in plain words and handles items not in the catalog.
 - **Demo moment:** banana peel → great when the bin is dry; careful when it's soggy.
 
-### 2.4 Camera drop-in: identify and track what goes in 📝 *planned*
+### 2.4 Camera drop-in: identify and track what goes in ✅ *backend + vision built; app sheet on mocks*
 
 When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked.
 
@@ -173,9 +173,9 @@ The snapshot is stored with each response (`advice` table), so we can always sho
 
 ```
                     ┌────────────── laptop next to the bin ──────────────┐
-ESP32 sensors ──POST /ingest──┐        Vision service (Python, OpenCV) ◀── webcam
-                              ▼          │  motion trigger → Gemini Flash (vision)
-                     FastAPI backend ◀───┘  POST /bins/{id}/drops
+Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python, OpenCV) ◀── webcam
+                                           ▼   │  motion trigger → Gemini Flash (vision)
+                                  FastAPI backend ◀┘  POST /bins/{id}/drops
                       │    │    ▲
           Tiger Cloud ◀┘    │    │ REST + SSE
           (TimescaleDB)     ▼    │
@@ -189,49 +189,70 @@ ESP32 sensors ──POST /ingest──┐        Vision service (Python, OpenCV)
 | **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions (sponsor track) |
 | **Vision service** | **Python + OpenCV + `google-genai`** | runs on the laptop with the webcam; later the in-lid camera |
 | **AI** | **Gemini API** (`google-genai`), JSON-schema structured output | rule fallback always on |
-| **Hardware** | ESP32 (Arduino), 2× capacitive moisture, 2× DS18B20, 1× SCD40/41 CO₂; laptop webcam (for now) | ESP32 POSTs JSON over Wi-Fi |
+| **Hardware** | Arduino board, **1×** capacitive moisture + temperature probe (top layer), 1× SCD40/41 air sensor (CO₂, temp, humidity); laptop webcam | prints JSON over USB serial; `backend/scripts/serial_bridge.py` POSTs it. The bottom layer is `measured: false` until a second probe exists |
 
 ---
 
-## 5. Backend & Tiger Data
+## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app. Endpoint shapes mirror `CalmpostRepository`, so the app's `ApiRepository` is a mechanical swap (one line in `state/providers.dart`).
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). Endpoint shapes mirror `CalmpostRepository`, so the app's `ApiRepository` is a mechanical swap (one line in `state/providers.dart`; `backend/examples/calmpost_api.dart` is the client).
+
+**The app owns the rules; the server enforces them.**
+- The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
+- The food and collectible catalogs are **generated** from `lib/data/*.dart` by `python -m scripts.sync_catalogs`, which also writes `vision/catalog.json`.
+- All XP and Loam are awarded server-side into an append-only ledger, so the client can't award itself anything. Pulls are rolled on the server.
+
+**Layout:** `app/rules` (pure) → `app/services` (DB + Gemini) → `app/routers` (HTTP). `sql/000…090_*.sql` are applied in order on every boot. Each file is idempotent, and older databases (including the first schema's `seeds` column) upgrade in place.
 
 **Tiger Data schema**
 
 | Object | Kind | What it holds |
 |---|---|---|
-| `readings` | hypertable | one wide row per ESP32 POST: moisture/temp for both layers, CO₂ |
-| `add_log` | hypertable | every confirmed add: item, category, grams, `source` (`manual` / `camera` / `suggestion`), `drop_id` |
-| `drop_events` | hypertable | every camera detection: session, status (`pending` / `confirmed` / `dismissed`), model guess (label, catalog_id, grams, confidence, box), final values, `corrected`, latency, thumbnail path |
-| `advice` | hypertable | every Gemini answer + the snapshot it saw (proof of "same scrap, different answer") |
-| `point_events` | hypertable | XP and Loam ledger |
+| `readings` | hypertable | one wide row per POST: probe moisture (raw + %) and temperature for its layer, plus air CO₂/temp/humidity |
+| `add_log` | hypertable | every add or skip: item, `catalog_id`, category, grams, `source` (`manual` / `photo` / `seed` / `camera`), `drop_id` |
+| `drop_events` | hypertable | every camera detection: session, status (`pending` / `confirmed` / `dismissed`), model guess, final items, `corrected`, latency, thumbnail (30-day retention) |
+| `advice` | hypertable | every answer + the snapshot it saw (proof of "same scrap, different answer") |
+| `point_events` | hypertable | the XP and Loam ledger (a spend is negative Loam); once-only rewards carry a `dedupe_key` |
+| `gacha_pulls` | hypertable | every Seed Packet result with pity counters |
 | `stage_history` | hypertable | life-cycle stage changes per layer |
 | `readings_15m`, `readings_1d` | continuous aggregates | charts and sparklines |
-| `xp_weekly` | continuous aggregate | league tables |
+| `xp_weekly` | continuous aggregate | league tables (Sunday origin) |
 | `vision_accuracy_1d` | continuous aggregate | share of drops confirmed without correction, avg confidence, avg latency |
+| `gacha_odds_1d` | continuous aggregate | observed vs published odds |
+| `bins`, `user_state`, `crates`, `collection`, `leagues`, `league_members`, `drop_sessions` | tables | device tokens + calibration; Lid Locks, packets, pity, equipped items; the crate inbox; owned collectibles; cohorts |
 
-- **Hyperfunctions:** `state_agg` / `duration_in` (time in healthy band, "in range for 6h" quest), `time_weight`, `regr_slope` (CO₂ trend → stage), `time_bucket_gapfill` + `locf` (charts).
-- **Policies:** columnstore after 7 days; retention on raw readings and drop thumbnails (30 days).
-- **Optional:** a Tiger fork as a "demo" database seeded with scenarios.
+- **Hyperfunctions:**
+  - `state_agg` / `duration_in`: time in the healthy band (healthy-layer-day XP, the "in range for 6h" quest)
+  - `time_weight`
+  - `regr_slope`: CO₂ trend → stage
+  - `time_bucket_gapfill` + `locf`: charts
+- **Policies:** columnstore after 7 days; 90-day retention on raw readings; 30 days on drop thumbnails.
+- **Optional:** a Tiger fork as a "demo" database seeded with `scripts.seed_demo`.
 
 **Endpoints**
 
 | Area | Endpoint |
 |---|---|
-| Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?zone=&metric=&range=` |
-| Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice/next` · `GET /bins/{id}/summary?kind=daily\|score\|layer\|weekly\|batch` |
-| Logging | `POST /bins/{id}/logs` · `POST /bins/{id}/harvest` |
-| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE to app; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` |
-| Game | `GET /users/{id}/game` · `GET /quests/today` · `GET /leagues/current` |
+| Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
+| Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
+| Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
+| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` |
+| Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
+| Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
 
-**Environment** (`backend/.env`, `vision/.env`, both git-ignored): `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_VISION_MODEL`, `CAMERA_SOURCE`, `BIN_ID`, `BACKEND_URL`, `DEVICE_KEY`.
+**Auth:** the app and vision send `X-API-Key`. The board/bridge sends `X-Device-Token` (only its hash is stored).
+
+**Environment** (`backend/.env` and `vision/.env`, both git-ignored, **never commit them**):
+- `backend/.env`: `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_API_KEY`, `DEVICE_TOKEN`
+- `vision/.env`: `GEMINI_API_KEY`, `GEMINI_VISION_MODEL`, `CAMERA_SOURCE`, `BIN_ID`, `BACKEND_URL` (`:8000` = real backend, `:8090` = `mock_backend.py`), `APP_API_KEY`
+
+**Tests:** `cd backend && python -m pytest`. They run on a real local Postgres (`pgserver`), with TimescaleDB stand-ins. The final check against Tiger Cloud is `python -m scripts.smoke_test`.
 
 ---
 
-## 6. Vision service (camera)
+## 6. Vision service (camera) ✅ *built*
 
-`vision/` is a small Python process that owns the camera (planned, see 2.4).
+`vision/` is a small Python process that owns the camera (see 2.4 and `vision/README.md`).
 
 ```
 vision/
@@ -240,13 +261,16 @@ vision/
   motion.py        # background subtraction (MOG2) inside a bin-opening ROI; start/stop events
   frames.py        # sharpest-frame pick (Laplacian variance), resize, JPEG encode
   gemini.py        # before/after prompt, JSON schema, catalog enum, timeout + retry
+  backend.py       # client for the backend's /drops endpoints
+  catalog.json     # GENERATED from app/lib/data/food_catalog.dart
   preview.py       # optional MJPEG preview at :8081 with the detection box (for the demo screen)
   calibrate.py     # one-off: draw the ROI over the bin opening, saved to roi.json
+  mock_backend.py  # stand-in for backend/ on :8090
 ```
 
 - **Trigger tuning:** motion must cover > 2% of the ROI for ≥ 150 ms to start; it ends after 0.8 s of stillness. Ignore the first 0.5 s after arming (the user's hand moving away from the button).
 - **Demo setup:** the laptop on a stand, webcam angled down into the open bin, the ROI drawn once with `calibrate.py`. The MJPEG preview on the laptop screen is a good thing for judges to watch.
-- **Run:** `cd vision && python main.py` (needs `pip install opencv-python google-genai httpx`).
+- **Run:** `cd vision && pip install -r requirements.txt && python main.py`, with `BACKEND_URL=http://localhost:8000` for the real backend.
 
 ---
 
@@ -274,9 +298,9 @@ calmpost/
       features/<…>/         # drop/ rewards/ (to build)
     assets/                 # fonts/, sfx/
     test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow, real fonts)
-  backend/                  # FastAPI + SQL migrations
+  backend/                  # FastAPI: app/{rules,services,routers,catalog}, sql/000-090, scripts/, tests/
   vision/                   # camera + motion trigger + Gemini vision
-  firmware/                 # ESP32 sketch
+  firmware/sensor_output/   # Arduino sketch (prints JSON over USB serial)
 ```
 
 **Rules**
@@ -442,9 +466,15 @@ flutter run                     # Android phone
 flutter run -d chrome           # browser preview (deep links above)
 flutter build apk --release     # APK for the demo
 
-# backend
-cd backend && uvicorn app.main:app --reload
-python scripts/simulator.py --scenario too_wet
+# backend (see backend/README.md)
+cd backend
+python -m pytest                                   # local Postgres via pgserver; no Tiger needed
+python -m scripts.init_db --bin bin-001            # schema + device token (needs DATABASE_URL in .env)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m scripts.seed_demo --bin bin-001 --scenario too_wet
+python scripts/serial_bridge.py --port COM3        # real board over USB
+python -m scripts.smoke_test --token <device token>
+python -m scripts.sync_catalogs                    # after editing a catalog in the app
 
 # vision (laptop with webcam)
 cd vision && python calibrate.py   # once: draw the bin-opening ROI
@@ -454,7 +484,7 @@ cd vision && python main.py
 ### Build order
 1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
 2. **Drop-in UI on mocks** (sheet, pop-up, edit form).
-3. **Backend + Tiger Data** (ingest, readings, logs, drops, advice) and **vision service** (webcam + motion + Gemini).
+3. ✅ **Backend + Tiger Data** (ingest, readings, logs, drops, advice, game + economy) and **vision service** (webcam + motion + Gemini).
 4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · Rewards inbox history.
 5. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
 

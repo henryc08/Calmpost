@@ -1,110 +1,108 @@
-"""Game endpoints: profile/level/impact, daily quests, leagues.
+"""Game endpoints: profile (HUD, streak calendar, daily goal), check-in,
+daily quests, leagues.
 
-Quests and the once-a-day awards are evaluated lazily on read and made
-idempotent with a dedupe_key, so there is no nightly job to go wrong during
-a hackathon demo.
+Once-a-day awards and earned rewards are settled lazily on read and made
+idempotent with dedupe keys, so there is no nightly job to go wrong during a
+demo.
 """
 
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import binstate, compost, db, ledger
+from .. import db
+from ..catalog.collectibles import BY_ID as COLLECTIBLES_BY_ID
+from ..catalog.collectibles import COLLECTIBLES
 from ..models import (
     Achievement,
+    DailyGoal,
     GameResponse,
     ImpactStats,
     LeagueMember,
     LeagueResponse,
+    QuestClaimed,
     QuestProgress,
     QuestsResponse,
 )
+from ..rules import compost, game
 from ..security import require_app_key
+from ..services import binstate, economy, ledger
 
 router = APIRouter(tags=["game"], dependencies=[Depends(require_app_key)])
+
+CALENDAR_DAYS = 42
 
 
 # --- profile ---------------------------------------------------------------
 
 @router.get("/users/{user_id}/game", response_model=GameResponse)
-async def game(user_id: str) -> GameResponse:
-    # Credit anything the user has earned but not yet been paid for.
+async def profile(user_id: str) -> GameResponse:
+    """The HUD, streak calendar, daily goal, Profile stats and achievements.
+
+    Reading this also pays anything earned but not yet granted: healthy
+    layer-days, weekly balance, achievement crates, streak milestones and
+    last week's league finish. All idempotent.
+    """
+    async with db.pool().acquire() as conn:
+        await ledger.ensure_user(conn, user_id)
     await _settle_daily_awards(user_id)
+    await economy.settle_league_finishes(user_id)
+    settled = await economy.settle(user_id)
 
-    total_xp, loam = await ledger.totals(user_id)
-    current_streak, best_streak = await ledger.streaks(user_id)
-    at_risk = await ledger.streak_at_risk(user_id)
+    total_xp, loam = await ledger.balances(user_id)
+    cared, locked = await ledger.care_days(user_id)
+    today = date.today()
+    current, best = game.streak_lengths(cared + locked, today)
+    since = today - timedelta(days=CALENDAR_DAYS)
 
-    level = compost.level_for_xp(total_xp)
-    floor_xp = compost.xp_for_level(level)
-    next_xp = compost.xp_for_level(level + 1) if level < 50 else floor_xp
+    level = game.level_for_xp(total_xp)
+    floor_xp = game.xp_for_level(level)
+    next_xp = game.xp_for_level(level + 1) if level < 50 else floor_xp
 
-    state = await db.fetchrow(
-        "SELECT lid_locks FROM user_state WHERE user_id = $1", user_id
-    )
-    lid_locks = state["lid_locks"] if state else 0
-
-    grams = await db.fetchrow(
-        """
-        SELECT coalesce(sum(quantity_g), 0)::int AS g
-        FROM add_log
-        WHERE user_id = $1 AND action = 'added' AND category IN ('green', 'brown')
-        """,
+    st = await db.fetchrow("SELECT * FROM user_state WHERE user_id = $1", user_id)
+    crates_waiting = await db.fetchval("SELECT count(*)::int FROM crates WHERE user_id = $1 AND opened_at IS NULL", user_id)
+    collected = await db.fetchval("SELECT count(*)::int FROM collection WHERE user_id = $1 AND copies > 0", user_id)
+    grams = await db.fetchval(
+        "SELECT coalesce(sum(quantity_g), 0)::int FROM add_log WHERE user_id = $1 AND action = 'added' AND category IN ('green', 'brown')",
         user_id,
     )
-    impact = compost.impact(grams["g"] if grams else 0)
-
-    harvests = await db.fetchrow(
-        "SELECT count(*)::int AS n FROM point_events WHERE user_id = $1 AND kind = 'harvest'",
-        user_id,
-    )
-    healthy_days = await db.fetchrow(
-        """
-        SELECT count(DISTINCT date_trunc('day', time))::int AS n
-        FROM point_events
-        WHERE user_id = $1 AND kind = 'healthy_layer_day'
-        """,
-        user_id,
-    )
-    perfect_weeks = await db.fetchrow(
-        "SELECT count(*)::int AS n FROM point_events WHERE user_id = $1 AND kind = 'weekly_balance'",
-        user_id,
-    )
-
-    badges = compost.achievements(
-        {
-            "harvests": harvests["n"] if harvests else 0,
-            "healthy_days": healthy_days["n"] if healthy_days else 0,
-            "perfect_weeks": perfect_weeks["n"] if perfect_weeks else 0,
-            "kg_diverted": impact["kg_diverted"],
-            "best_streak": best_streak,
-        }
-    )
+    equipped_title = st["equipped_title"]
+    level_title = game.title_for_level(level)
+    title = COLLECTIBLES_BY_ID[equipped_title]["name"] if equipped_title in COLLECTIBLES_BY_ID else level_title
 
     return GameResponse(
         user_id=user_id,
+        display_name=st["display_name"],
         total_xp=total_xp,
         level=level,
-        title=compost.title_for_level(level),
+        title=title,
+        level_title=level_title,
         xp_into_level=max(0, total_xp - floor_xp),
         xp_for_next_level=max(1, next_xp - floor_xp),
         loam=loam,
-        streak_days=current_streak,
-        best_streak=best_streak,
-        lid_locks=lid_locks,
-        streak_at_risk=at_risk,
-        impact=ImpactStats(**impact),
-        achievements=[Achievement(**b) for b in badges],
+        streak_days=current,
+        best_streak=best,
+        lid_locks=st["lid_locks"],
+        streak_at_risk=current > 0 and today not in cared,
+        cared_today=today in cared,
+        care_days=[d for d in cared if d >= since],
+        lock_days=[d for d in locked if d >= since],
+        daily_goal=DailyGoal(**await economy.daily_goal(user_id)),
+        crates_waiting=crates_waiting or 0,
+        packets=st["packets"],
+        equipped_finish=st["equipped_finish"],
+        equipped_title=equipped_title,
+        collected=collected or 0,
+        collection_total=len(COLLECTIBLES),
+        impact=ImpactStats(**game.impact(grams or 0)),
+        achievements=[Achievement(**a) for a in economy.achievements_from(settled["stats"])],
     )
 
 
 async def _settle_daily_awards(user_id: str) -> None:
-    """Pay the healthy-layer-day and weekly-balance awards if earned.
-
-    Both are dedupe_keyed, so calling this on every read is safe.
-    """
+    """Pay healthy-layer-day and weekly-balance XP if earned (dedupe_keyed)."""
     today = date.today().isoformat()
-
+    week = date.today().isocalendar()
     bins = await db.fetch("SELECT bin_id FROM bins WHERE owner_id = $1", user_id)
     async with db.pool().acquire() as conn:
         for b in bins:
@@ -112,183 +110,74 @@ async def _settle_daily_awards(user_id: str) -> None:
             if snap is None:
                 continue
             for layer, v in snap["layers"].items():
-                if not v["measured"]:
-                    continue
-                if compost.moisture_state(v["moisture_pct"]) != "ok":
-                    continue
-                await ledger.award(
-                    conn,
-                    user_id,
-                    "healthy_layer_day",
-                    bin_id=b["bin_id"],
-                    dedupe_key=f"healthy:{b['bin_id']}:{layer}:{today}",
-                    meta={"layer": layer, "moisture_pct": v["moisture_pct"]},
-                )
-
-            # Weekly balance: last 7 days' greens:browns inside the target
-            # band the app scores against.
+                if v["measured"] and compost.moisture_state(v["moisture_pct"]) == "ok":
+                    await ledger.award(
+                        conn, user_id, "healthy_layer_day", bin_id=b["bin_id"],
+                        dedupe_key=f"healthy:{b['bin_id']}:{layer}:{today}",
+                        meta={"layer": layer, "moisture_pct": v["moisture_pct"]},
+                    )
             greens, browns = snap["greens_7d"], snap["browns_7d"]
             if greens and compost.balance_component(greens, browns) == 100.0:
-                week = date.today().isocalendar()
                 await ledger.award(
-                    conn,
-                    user_id,
-                    "weekly_balance",
-                    bin_id=b["bin_id"],
+                    conn, user_id, "weekly_balance", bin_id=b["bin_id"],
                     dedupe_key=f"balance:{b['bin_id']}:{week.year}-W{week.week}",
                     meta={"greens": greens, "browns": browns},
                 )
+
+
+@router.post("/users/{user_id}/check-in")
+async def check_in(user_id: str) -> dict:
+    """The player opened Layers ("Check on your layers"). +5 XP once a day;
+    a care action, so it keeps the streak (and may spend a Lid Lock).
+
+    Separate from /live so merely polling the API does not tick the streak.
+    """
+    today = date.today().isoformat()
+    async with db.pool().acquire() as conn:
+        await ledger.ensure_user(conn, user_id)
+        xp = await ledger.award(conn, user_id, "check_in", dedupe_key=f"checkin:{today}")
+    current, _ = await ledger.streaks(user_id)
+    return {"user_id": user_id, "xp_awarded": xp, "day": today, "streak_days": current}
 
 
 # --- quests ----------------------------------------------------------------
 
 @router.get("/quests/today", response_model=QuestsResponse)
 async def quests_today(user_id: str = Query(...)) -> QuestsResponse:
-    """Three care-based quests, stable for the day, with live progress."""
-    today = date.today()
-    picks = compost.quests_for_day(user_id, today.isoformat())
-
-    out: list[QuestProgress] = []
-    async with db.pool().acquire() as conn:
-        for q in picks:
-            progress = await _quest_progress(user_id, q["key"])
-            complete = progress >= q["goal"]
-            if complete:
-                # Pay on completion, once per quest per day.
-                await ledger.award(
-                    conn,
-                    user_id,
-                    "daily_quest",
-                    dedupe_key=f"quest:{q['key']}:{today.isoformat()}",
-                    meta={"quest": q["key"]},
-                )
-            out.append(
-                QuestProgress(
-                    key=q["key"],
-                    title=q["title"],
-                    detail=q["detail"],
-                    goal=q["goal"],
-                    progress=min(progress, q["goal"]),
-                    done=complete,
-                    xp=compost.XP["daily_quest"],
-                    loam=compost.LOAM["daily_quest"],
-                )
-            )
-
-    return QuestsResponse(user_id=user_id, day=today, quests=out)
+    """Today's three care quests with live progress. Claim to get paid."""
+    return QuestsResponse(user_id=user_id, day=date.today(), quests=[QuestProgress(**q) for q in await economy.quests_today(user_id)])
 
 
-async def _quest_progress(user_id: str, key: str) -> int:
-    """Count today's qualifying actions for one quest."""
-    if key == "follow_suggestion":
-        row = await db.fetchrow(
-            """
-            SELECT count(*)::int AS n FROM point_events
-            WHERE user_id = $1 AND kind IN ('followed_suggestion', 'avoided_bad_add')
-              AND time >= date_trunc('day', now())
-            """,
-            user_id,
-        )
-    elif key == "avoid_bad_add":
-        row = await db.fetchrow(
-            """
-            SELECT count(*)::int AS n FROM point_events
-            WHERE user_id = $1 AND kind = 'avoided_bad_add'
-              AND time >= date_trunc('day', now())
-            """,
-            user_id,
-        )
-    elif key == "balance_browns":
-        row = await db.fetchrow(
-            """
-            SELECT count(*)::int AS n FROM add_log
-            WHERE user_id = $1 AND category = 'brown' AND action = 'added'
-              AND time >= date_trunc('day', now())
-            """,
-            user_id,
-        )
-    elif key == "keep_in_band":
-        row = await db.fetchrow(
-            """
-            SELECT count(*)::int AS n FROM point_events
-            WHERE user_id = $1 AND kind = 'healthy_layer_day'
-              AND time >= date_trunc('day', now())
-            """,
-            user_id,
-        )
-    elif key == "check_in":
-        row = await db.fetchrow(
-            """
-            SELECT count(*)::int AS n FROM point_events
-            WHERE user_id = $1 AND kind = 'check_in'
-              AND time >= date_trunc('day', now())
-            """,
-            user_id,
-        )
-    else:
-        return 0
-    return row["n"] if row else 0
-
-
-@router.post("/users/{user_id}/check-in")
-async def check_in(user_id: str) -> dict:
-    """Records that the user looked at their bin today.
-
-    Separate from the live view so merely polling the API does not tick the
-    streak -- the app calls this when someone actually opens the bin screen.
-    """
-    today = date.today().isoformat()
-    async with db.pool().acquire() as conn:
-        # Worth 5 XP once a day (xp_rules.dart checkIn), and it counts as a
-        # care action so it keeps a streak alive.
-        xp = await ledger.award(
-            conn, user_id, "check_in", dedupe_key=f"checkin:{today}"
-        )
-    return {"user_id": user_id, "xp_awarded": xp, "day": today}
+@router.post("/quests/{key}/claim", response_model=QuestClaimed)
+async def claim_quest(key: str, user_id: str = Query(...)) -> QuestClaimed:
+    return QuestClaimed(**await economy.claim_quest(user_id, key))
 
 
 # --- leagues ---------------------------------------------------------------
 
-def _week_start(today: date | None = None) -> date:
-    """Most recent Sunday, matching the Sunday league reset."""
-    today = today or date.today()
-    # weekday(): Monday=0 ... Sunday=6
-    return today - timedelta(days=(today.weekday() + 1) % 7)
-
-
 @router.get("/leagues/current", response_model=LeagueResponse)
 async def current_league(user_id: str = Query(...)) -> LeagueResponse:
     """This week's cohort, ranked by XP from the xp_weekly aggregate."""
-    week_start = _week_start()
+    await economy.settle_league_finishes(user_id)
+    week_start = economy.week_start()
 
     row = await db.fetchrow(
         """
-        SELECT l.id, l.tier, l.week_start
-        FROM league_members m
-        JOIN leagues l ON l.id = m.league_id
-        WHERE m.user_id = $1 AND l.week_start = $2
-        LIMIT 1
+        SELECT l.id, l.tier, l.week_start FROM league_members m JOIN leagues l ON l.id = m.league_id
+        WHERE m.user_id = $1 AND l.week_start = $2 LIMIT 1
         """,
         user_id,
         week_start,
     )
     if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail="not in a league this week -- run scripts/seed_league.py",
-        )
+        raise HTTPException(404, "not in a league this week -- run python -m scripts.seed_demo")
 
-    # xp_weekly buckets on a Sunday origin, so the bucket start is week_start.
     members = await db.fetch(
         """
-        SELECT m.user_id, m.display_name, m.is_bot,
-               coalesce(x.xp, 0)::int AS xp,
-               coalesce(m.streak, 0)  AS streak,
-               m.is_friend
+        SELECT m.user_id, m.display_name, m.is_bot, coalesce(x.xp, 0)::int AS xp,
+               coalesce(m.streak, 0) AS streak, m.is_friend
         FROM league_members m
-        LEFT JOIN xp_weekly x
-               ON x.user_id = m.user_id
-              AND x.week = $2::timestamptz
+        LEFT JOIN xp_weekly x ON x.user_id = m.user_id AND x.week = $2::timestamptz
         WHERE m.league_id = $1
         ORDER BY xp DESC, m.display_name
         """,
@@ -297,49 +186,35 @@ async def current_league(user_id: str = Query(...)) -> LeagueResponse:
     )
 
     size = len(members)
-    tier_index = (
-        compost.LEAGUE_TIERS.index(row["tier"])
-        if row["tier"] in compost.LEAGUE_TIERS
-        else 0
-    )
-
+    tier_index = game.LEAGUE_TIERS.index(row["tier"]) if row["tier"] in game.LEAGUE_TIERS else 0
     out: list[LeagueMember] = []
     your_rank = None
     for i, m in enumerate(members, start=1):
-        # zoneForRank(): no promotion out of the top tier, no demotion out of
-        # the bottom one.
-        zone = compost.league_zone(i, size, tier_index)
         is_you = m["user_id"] == user_id
         if is_you:
             your_rank = i
         out.append(
             LeagueMember(
                 user_id=m["user_id"],
-                display_name=m["display_name"],
+                display_name="You" if is_you else m["display_name"],
                 xp=m["xp"],
                 rank=i,
                 is_you=is_you,
                 is_friend=m["is_friend"],
                 streak=m["streak"] or 0,
-                # Stable per-user palette index, so a member keeps the same
-                # avatar colour between refreshes.
-                color_index=sum(m["user_id"].encode()) % 8,
-                zone=zone,
+                color_index=game.stable_index(m["user_id"], 6),
+                zone=game.league_zone(i, size, tier_index),
             )
         )
-
-    resets_at = datetime.combine(
-        week_start + timedelta(days=7), time.min, tzinfo=timezone.utc
-    )
 
     return LeagueResponse(
         tier=row["tier"],
         tier_index=tier_index,
         week_start=week_start,
-        resets_at=resets_at,
+        resets_at=datetime.combine(week_start + timedelta(days=7), time.min, tzinfo=timezone.utc),
         size=size,
-        promote_count=compost.LEAGUE_PROMOTE,
-        demote_count=compost.LEAGUE_DEMOTE,
+        promote_count=game.LEAGUE_PROMOTE,
+        demote_count=game.LEAGUE_DEMOTE,
         members=out,
         your_rank=your_rank,
     )

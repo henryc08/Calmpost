@@ -151,6 +151,8 @@ class TrendsResponse(BaseModel):
 
 class LogCreate(BaseModel):
     item: str
+    # The app's food catalog id when known (FoodItem.id).
+    catalog_id: str | None = None
     category: Category = "unknown"
     # "skipped" records trusting an avoid verdict, which is what earns XP.
     action: Literal["added", "skipped"] = "added"
@@ -217,21 +219,30 @@ class AdviceResponse(BaseModel):
 # --- game ------------------------------------------------------------------
 
 class QuestProgress(BaseModel):
+    """One of today's three care quests (the app's Quest)."""
+
     key: str
     title: str
-    detail: str
-    # The app's Quest uses goal/progress.
-    goal: int
-    progress: int
-    done: bool
+    goal: float
+    progress: float
+    unit: str = ""
     xp: int
     loam: int
+    done: bool
+    # Rewards are paid when the player taps Claim, as in the app.
+    claimed: bool
 
 
 class QuestsResponse(BaseModel):
     user_id: str
     day: date
     quests: list[QuestProgress]
+
+
+class QuestClaimed(BaseModel):
+    quest: str
+    xp_awarded: int
+    loam_awarded: int
 
 
 class ImpactStats(BaseModel):
@@ -242,17 +253,45 @@ class ImpactStats(BaseModel):
 
 
 class Achievement(BaseModel):
-    key: str
-    name: str
-    earned: bool
-    detail: str
+    """GameState.achievements: three tiers, every tier pays a crate."""
+
+    id: str
+    title: str
+    description: str
+    progress: float
+    goals: list[float]
+    rewards: list[str]
+    tier: int
+    maxed: bool
+    next_goal: float
+    next_reward: str
+
+
+class DailyGoalStep(BaseModel):
+    index: int
+    xp: int
+    label: str
+    loam: int
+    crate: str | None = None
+    reached: bool
+    claimed: bool
+
+
+class DailyGoal(BaseModel):
+    xp_today: int
+    goals: list[DailyGoalStep]
 
 
 class GameResponse(BaseModel):
+    """Everything the Home HUD, streak calendar, daily goal and Profile need."""
+
     user_id: str
+    display_name: str
     total_xp: int
     level: int
+    # The equipped title if any, otherwise the level title.
     title: str
+    level_title: str
     xp_into_level: int
     xp_for_next_level: int
     loam: int
@@ -260,6 +299,17 @@ class GameResponse(BaseModel):
     best_streak: int
     lid_locks: int
     streak_at_risk: bool
+    cared_today: bool
+    # The last six weeks for the calendar: care days and Lid Lock days.
+    care_days: list[date]
+    lock_days: list[date]
+    daily_goal: DailyGoal
+    crates_waiting: int
+    packets: int
+    equipped_finish: str
+    equipped_title: str | None = None
+    collected: int
+    collection_total: int
     impact: ImpactStats
     achievements: list[Achievement]
 
@@ -291,6 +341,19 @@ class LeagueResponse(BaseModel):
     your_rank: int | None = None
 
 
+# --- economy (crates, Seed Packets, shop) -----------------------------------
+
+class PullRequest(BaseModel):
+    """Open Seed Packets: 1 or 10, paid with owned packets or Loam."""
+
+    count: Literal[1, 10] = 1
+    paid_with: Literal["packet", "loam"] = "packet"
+
+
+class EquipRequest(BaseModel):
+    collectible_id: str
+
+
 # --- harvest ---------------------------------------------------------------
 
 class HarvestRequest(BaseModel):
@@ -303,7 +366,7 @@ class HarvestResponse(BaseModel):
     layer: str
     harvested_at: datetime
     xp_awarded: int
-    seeds_awarded: int
+    loam_awarded: int
     was_ready: bool
     note: str | None = None
 

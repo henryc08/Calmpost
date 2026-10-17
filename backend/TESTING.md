@@ -12,19 +12,33 @@ the failure is almost always at the lowest level that still passes.
 
 ---
 
-## 1. Logic only (seconds, nothing external)
-
-Checks calibration maths, stage thresholds, XP values and level curves
-without touching the database.
+## 1. The test suite (seconds, no Tiger, no hardware)
 
 ```bash
 cd backend
-.venv\Scripts\python.exe -c "from app.main import app; print(len(app.openapi()['paths']), 'routes')"
-.venv\Scripts\python.exe -c "from app import compost; print(compost.moisture_pct(472, 620, 310))"
+.venv\Scripts\python.exe -m pip install pytest pgserver    # once
+.venv\Scripts\python.exe -m pytest
 ```
 
-If `from app.main import app` fails, it's a syntax or import error — nothing
-further will work until it's fixed.
+- **The database:** the tests use a **real local Postgres**. `pgserver` starts a throwaway server; set `TEST_DATABASE_URL` to use your own instead, and note that it gets **wiped**.
+- **TimescaleDB stand-ins:** TimescaleDB-only statements are skipped locally, and `tests/timescale_stubs.sql` stands in for the hyperfunctions. Every endpoint and query still runs.
+- **Without pgserver:** only the rule and parity tests run.
+
+The suite covers:
+- **the rules:** calibration maths, bands, stage, XP, the daily cap, levels, streaks across Lid Lock days, league zones and gacha pity
+- **parity:** the backend's numbers and catalogs against the Dart app
+- **the full API loop:** ingest, live, the same scrap getting a different answer, the logging XP rules, check-in, quests, the daily goal, crates, pulls, equipping, Lid Locks and leagues
+- **the camera drop-in**
+- **the upgrade** of an old `main` database (with `seeds`)
+- **the demo seed**
+
+If `from app.main import app` fails, it's a syntax or import error, and nothing else will work until it's fixed:
+
+```bash
+.venv\Scripts\python.exe -c "from app.main import app; print(len(app.openapi()['paths']), 'routes')"
+```
+
+After editing `food_catalog.dart` or `collectibles.dart` in the app, run `python -m scripts.sync_catalogs`. Otherwise the parity test fails.
 
 ## 2. API + Tiger Data
 
@@ -36,8 +50,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 .venv\Scripts\python.exe -m scripts.smoke_test --token <device token>
 ```
 
-17 checks: ingest, live, trends, the advice verdict, the always-avoid rule,
-the XP rules, check-in, game/quests/leagues, and four auth rejections. Expect
+It runs about 20 checks:
+- ingest, live and trends
+- the advice verdict and the always-avoid rule
+- the XP rules and check-in
+- game, quests, daily goal, collection, economy rules and leagues
+- four auth rejections
+
+It never spends: it doesn't open crates or pull. Expect
 `all checks passed`.
 
 Interactive docs — the fastest way to poke one endpoint by hand:
@@ -65,12 +85,12 @@ watching a database that nothing is feeding.
 | Terminal | Command | Job |
 | -------- | ------- | --- |
 | 1 | `uvicorn app.main:app --host 0.0.0.0 --port 8000` | the API that writes to Tiger |
-| 2 | `python examples/serial_bridge.py --port COM3` | Arduino → API |
+| 2 | `python scripts/serial_bridge.py --port COM3` | Arduino → API |
 | 3 | `python -m scripts.watch_db` | shows what landed (optional) |
 
 ```bash
 pip install pyserial requests
-.venv\Scripts\python.exe examples/serial_bridge.py --port COM3 --api http://127.0.0.1:8000
+.venv\Scripts\python.exe scripts/serial_bridge.py --port COM3 --api http://127.0.0.1:8000
 ```
 
 ### Wi-Fi and hotspots do not matter for this path
@@ -269,9 +289,7 @@ didn't change enough — check `input_snapshot` in the response.
 
 ## Server won't start
 
-`schema.sql` runs on every boot. If it errors, the app won't come up — read
-the traceback's SQL. The schema is idempotent, so a partial apply is safe to
-re-run. To rebuild from scratch (**destroys data**):
+`sql/0*.sql` runs in order on every boot. If a file errors, the app won't come up, so read the SQL in the traceback. Every file is idempotent, so a partial apply is safe to re-run. Older databases, including the original single `schema.sql` with `seeds`, are upgraded in place by `000_premigrate.sql` and `090_migrations.sql`. To rebuild from scratch (**destroys data**):
 
 ```bash
 .venv\Scripts\python.exe -m scripts.reset_db --yes

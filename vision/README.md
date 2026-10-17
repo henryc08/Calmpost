@@ -21,11 +21,15 @@ pip install -r requirements.txt
 cp .env.example .env                                    # add GEMINI_API_KEY (and APP_API_KEY for the real backend)
 
 python calibrate.py          # once: drag a box over the bin opening -> roi.json
-python mock_backend.py       # until backend/ has /drops (http://localhost:8090 plays the app's part)
+python mock_backend.py       # only without the real backend (http://localhost:8090 plays the app's part)
 python main.py               # webcam + preview at http://localhost:8081
 ```
 
-Open http://localhost:8090, press **Drop something in** and drop a scrap under the camera. The pop-up
+With the real backend instead, set `BACKEND_URL=http://localhost:8000` and `APP_API_KEY` in `.env`, run
+`uvicorn app.main:app --port 8000` in `backend/`, and arm a session from the app (or `POST /bins/bin-001/drops/session`).
+`catalog.json` is generated from the app's food catalog by `backend/scripts/sync_catalogs.py`; don't edit it by hand.
+
+With the mock: open http://localhost:8090, press **Drop something in** and drop a scrap under the camera. The pop-up
 data (photo, item, type, amount, confidence) appears there within a couple of seconds.
 
 Other modes:
@@ -82,7 +86,7 @@ The vision service sends `X-API-Key: $APP_API_KEY` when it's set.
 ## Tests
 
 ```bash
-pytest     # 20 tests: motion trigger, frames, catalog/Gemini validation, watcher, backend client vs mock
+pytest     # 23 tests: motion trigger, frames, catalog/Gemini validation, watcher, backend client vs mock
 ```
 
 They use synthetic footage (`tests/synth.py`): a textured bin, with a yellow peel and a hand falling in. No webcam or Gemini key is needed.

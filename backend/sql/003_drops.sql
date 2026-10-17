@@ -1,5 +1,7 @@
--- Camera drop-in (CLAUDE.md 2.4). Runs after schema.sql on every boot.
--- Idempotent: safe to run repeatedly.
+-- Camera drop-in (CLAUDE.md 2.4): sessions the app arms, detections the
+-- vision service reports, and the camera-accuracy rollup. Confirmed drops
+-- become add_log rows with source = 'camera' and a drop_id (001).
+-- Idempotent: runs on every boot.
 
 -- ---------------------------------------------------------------------------
 -- A session is the app arming the camera ("Drop something in", 60 s). The
@@ -68,13 +70,3 @@ SELECT add_continuous_aggregate_policy('vision_accuracy_1d',
     end_offset   => INTERVAL '1 hour',
     schedule_interval => INTERVAL '30 minutes',
     if_not_exists => TRUE);
-
--- ---------------------------------------------------------------------------
--- add_log: confirmed drops become rows with source = 'camera' and a drop_id.
--- ---------------------------------------------------------------------------
-ALTER TABLE add_log ADD COLUMN IF NOT EXISTS drop_id bigint;
-
-ALTER TABLE add_log DROP CONSTRAINT IF EXISTS add_log_source_check;
-
-ALTER TABLE add_log ADD CONSTRAINT add_log_source_check
-    CHECK (source IN ('manual', 'photo', 'seed', 'camera'));

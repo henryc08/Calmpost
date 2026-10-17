@@ -1,7 +1,9 @@
-"""Seed readings, log entries and a league so the app is not empty.
+"""Seed readings, log entries, a care history, an economy and a league so the
+app is not empty.
 
     python -m scripts.seed_demo --bin bin-001 --days 3
     python -m scripts.seed_demo --bin bin-001 --scenario too_wet
+    python -m scripts.seed_demo --bin bin-001 --no-league --no-economy
 
 Scenarios mirror MockRepository's: healthy, too_wet, too_dry, curing, ready.
 The default arc runs wet-and-hot to cool-and-quiet, which is the shape that
@@ -18,7 +20,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import compost, db  # noqa: E402
+from app import db  # noqa: E402
+from app.catalog import collectibles  # noqa: E402
+from app.services import economy  # noqa: E402
 
 STEP = timedelta(minutes=5)
 
@@ -61,6 +65,7 @@ async def main() -> None:
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default=None,
                         help="hold a fixed state instead of the default arc")
     parser.add_argument("--no-league", action="store_true")
+    parser.add_argument("--no-economy", action="store_true", help="skip Loam, crates, collection and streak history")
     args = parser.parse_args()
 
     await db.connect()
@@ -143,26 +148,84 @@ async def main() -> None:
                     grams,
                 )
 
-        # Refresh the aggregates the charts and leagues read from.
-        for view in ("readings_15m", "readings_1d", "xp_weekly"):
-            await conn.execute(
-                f"CALL refresh_continuous_aggregate('{view}', NULL, NULL)"
-            )
+    await refresh("readings_15m", "readings_1d")
 
     print(f"inserted {len(rows)} readings for {args.bin_id} over {args.days} day(s)"
           + (f" (scenario={args.scenario})" if args.scenario else ""))
 
+    if not args.no_economy:
+        await seed_economy(user_id)
     if not args.no_league:
         await seed_league(user_id)
 
     await db.disconnect()
 
 
+async def refresh(*views: str) -> None:
+    """Refresh continuous aggregates now (they also refresh on a policy).
+    Cannot run inside a transaction."""
+    for view in views:
+        await db.execute(f"CALL refresh_continuous_aggregate('{view}', NULL, NULL)")
+
+
+def _noon(days_ago: int) -> datetime:
+    d = datetime.now(timezone.utc).date() - timedelta(days=days_ago)
+    return datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=12)
+
+
+async def seed_economy(user_id: str) -> None:
+    """A mid-game player, matching the app's mock: a 12-day streak (one day
+    kept by a Lid Lock, today not yet cared for), 240 Loam, a Sprout and a
+    Grove crate waiting, 1 Seed Packet, 1 Lid Lock and 10 collectibles.
+    Idempotent: dedupe keys and ON CONFLICT make re-running a no-op."""
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO user_state (user_id, display_name, lid_locks, packets)
+                VALUES ($1, 'You', 1, 1)
+                ON CONFLICT (user_id) DO UPDATE SET lid_locks = 1, packets = 1
+                """,
+                user_id,
+            )
+            for days_ago in range(1, 13):
+                kind = "lid_lock_used" if days_ago == 6 else "check_in"
+                await conn.execute(
+                    """
+                    INSERT INTO point_events (time, user_id, kind, xp, dedupe_key, meta)
+                    SELECT $1, $2, $3, $4, $5, '{"seed": true}'::jsonb
+                    WHERE NOT EXISTS (SELECT 1 FROM point_events WHERE user_id = $2 AND dedupe_key = $5)
+                    """,
+                    _noon(days_ago),
+                    user_id,
+                    kind,
+                    0 if kind == "lid_lock_used" else 5,
+                    f"seed:{kind}:{days_ago}",
+                )
+            await conn.execute(
+                """
+                INSERT INTO point_events (user_id, kind, loam, dedupe_key, meta)
+                SELECT $1, 'seed', 240, 'seed:loam', '{"seed": true}'::jsonb
+                WHERE NOT EXISTS (SELECT 1 FROM point_events WHERE user_id = $1 AND dedupe_key = 'seed:loam')
+                """,
+                user_id,
+            )
+            for tier in ("sprout", "grove"):
+                await economy.grant_crate(conn, user_id, tier, "seed", f"seed:crate:{tier}")
+            owned = [c["id"] for c in collectibles.COLLECTIBLES if c["rarity"] in ("common", "uncommon") and c["id"] != "finish_classic"][:9]
+            for cid in ["finish_classic", *owned][:10]:
+                await conn.execute(
+                    "INSERT INTO collection (user_id, collectible_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    user_id,
+                    cid,
+                )
+    await refresh("xp_weekly")
+    print("seeded economy: 12-day streak, 240 Loam, 2 crates, 1 packet, 1 Lid Lock, 10 collectibles")
+
+
 async def seed_league(user_id: str) -> None:
     """Put the user in a league with 29 bots, as MockRepository does."""
-    from app.routers.game import _week_start
-
-    week_start = _week_start()
+    week_start = economy.week_start()
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             league = await conn.fetchrow(
@@ -211,9 +274,7 @@ async def seed_league(user_id: str) -> None:
                     bot_id,
                     xp,
                 )
-        # refresh_continuous_aggregate cannot run inside a transaction, so it
-        # happens after the block above commits.
-        await conn.execute("CALL refresh_continuous_aggregate('xp_weekly', NULL, NULL)")
+    await refresh("xp_weekly")
     print(f"seeded 'Fern' league for week of {week_start} with 29 bots")
 
 

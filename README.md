@@ -6,18 +6,30 @@ tells you what to add, what to avoid, and when your compost is ready.
 See [CLAUDE.md](CLAUDE.md) for the design, tech stack and game rules.
 
 ```
-Arduino ──USB serial──▶ serial_bridge.py ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
-                                                              │ ▲
-                                                       Gemini ◀┘ │ REST
-                                                                 │
-                                                  Flutter app (Riverpod)
+Arduino ──USB serial──▶ backend/scripts/serial_bridge.py ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
+                                                                             │ ▲
+webcam ──▶ vision/ ──POST /bins/{id}/drops───────────────────────────────────┤ │
+                                                                  Gemini ◀───┘ │ REST
+                                                                               │
+                                                                 Flutter app (Riverpod)
 ```
 
-| Part | Where | Branch |
-| ---- | ----- | ------ |
-| Flutter app | `app/` | `frontend` |
-| Backend (FastAPI + Tiger Data + Gemini) | `backend/` | `backend/tigerdata-ingest` |
-| Arduino sketch | `firmware/sensor_output/` | `main` |
+Everything lives on `main`.
+
+| Part | Where | Docs |
+| ---- | ----- | ---- |
+| Flutter app (Android-first; runs on mock data) | `app/` | [CLAUDE.md §7](CLAUDE.md) |
+| Backend: FastAPI + Tiger Data + Gemini, game and economy | `backend/` | [backend/README.md](backend/README.md), [backend/TESTING.md](backend/TESTING.md) |
+| Camera drop-in: OpenCV + Gemini vision | `vision/` | [vision/README.md](vision/README.md) |
+| Arduino sketch: one probe + air sensor, JSON over USB | `firmware/sensor_output/` | |
+
+Quick checks, no Tiger or hardware needed:
+
+```powershell
+cd app;     flutter test
+cd backend; .venv\Scripts\python.exe -m pytest     # local Postgres via pgserver
+cd vision;  .venv\Scripts\python.exe -m pytest
+```
 
 ---
 
@@ -40,7 +52,7 @@ cd backend
 **Terminal 2 — the bridge** (Arduino → API)
 
 ```powershell
-.venv\Scripts\python.exe examples\serial_bridge.py --port COM3
+.venv\Scripts\python.exe scripts\serial_bridge.py --port COM3
 ```
 
 **Terminal 3 — the watcher** (optional: what landed in Tiger Data)
@@ -81,7 +93,7 @@ curl.exe -s -H "X-API-Key: <APP_API_KEY from backend\.env>" http://127.0.0.1:800
 cd backend
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env      # then fill in DATABASE_URL and GEMINI_API_KEY
+copy .env.example .env      # then fill in DATABASE_URL and GEMINI_API_KEY (never commit .env)
 .venv\Scripts\python.exe -m scripts.init_db --bin bin-001
 ```
 

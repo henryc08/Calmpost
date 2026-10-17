@@ -17,8 +17,8 @@ enum InfoTip {
   ),
   xp(
     'How you earn XP',
-    'Caring for the bin earns XP: following a suggestion, keeping layers in range, finishing quests. '
-        'Adding scraps on its own earns nothing, so there\'s never a reason to waste food.',
+    'Confirmed compostable additions earn 1 XP per 20 g, with bonuses for following advice and other care. '
+        'Volume and action rewards share a 60 XP daily cap. Keep-out materials earn no volume XP.',
   ),
   whatToAdd(
     'Where this comes from',
@@ -38,7 +38,7 @@ enum InfoTip {
   league(
     'How the league works',
     'You\'re racing 29 others on XP earned this week. The top 7 move up a tier and the bottom 5 move down. '
-        'It resets Sunday night.',
+        'It resets Sunday at 00:00 UTC.',
   ),
   impact(
     'These are estimates',

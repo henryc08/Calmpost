@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 
-/// XP values. Care earns XP; volume never does.
+/// XP values. Confirmed compostable volume and care both earn XP.
 abstract final class Xp {
   static const log = 0;
+  static const gramsPerXp = 20;
   static const followedSuggestion = 15;
   static const avoidedBadAdd = 5;
   static const checkIn = 5;
@@ -13,6 +14,10 @@ abstract final class Xp {
   /// Max XP per day from actions (health-based XP is uncapped: it can't be farmed).
   static const dailyActionCap = 60;
 }
+
+/// Cumulative daily volume avoids rewarding the splitting of one drop.
+int volumeXp(double grams, {double alreadyLogged = 0}) =>
+    ((alreadyLogged + math.max(0, grams)) / Xp.gramsPerXp).floor() - (alreadyLogged / Xp.gramsPerXp).floor();
 
 /// XP for logging/checking an item, respecting the daily cap.
 int xpForAction({required int base, required int earnedToday}) {

@@ -35,6 +35,14 @@ For each new item:
 - est_grams: rough weight in grams
 - confidence: 0 to 1, how sure you are of catalog_id
 - box_2d: [ymin, xmin, ymax, xmax] of the item in image 2, scaled 0-1000
+
+A mix you can't separate into items (plate scrapings, a bowl of leftovers):
+return ONE item with catalog_id "mixed_scraps" and a label naming what you
+can see, e.g. "mixed scraps: rice, peels". If any meat, fish, bones, dairy or
+oily food is visible in it, also list that as its own item.
+
+Don't guess with confidence. A blurry, covered or unfamiliar item gets a low
+confidence (below 0.6) so the person is asked to check it.
 """
 
 

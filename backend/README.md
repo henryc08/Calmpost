@@ -201,7 +201,7 @@ App     GET  /bins/{id}/drops/sessions/{sid}        is the sheet still watching?
 ```
 
 - **Confirming logs normally.** Each confirmed item follows the usual `/logs` rules:
-  - adding an item earns 0
+  - confirmed compostable material earns 1 XP per 20 g (cumulative daily rounding)
   - `was_advised` earns +15
   - `removed` earns +5 (the user took a keep-out item back out)
 - **Amounts become grams:** small 40, handful 110, large 250.
@@ -226,11 +226,11 @@ Adding a second probe needs no migration: post with `probe_layer: "bottom"`.
 
 Everything is enforced here, so the numbers the app shows can't be faked by the client. All of these rules come from the app (`xp_rules.dart`, `state/game.dart`, `gacha.dart`), and the parity tests keep the two in step.
 
-**XP: reward balance, never volume.**
+**XP: reward confirmed compostable volume and care.**
 
 | Action | XP |
 | ------ | -- |
-| **Logging a scrap** | **0** |
+| **Confirmed green/brown material** | **1 per 20 g**, rounded cumulatively per day |
 | Followed the suggestion | 15 |
 | Trusted an avoid verdict and skipped it | 5 |
 | Check-in (once a day) | 5 |
@@ -238,9 +238,13 @@ Everything is enforced here, so the numbers the app shows can't be faked by the 
 | Weekly balance | 30 |
 | Harvest | 100 (+50 Loam) |
 
-- **Daily cap:** follow, skip and check-in XP together cap at **60 a day**.
+- **Daily cap:** volume, follow, skip and check-in XP together cap at **60 a day**.
 - **Uncapped:** quest and daily-goal rewards aren't capped.
-- **Streaks count care, not logs:** a check-in, a followed suggestion or a quest keeps a streak alive.
+- **Streaks:** confirmed compostable volume also counts. Keep-out additions earn no volume XP.
+
+Manual logs accept a stable `request_id`. Identical retries return the original receipt; changed bodies return 409. Camera confirmations save every row and reward atomically and return the same receipt on retry. Care bonuses are checked against the current bin need, not simply trusted from `was_advised`.
+
+Database TLS now verifies hostname/certificate. If your provider requires a private CA, set `DATABASE_CA_FILE` to its trusted PEM file. The shared app API key is still demo-only authorization, not user isolation; do not expose this API as a public multi-user service.
 
 **Loam** is the soft currency. It is never bought with money.
 
@@ -357,5 +361,7 @@ python scripts/serial_bridge.py --api http://127.0.0.1:8000
 The bridge:
 - auto-detects the port and reads at 115200 baud, matching the sketch
 - ignores the board's `#`-prefixed log lines
-- queues samples through network drops
+- reads serial independently of a single background HTTP uploader, so network stalls do not block USB reads
+- timestamps samples before queueing and retries oldest-first, even if no more serial data arrives
+- buffers up to 500 queued samples plus one in flight in memory; a full queue warns and drops incoming samples. Unsent data is lost on exit (also warned), not persisted to disk
 - exits on an auth failure rather than retrying with a revoked token

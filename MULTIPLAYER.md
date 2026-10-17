@@ -90,11 +90,21 @@ Home and Layers then read your bin using your account session. Opening Layers re
 one daily check-in. Adding or skipping a catalog item in Log is saved to your account;
 the backend determines whether it follows advice or keeps a harmful item out, applies
 the existing action XP cap, and prevents retries from duplicating a saved log. Sensor
-readings must be recent. Ordinary additions earn zero XP.
+readings need not be available to save a log; only advice bonuses require fresh
+readings. Before the first reading, Log shows cautious advice without inventing
+sensor values. Confirmed compostable additions earn 1 XP per
+20 g, rounded cumulatively per day, plus verified care bonuses under the shared
+60 XP daily action cap. Non-recommended compostables can still be logged. Identical
+retries return the original award without saving twice; changed retry bodies conflict.
 
-Social progress uses the saved server ledger. The existing local Home/Greenhouse reward
-economy remains separate: local demo XP, Loam and crate rolls do not change multiplayer
-rankings. Profile has a **My shared progress** link and labels those local demo rewards.
+Camera capture currently supports demo bins only: the vision service still uses
+the shared demo key, which cannot access player-owned bins. Use manual Log for a
+paired player bin until device-scoped vision authorization is implemented.
+
+Social, Home, Profile and Greenhouse use the same saved server ledger in live account
+mode. Layers reads actual saved additions. Account-scoped reward claims and spending
+are allowed; demo harvest writes remain blocked. Explicit mock mode keeps a separate
+local garden whose rewards never enter multiplayer rankings.
 
 ## Privacy and ownership
 

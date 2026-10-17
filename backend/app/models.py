@@ -158,13 +158,14 @@ class TrendsResponse(BaseModel):
 # --- add log ---------------------------------------------------------------
 
 class LogCreate(BaseModel):
-    item: str
+    item: str = Field(min_length=1, max_length=120)
+    request_id: str | None = Field(default=None, min_length=1, max_length=100)
     # The app's food catalog id when known (FoodItem.id).
     catalog_id: str | None = None
     category: Category = "unknown"
     # "skipped" records trusting an avoid verdict, which is what earns XP.
     action: Literal["added", "skipped"] = "added"
-    quantity_g: int | None = Field(default=None, ge=0)
+    quantity_g: int | None = Field(default=None, ge=0, le=5000)
     source: Literal["manual", "photo", "seed", "camera"] = "manual"
     was_advised: bool = False
     advice_id: int | None = None
@@ -176,6 +177,7 @@ class LogEntry(BaseModel):
     bin_id: str
     time: datetime
     item: str
+    catalog_id: str | None = None
     category: Category
     action: Literal["added", "skipped"]
     quantity_g: int | None = None
@@ -296,6 +298,10 @@ class GameResponse(BaseModel):
     user_id: str
     display_name: str
     total_xp: int
+    week_xp: int = 0
+    action_xp_today: int = 0
+    grams_today: float = 0
+    stats: dict = Field(default_factory=dict)
     level: int
     # The equipped title if any, otherwise the level title.
     title: str

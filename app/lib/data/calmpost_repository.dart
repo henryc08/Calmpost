@@ -1,5 +1,6 @@
 import 'dart:typed_data' show Uint8List;
 
+import '../domain/drop.dart';
 import '../domain/models.dart';
 
 /// Everything the app needs from the outside world. Screens only ever talk to
@@ -7,6 +8,12 @@ import '../domain/models.dart';
 /// bin, through FastAPI + Tiger Data). Method shapes mirror the backend
 /// endpoints in AGENTS.md section 5.
 abstract class CalmpostRepository {
+  bool get serverGame;
+  Future<Map<String, dynamic>> loadGame();
+  Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args);
+  Future<void> cancelDropSession(DropSession session);
+  Future<Drop?> pendingDrop();
+
   /// GET /bins/{id}/live, polled.
   Stream<BinSnapshot> watchBin();
 
@@ -17,7 +24,7 @@ abstract class CalmpostRepository {
   Future<Advice> checkItem(FoodItem item);
 
   /// POST /bins/{id}/logs: the user actually added this to the bin.
-  Future<void> logItem(FoodItem item);
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false});
 
   /// GET /bins/{id}/advice
   Suggestion suggestions(BinSnapshot snapshot);
@@ -81,11 +88,21 @@ abstract class CalmpostRepository {
   /// Always returns something sayable: an off-topic question comes back with
   /// `onTopic` false and a ready-made redirect, and an unreachable model comes
   /// back as `isFallback` with a sensor summary. Neither is an error state.
-  Future<TruncReply> askTrunc(
-    String message, {
-    List<TruncTurn> history,
-    bool includePhotos,
-  });
+  Future<TruncReply> askTrunc(String message, {List<TruncTurn> history, bool includePhotos});
 
   FoodItem? food(String id);
+
+  // --- camera drop-in (AGENTS.md 2.4) ---------------------------------------
+
+  /// What the camera reports for [session]: one [DropSeen], or [DropNothing]
+  /// when the window closes empty; then the stream ends. Cancel to stop.
+  Stream<DropEvent> watchDrop(DropSession session);
+
+  /// POST /drops/{id}/confirm with the rows the user accepted or edited.
+  /// Returns a verdict for every row, in order. [advisedIds] are today's
+  /// suggestions, so following one earns its XP.
+  Future<List<Advice>> confirmReviewedDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}});
+
+  /// POST /drops/{id}/dismiss: "Nothing was added".
+  Future<void> dismissReviewedDrop(Drop drop);
 }

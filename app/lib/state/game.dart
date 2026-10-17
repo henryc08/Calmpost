@@ -1,8 +1,11 @@
 import 'dart:math' as math;
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show Color;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/collectibles.dart';
 import '../data/food_catalog.dart';
@@ -10,9 +13,13 @@ import '../domain/gacha.dart';
 import '../domain/models.dart';
 import '../domain/xp_rules.dart';
 import 'celebrations.dart';
+import 'providers.dart';
+import 'game_codec.dart';
+import 'social.dart';
 
-/// Everything the game layer tracks. In-memory for the demo; the backend's
-/// point_events ledger becomes the source of truth later.
+final gameStorageProvider = Provider<SharedPreferences?>((ref) => null);
+
+/// Game state: durable local demo progression or a server-authoritative live view.
 class GameState {
   const GameState({
     required this.weekXp,
@@ -38,6 +45,13 @@ class GameState {
     required this.kgDiverted,
     required this.questsClaimedAllTime,
     required this.friendQuestProgress,
+    this.cameraDrops = 0,
+    this.volumeGramsToday = 0,
+    this.day,
+    this.paidMilestones = const {},
+    this.earnedAchievements = const {},
+    this.serverAchievements,
+    this.leagueTier = 2,
   });
 
   static const playerName = 'You';
@@ -81,6 +95,15 @@ class GameState {
   final int questsClaimedAllTime;
   final int friendQuestProgress;
 
+  /// Camera drops the user reviewed and confirmed (Sharp Eye).
+  final int cameraDrops;
+  final double volumeGramsToday;
+  final DateTime? day;
+  final Set<int> paidMilestones;
+  final Set<String> earnedAchievements;
+  final List<Achievement>? serverAchievements;
+  final int leagueTier;
+
   int get level => levelForXp(totalXp);
   bool get caredToday => streak.caredOn(DateTime.now());
   double get co2eAvoided => kgDiverted * Impact.co2ePerKg;
@@ -110,6 +133,13 @@ class GameState {
     double? kgDiverted,
     int? questsClaimedAllTime,
     int? friendQuestProgress,
+    int? cameraDrops,
+    double? volumeGramsToday,
+    DateTime? day,
+    Set<int>? paidMilestones,
+    Set<String>? earnedAchievements,
+    List<Achievement>? serverAchievements,
+    int? leagueTier,
   }) => GameState(
     weekXp: weekXp ?? this.weekXp,
     totalXp: totalXp ?? this.totalXp,
@@ -134,100 +164,109 @@ class GameState {
     kgDiverted: kgDiverted ?? this.kgDiverted,
     questsClaimedAllTime: questsClaimedAllTime ?? this.questsClaimedAllTime,
     friendQuestProgress: friendQuestProgress ?? this.friendQuestProgress,
+    cameraDrops: cameraDrops ?? this.cameraDrops,
+    volumeGramsToday: volumeGramsToday ?? this.volumeGramsToday,
+    day: day ?? this.day,
+    paidMilestones: paidMilestones ?? this.paidMilestones,
+    earnedAchievements: earnedAchievements ?? this.earnedAchievements,
+    serverAchievements: serverAchievements ?? this.serverAchievements,
+    leagueTier: leagueTier ?? this.leagueTier,
   );
 
-  List<Achievement> get achievements => [
-    Achievement(
-      id: 'hot_streak',
-      title: 'Hot Streak',
-      description: 'Keep a care streak going',
-      icon: PhosphorIconsRegular.fire,
-      progress: streak.days.toDouble(),
-      goals: const [7, 30, 100],
-      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    Achievement(
-      id: 'harvester',
-      title: 'Harvester',
-      description: 'Harvest finished compost',
-      icon: PhosphorIconsRegular.basket,
-      progress: harvests.toDouble(),
-      goals: const [3, 10, 25],
-      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    const Achievement(
-      id: 'in_the_zone',
-      title: 'In the Zone',
-      description: 'Days with both layers in range',
-      icon: PhosphorIconsRegular.target,
-      progress: 18,
-      goals: [7, 30, 90],
-      rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    const Achievement(
-      id: 'balanced_diet',
-      title: 'Balanced Diet',
-      description: 'Weeks with greens and browns in balance',
-      icon: PhosphorIconsRegular.scales,
-      progress: 3,
-      goals: [1, 4, 12],
-      rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    Achievement(
-      id: 'good_listener',
-      title: 'Good Listener',
-      description: 'Next best actions followed',
-      icon: PhosphorIconsRegular.lightbulb,
-      progress: 34 + logs.where((l) => l.xp >= Xp.followedSuggestion).length.toDouble(),
-      goals: const [10, 50, 200],
-      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    Achievement(
-      id: 'landfill_dodger',
-      title: 'Landfill Dodger',
-      description: 'Kilograms kept from landfill',
-      icon: PhosphorIconsRegular.recycle,
-      progress: kgDiverted,
-      goals: const [5, 25, 100],
-      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    Achievement(
-      id: 'quest_keeper',
-      title: 'Quest Keeper',
-      description: 'Daily quests claimed',
-      icon: PhosphorIconsRegular.checkCircle,
-      progress: questsClaimedAllTime.toDouble(),
-      goals: const [25, 100, 365],
-      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    const Achievement(
-      id: 'sharp_eye',
-      title: 'Sharp Eye',
-      description: 'Camera drops confirmed',
-      icon: PhosphorIconsRegular.camera,
-      progress: 0,
-      goals: [10, 50, 200],
-      rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-    const Achievement(
-      id: 'climber',
-      title: 'Climber',
-      description: 'League promotions',
-      icon: PhosphorIconsRegular.trendUp,
-      progress: 2,
-      goals: [1, 3, 5],
-      rewards: [CrateTier.grove, CrateTier.grove, CrateTier.canopy],
-    ),
-    const Achievement(
-      id: 'good_neighbour',
-      title: 'Good Neighbour',
-      description: 'Friend quests completed',
-      icon: PhosphorIconsRegular.usersThree,
-      progress: 1,
-      goals: [1, 5, 20],
-      rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
-    ),
-  ];
+  List<Achievement> get achievements =>
+      serverAchievements ??
+      [
+        Achievement(
+          id: 'hot_streak',
+          title: 'Hot Streak',
+          description: 'Keep a care streak going',
+          icon: PhosphorIconsRegular.fire,
+          progress: streak.days.toDouble(),
+          goals: const [7, 30, 100],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        Achievement(
+          id: 'harvester',
+          title: 'Harvester',
+          description: 'Harvest finished compost',
+          icon: PhosphorIconsRegular.basket,
+          progress: harvests.toDouble(),
+          goals: const [3, 10, 25],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        const Achievement(
+          id: 'in_the_zone',
+          title: 'In the Zone',
+          description: 'Days with both layers in range',
+          icon: PhosphorIconsRegular.target,
+          progress: 18,
+          goals: [7, 30, 90],
+          rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        const Achievement(
+          id: 'balanced_diet',
+          title: 'Balanced Diet',
+          description: 'Weeks with greens and browns in balance',
+          icon: PhosphorIconsRegular.scales,
+          progress: 3,
+          goals: [1, 4, 12],
+          rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        Achievement(
+          id: 'good_listener',
+          title: 'Good Listener',
+          description: 'Next best actions followed',
+          icon: PhosphorIconsRegular.lightbulb,
+          progress: 34 + logs.where((l) => l.xp >= Xp.followedSuggestion).length.toDouble(),
+          goals: const [10, 50, 200],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        Achievement(
+          id: 'landfill_dodger',
+          title: 'Landfill Dodger',
+          description: 'Kilograms kept from landfill',
+          icon: PhosphorIconsRegular.recycle,
+          progress: kgDiverted,
+          goals: const [5, 25, 100],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        Achievement(
+          id: 'quest_keeper',
+          title: 'Quest Keeper',
+          description: 'Daily quests claimed',
+          icon: PhosphorIconsRegular.checkCircle,
+          progress: questsClaimedAllTime.toDouble(),
+          goals: const [25, 100, 365],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        Achievement(
+          id: 'sharp_eye',
+          title: 'Sharp Eye',
+          description: 'Camera drops confirmed',
+          icon: PhosphorIconsRegular.camera,
+          progress: cameraDrops.toDouble(),
+          goals: const [10, 50, 200],
+          rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+        const Achievement(
+          id: 'climber',
+          title: 'Climber',
+          description: 'League promotions',
+          icon: PhosphorIconsRegular.trendUp,
+          progress: 2,
+          goals: [1, 3, 5],
+          rewards: [CrateTier.grove, CrateTier.grove, CrateTier.canopy],
+        ),
+        const Achievement(
+          id: 'good_neighbour',
+          title: 'Good Neighbour',
+          description: 'Friend quests completed',
+          icon: PhosphorIconsRegular.usersThree,
+          progress: 1,
+          goals: [1, 5, 20],
+          rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+        ),
+      ];
 }
 
 GameState _initial() {
@@ -287,6 +326,8 @@ GameState _initial() {
     kgDiverted: 14.6,
     questsClaimedAllTime: 34,
     friendQuestProgress: 6,
+    day: today,
+    paidMilestones: const {3},
   );
 }
 
@@ -301,19 +342,142 @@ const lidLockPrice = 60;
 const maxLidLocks = 2;
 
 class GameController extends Notifier<GameState> {
+  int _lifecycle = 0;
+  bool _alive = false;
   @override
-  GameState build() => _initial();
+  GameState build() {
+    _alive = true;
+    final lifecycle = ++_lifecycle;
+    ref.onDispose(() {
+      if (lifecycle == _lifecycle) _alive = false;
+    });
+    final repo = ref.watch(repositoryProvider);
+    final storage = ref.read(gameStorageProvider);
+    listenSelf((_, next) {
+      if (!ref.read(repositoryProvider).serverGame && storage != null) {
+        unawaited(storage.setString('calmpost.demo.game.v2', jsonEncode(encodeGame(next))));
+      }
+    });
+    if (repo.serverGame) {
+      Future.microtask(() {
+        if (_alive && lifecycle == _lifecycle) refreshLive();
+      });
+      return emptyGame(_initial());
+    }
+    try {
+      final saved = storage?.getString('calmpost.demo.game.v2');
+      if (saved != null) return rolloverGame(decodeGame(jsonDecode(saved), _initial()));
+    } catch (_) {
+      /* A corrupt cache must not prevent startup. */
+    }
+    return _initial();
+  }
+
+  bool get isLive => ref.read(repositoryProvider).serverGame;
+  void _rollover() {
+    state = rolloverGame(state);
+  }
+
+  Future<void> tick() async {
+    if (isLive) {
+      await refreshLive();
+    } else {
+      _rollover();
+    }
+  }
+
+  Future<void> refreshLive() async {
+    if (!_alive) return;
+    final lifecycle = _lifecycle;
+    final repo = ref.read(repositoryProvider);
+    if (!repo.serverGame) return;
+    try {
+      final bundle = await repo.loadGame();
+      if (_alive && lifecycle == _lifecycle && ref.read(repositoryProvider) == repo) state = serverGame(bundle, _initial());
+    } catch (_) {
+      if (_alive && lifecycle == _lifecycle) _toast.show('Game sync unavailable. Your saved rewards are on the server.');
+    }
+  }
+
+  bool _working = false;
+  Future<Map<String, dynamic>?> _remote(String action, [Map<String, dynamic> args = const {}]) async {
+    if (_working) return null;
+    _working = true;
+    try {
+      final result = await ref.read(repositoryProvider).gameAction(action, args);
+      await refreshLive();
+      if (_alive) ref.invalidate(socialDataProvider);
+      return result;
+    } catch (_) {
+      await refreshLive();
+      if (_alive) _toast.show('Could not complete that action. Check your rewards before retrying.');
+      return null;
+    } finally {
+      _working = false;
+    }
+  }
+
+  Future<void> checkInAsync() async {
+    if (isLive) {
+      await _remote('check-in');
+    } else {
+      checkIn();
+    }
+  }
+
+  Future<void> claimQuestAsync(String id) async {
+    if (isLive) {
+      await _remote('quest', {'id': id});
+    } else {
+      claimQuest(id);
+    }
+  }
+
+  Future<DailyReward?> claimDailyAsync(int i) async {
+    if (!isLive) {
+      _rollover();
+      return claimDaily(i);
+    }
+    return await _remote('daily', {'index': i}) == null ? null : dailyRewards[i];
+  }
+
+  Future<CrateOpening?> openCrateAsync(int i) async {
+    if (!isLive) return openCrate(i);
+    final result = await _remote('crate', {'index': i});
+    if (result == null) return null;
+    return CrateOpening(CrateTier.values.byName(result['tier']), result['loam'], result['packets']);
+  }
+
+  Future<List<PullOutcome>?> pullAsync(int count, {required bool fromPackets}) async {
+    if (!isLive) return pull(count, fromPackets: fromPackets);
+    final result = await _remote('pull', {'count': count, 'paid_with': fromPackets ? 'packet' : 'loam'});
+    if (result == null) return null;
+    return [for (final r in result['results']) PullOutcome(collectibleById[r['item']['id']]!, isNew: r['is_new'], refund: r['refund'])];
+  }
+
+  Future<bool> buyLidLockAsync() async => isLive ? await _remote('lid-lock') != null : buyLidLock();
+  Future<bool> equipAsync(Collectible c) async {
+    if (isLive) return await _remote('equip', {'collectible_id': c.id}) != null;
+    if ((state.owned[c.id] ?? 0) == 0) return false;
+    equip(c);
+    return true;
+  }
 
   CelebrationQueue get _party => ref.read(celebrationProvider.notifier);
 
   /// Runs an action and toasts any achievement that levelled up because of it.
   T _act<T>(T Function() f) {
+    _rollover();
     final before = {for (final a in state.achievements) a.id: a.tier};
     final out = f();
     for (final a in state.achievements) {
       if (a.tier > (before[a.id] ?? 0)) {
-        Future.delayed(const Duration(milliseconds: 2600), () => _toast.show('Achievement unlocked: ${a.title} Lv ${a.tier}'));
-        break;
+        for (var i = before[a.id] ?? 0; i < a.tier; i++) {
+          final key = '${a.id}:$i';
+          if (!state.earnedAchievements.contains(key)) {
+            state = state.copyWith(crates: [...state.crates, a.rewards[i]], earnedAchievements: {...state.earnedAchievements, key});
+          }
+        }
       }
     }
     return out;
@@ -339,6 +503,21 @@ class GameController extends Notifier<GameState> {
       bestStreak: up.state.days > state.bestStreak ? up.state.days : state.bestStreak,
     );
     if (up.extended && !up.reset) {
+      final reward = switch (up.state.days) {
+        3 => (25, null),
+        7 => (50, CrateTier.sprout),
+        14 => (100, null),
+        30 => (200, CrateTier.grove),
+        100 => (500, CrateTier.canopy),
+        _ => (0, null),
+      };
+      if (reward.$1 > 0 && !state.paidMilestones.contains(up.state.days)) {
+        state = state.copyWith(
+          loam: state.loam + reward.$1,
+          crates: reward.$2 == null ? state.crates : [...state.crates, reward.$2!],
+          paidMilestones: {...state.paidMilestones, up.state.days},
+        );
+      }
       _party.push(StreakCelebration(up.state.days, lockUsed: up.locksUsed > 0));
     }
   }
@@ -366,30 +545,38 @@ class GameController extends Notifier<GameState> {
     _care();
   }
 
-  /// Logs a scrap. Adding earns nothing on its own: only following advice or
-  /// keeping a bad item out does.
-  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds}) =>
-      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds));
+  /// Confirmed compostable grams earn volume XP plus any care bonus.
+  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG}) =>
+      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds, quantityG: quantityG));
 
-  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds}) {
+  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG}) {
     final followed = added && advice.verdict != Verdict.avoid && suggestedIds.contains(advice.item.id);
     final keptOut = !added && advice.verdict == Verdict.avoid;
-    final base = followed ? Xp.followedSuggestion : (keptOut ? Xp.avoidedBadAdd : Xp.log);
+    final grams = added && advice.item.category != FoodCategory.avoid ? (quantityG ?? advice.item.grams).clamp(0, 5000).toDouble() : 0.0;
+    final base = volumeXp(grams, alreadyLogged: state.volumeGramsToday) + (followed ? Xp.followedSuggestion : (keptOut ? Xp.avoidedBadAdd : 0));
     final xp = xpForAction(base: base, earnedToday: state.actionXpToday);
-    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added);
+    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added, quantityG: quantityG ?? advice.item.grams);
     state = state.copyWith(
       logs: [entry, ...state.logs],
       actionXpToday: state.actionXpToday + xp,
-      kgDiverted: added && advice.item.category != FoodCategory.avoid ? state.kgDiverted + advice.item.grams / 1000 : state.kgDiverted,
+      kgDiverted: state.kgDiverted + grams / 1000,
+      volumeGramsToday: state.volumeGramsToday + grams,
     );
     if (followed) {
       _progressQuest('follow', 1);
       state = state.copyWith(friendQuestProgress: state.friendQuestProgress + 1);
     }
     _addXp(xp);
-    _care();
+    if (grams > 0 || keptOut || followed) _care();
     return LogOutcome(xp: xp, followed: followed, capped: base > 0 && xp < base);
   }
+
+  /// A reviewed camera drop earns volume and care XP, and counts toward Sharp Eye.
+  List<LogOutcome> recordDrop(List<Advice> verdicts, {required List<bool> added, required Iterable<String> suggestedIds, List<double>? quantities}) => _act(() {
+    final out = [for (final (i, a) in verdicts.indexed) _recordLog(a, added: added[i], suggestedIds: suggestedIds, quantityG: quantities?[i])];
+    state = state.copyWith(cameraDrops: state.cameraDrops + 1);
+    return out;
+  });
 
   void syncHealthyHours(double hours) {
     final q = state.quests.firstWhere((q) => q.id == 'healthy');

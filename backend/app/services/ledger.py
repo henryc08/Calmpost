@@ -30,6 +30,14 @@ async def award(
     XP defaults to game.XP[kind]. Action XP is capped per day; sensor-driven
     awards and quest rewards are not.
     """
+    # All award paths use one transaction and one player lock before reading
+    # caps/dedupe keys, including check-in callers without a transaction.
+    if not conn.is_in_transaction():
+        async with conn.transaction():
+            return await award(conn, user_id, kind, bin_id=bin_id, xp=xp, loam=loam,
+                               dedupe_key=dedupe_key, meta=meta, at=at)
+    await ensure_user(conn, user_id)
+    await conn.fetchval("SELECT user_id FROM user_state WHERE user_id = $1 FOR UPDATE", user_id)
     xp = game.XP.get(kind, 0) if xp is None else xp
 
     if dedupe_key is not None:

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = ""
+    database_ca_file: str | None = None
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
     app_api_key: str = "dev-change-me"

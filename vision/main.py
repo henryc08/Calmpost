@@ -71,53 +71,55 @@ def run(args) -> None:
 
     source = args.source if args.source is not None else settings.camera_source
     source = int(source) if isinstance(source, str) and source.isdigit() else source
-    with Camera(source) as cam:
-        watcher = Watcher(cam, trigger, identifier, on_frame=on_frame)
-        log.info("camera %r open; bin %s; %s", source, settings.bin_id,
-                 "console mode" if args.console else f"polling {settings.backend_url}")
-        while True:
+    while True:
+        try:
             if args.console:
-                session_id, window = "console", ARM_WINDOW_S
+                session_id, window = 'console', ARM_WINDOW_S
             else:
-                try:
-                    session = backend.active_session()
-                except httpx.HTTPError as e:
-                    log.warning("backend unreachable (%s); retrying", e)
-                    time.sleep(3)
-                    continue
+                session = backend.active_session()
                 if session is None:
-                    frame = cam.read(timeout=1)
-                    if frame is not None:
-                        on_frame(frame, "idle: not armed", 0.0)
-                    if cam.ended:
-                        return
                     time.sleep(POLL_S)
                     continue
                 session_id = session.id
-                window = max(1.0, (session.expires_at - datetime.now(timezone.utc)).total_seconds())
+                window = max(0.0, (session.expires_at - datetime.now(timezone.utc)).total_seconds())
 
-            log.info("armed (session %s, %.0fs)", session_id, window)
-            outcome = watcher.watch(window, hints=backend.hints() if backend else None)
+            def still_armed():
+                if backend is None: return True
+                current = backend.active_session()
+                return current is not None and current.id == session_id
 
-            if outcome.kind == "camera_lost":
-                log.error("camera stopped sending frames")
-                return
-            if outcome.kind == "no_motion":
-                log.info("no drop seen; closing quietly")
-                if backend:
-                    backend.close_session(session_id, "no_motion")
+            # Opening Camera starts its reader thread: do it ONLY while armed.
+            with Camera(source) as cam:
+                watcher = Watcher(cam, trigger, identifier, on_frame=on_frame, still_armed=still_armed)
+                log.info('armed (session %s, %.0fs)', session_id, window)
+                outcome = watcher.watch(window, hints=backend.hints() if backend else None)
+                ended = cam.ended
+            state.clear()
+            if outcome.kind in ('camera_lost', 'cancelled'):
+                log.info('session ended: %s', outcome.kind)
+            elif outcome.kind == 'no_motion':
+                if backend: backend.close_session(session_id, 'no_motion')
             else:
-                log.info("drop: %s", describe(outcome))
-                state.last_box = next(((d.box_2d, d.label) for d in outcome.result.items if d.box_2d), None)
-                if args.save_frames:
-                    save_frames(outcome, settings.thumbs_dir)
+                log.info('drop: %s', describe(outcome))
+                if args.save_frames: save_frames(outcome, settings.thumbs_dir)
                 if backend:
-                    resp = backend.report_drop(
-                        session_id, [d.to_dict() for d in outcome.result.items], fr.thumbnail_b64(outcome.after),
-                        outcome.result.latency_ms, outcome.result.ok, outcome.result.model, outcome.result.error)
-                    log.info("reported as drop %s", resp.get("drop_id"))
-            if args.once or cam.ended:
-                return
+                    # Identical session reports are idempotent on the backend.
+                    for attempt in range(3):
+                        try:
+                            resp = backend.report_drop(session_id, [d.to_dict() for d in outcome.result.items],
+                                fr.thumbnail_b64(outcome.after), outcome.result.latency_ms,
+                                outcome.result.ok, outcome.result.model, outcome.result.error)
+                            log.info('reported as drop %s', resp.get('drop_id'))
+                            break
+                        except httpx.HTTPError:
+                            if attempt == 2: raise
+                            time.sleep(1)
+            if args.once or ended: return
+        except (httpx.HTTPError, RuntimeError, OSError) as e:
+            state.clear()
+            log.warning('camera/backend unavailable (%s); retrying', e)
+            if args.once: return
+            time.sleep(3)
 
 
 def main() -> None:

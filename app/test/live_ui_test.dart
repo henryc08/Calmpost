@@ -86,7 +86,7 @@ void main() {
 
     await tester.scrollUntilVisible(find.text('BOTTOM'), 300, scrollable: find.byType(Scrollable).first);
     await _settle(tester, 300);
-    expect(find.text('no probe yet'), findsOneWidget);
+    expect(find.text('not measured'), findsOneWidget);
 
     for (final tab in AppTab.values) {
       container.read(tabProvider.notifier).state = tab;

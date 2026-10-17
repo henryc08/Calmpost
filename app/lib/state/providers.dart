@@ -22,14 +22,14 @@ enum DataSource { live, mock }
 
 final dataSourceProvider = StateProvider<DataSource>((ref) {
   final account = ref.watch(socialSessionProvider).valueOrNull;
-  return account != null ? (account.binId != null ? DataSource.live : DataSource.mock) : (ApiConfig.configured ? DataSource.live : DataSource.mock);
+  return account != null || ApiConfig.configured ? DataSource.live : DataSource.mock;
 });
 
 final repositoryProvider = Provider<CalmpostRepository>((ref) {
   final account = ref.watch(socialSessionProvider).valueOrNull;
   final source = ref.watch(dataSourceProvider);
-  if (source == DataSource.live && account?.binId != null) {
-    final repo = ApiRepository(ApiConfig(baseUrl: account!.server, apiKey: '', binId: account.binId!, userId: account.userId, token: account.token));
+  if (source == DataSource.live && account != null) {
+    final repo = ApiRepository(ApiConfig(baseUrl: account.server, apiKey: '', binId: account.binId ?? '', userId: account.userId, token: account.token));
     ref.onDispose(repo.close);
     return repo;
   }
@@ -97,13 +97,19 @@ final standingsProvider = Provider<Standing>((ref) {
       if (c != 0) return c;
       return a.isYou ? -1 : (b.isYou ? 1 : 0);
     });
-  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[GameState.tierIndex]);
+  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[ref.watch(gameProvider.select((g) => g.leagueTier))]);
 });
 
 /// 24 h trend for one zone + metric (sparklines, layer charts).
-final trendProvider = FutureProvider.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
+final trendProvider = FutureProvider.autoDispose.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
   ref.watch(scenarioProvider);
-  return ref.watch(repositoryProvider).trends(key.$1, key.$2);
+  final repo = ref.watch(repositoryProvider);
+  if (repo is ApiRepository) {
+    final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+    ref.onCancel(timer.cancel);
+  }
+  return repo.trends(key.$1, key.$2);
 });
 
 /// Bottom-nav tabs.

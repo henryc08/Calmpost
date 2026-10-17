@@ -1,6 +1,7 @@
 """Bin endpoints: registration, live view, trends, the add log, harvest."""
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -8,6 +9,7 @@ from .. import db
 from ..catalog import food
 from ..rules import compost, game
 from ..services import binstate, ledger
+from ..services.logging import write_log
 from ..models import (
     AirLive,
     BinCreate,
@@ -39,20 +41,20 @@ async def register_bin(body: BinCreate) -> BinCreated:
     token = new_token()
     async with db.pool().acquire() as conn:
         async with conn.transaction():
-            await conn.execute(
+            inserted = await conn.fetchval(
                 """
                 INSERT INTO bins (bin_id, display_name, token_sha256, owner_id)
                 VALUES ($1, $2, $3, $4)
-                ON CONFLICT (bin_id) DO UPDATE SET
-                    display_name = EXCLUDED.display_name,
-                    token_sha256 = EXCLUDED.token_sha256,
-                    owner_id     = EXCLUDED.owner_id
+                ON CONFLICT (bin_id) DO NOTHING
+                RETURNING bin_id
                 """,
                 body.bin_id,
                 body.display_name,
                 hash_token(token),
                 body.owner_id,
             )
+            if inserted is None:
+                raise HTTPException(409, 'bin is already registered; ownership and token were not changed')
             await conn.execute(
                 "INSERT INTO user_state (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
                 body.owner_id,
@@ -307,6 +309,7 @@ async def trends(
     bin_id: str,
     hours: int = Query(24, ge=1, le=2160),
     metrics: list[Metric] = Query(default=DEFAULT_METRICS),
+    layer: Literal['top', 'bottom'] = 'top',
 ) -> TrendsResponse:
     """Chart series, gap-filled so a dropout shows as a flat carry rather
     than a hole the chart would misdraw.
@@ -328,6 +331,16 @@ async def trends(
     series: list[TrendSeries] = []
     for metric in wanted:
         col = columns[metric]
+        if metric in ('moisture', 'temperature', 'co2'):
+            raw_column = {'moisture': 'moisture_pct', 'temperature': 'probe_temp_c', 'co2': 'co2_ppm'}[metric]
+            rows = await db.fetch(f"""SELECT date_bin($3::text::interval, time, '1970-01-01'::timestamptz) AS t,
+                       avg({raw_column}) AS value FROM readings
+                WHERE bin_id=$1 AND time >= now()-($2 || ' hours')::interval
+                  AND ($4::text='co2' OR probe_layer=$5)
+                  AND ($4::text<>'co2' OR coalesce(co2_status,0)=0)
+                GROUP BY t ORDER BY t""", bin_id, str(hours), bucket_width, metric, layer)
+            series.append(TrendSeries(metric=metric, points=[TrendPoint(bucket=r['t'], value=float(r['value']) if r['value'] is not None else None) for r in rows]))
+            continue
         rows = await db.fetch(
             f"""
             SELECT time_bucket_gapfill(
@@ -375,95 +388,17 @@ async def trends(
 
 @router.post("/bins/{bin_id}/logs", response_model=LogEntry, status_code=201)
 async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
-    """Record an add -- or a skip.
-
-    XP rules (AGENTS.md): a plain log is worth ZERO. Following a suggestion
-    pays 15; trusting an avoid verdict and skipping the item pays 5. Paying
-    per scrap logged would reward wasting more food, which is the one thing
-    the game must never do.
-    """
-    binr = await db.fetchrow(
-        "SELECT owner_id FROM bins WHERE bin_id = $1", bin_id
-    )
-    if binr is None:
-        raise HTTPException(status_code=404, detail="unknown bin")
-    user_id = binr["owner_id"]
-
-    # Rules decide the category: hard avoids always win, then the app's
-    # catalog (by id or name), then keywords.
-    item_for_rules = body.catalog_id or body.item
-    category = body.category
-    if compost.avoid_reason(body.item) or compost.avoid_reason(item_for_rules):
-        category = "avoid"
-    elif category == "unknown":
-        category = compost.categorise(item_for_rules)
-        if category == "unknown":
-            category = compost.categorise(body.item)
-    catalog = food.lookup(body.catalog_id) or food.lookup(body.item)
-    quantity_g = body.quantity_g
-    if quantity_g is None and catalog is not None and body.action == "added":
-        quantity_g = int(catalog["grams"])
-
-    xp = 0
-    kind = None
-    if body.action == "skipped":
-        # Only an avoid-worthy item earns the skip reward; skipping a perfectly
-        # good scrap is not an achievement.
-        if category == "avoid" or compost.avoid_reason(body.item):
-            kind = "avoided_bad_add"
-    elif body.was_advised and category != "avoid":
-        kind = "followed_suggestion"
-
-    async with db.pool().acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(
-                """
-                INSERT INTO add_log
-                    (bin_id, user_id, item, catalog_id, category, action, quantity_g,
-                     source, was_advised, advice_id, notes)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                RETURNING id, time
-                """,
-                bin_id,
-                user_id,
-                body.item,
-                catalog["id"] if catalog else body.catalog_id,
-                category,
-                body.action,
-                quantity_g,
-                body.source,
-                body.was_advised,
-                body.advice_id,
-                body.notes,
-            )
-            if kind:
-                await ledger.ensure_user(conn, user_id)
-                xp = await ledger.award(
-                    conn, user_id, kind, bin_id=bin_id,
-                    meta={"item": body.item, "log_id": row["id"]},
-                )
-
-    return LogEntry(
-        id=row["id"],
-        bin_id=bin_id,
-        time=row["time"],
-        item=body.item,
-        category=category,
-        action=body.action,
-        quantity_g=quantity_g,
-        source=body.source,
-        was_advised=body.was_advised,
-        notes=body.notes,
-        xp_awarded=xp,
-        loam_awarded=0,
-    )
+    """Confirm compostable volume or a keep-out, atomically and retryably."""
+    snap = await binstate.snapshot(bin_id)
+    async with db.pool().acquire() as conn, conn.transaction():
+        return await write_log(conn, bin_id, body, snap)
 
 
 @router.get("/bins/{bin_id}/logs", response_model=list[LogEntry])
 async def list_log(bin_id: str, limit: int = Query(50, ge=1, le=200)) -> list[LogEntry]:
     rows = await db.fetch(
         """
-        SELECT id, bin_id, time, item, category, action, quantity_g,
+        SELECT id, bin_id, time, item, catalog_id, category, action, quantity_g,
                source, was_advised, notes
         FROM add_log
         WHERE bin_id = $1

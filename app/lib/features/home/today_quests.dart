@@ -95,7 +95,7 @@ class _QuestRow extends ConsumerWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: claimable
-                    ? PillButton(label: 'Claim', dense: true, onTap: () => ref.read(gameProvider.notifier).claimQuest(q.id))
+                    ? PillButton(label: 'Claim', dense: true, onTap: () => ref.read(gameProvider.notifier).claimQuestAsync(q.id))
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [

@@ -101,7 +101,7 @@ def test_bad_payloads(c):
 
 # --- confirm / dismiss -----------------------------------------------------------
 
-def test_confirm_logs_camera_add_with_zero_xp(c):
+def test_confirm_logs_camera_add_with_volume_xp(c):
     drop_id = report(c, arm(c)).json()["drop_id"]
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green", "amount": "handful"}]})
@@ -109,18 +109,21 @@ def test_confirm_logs_camera_add_with_zero_xp(c):
     body = r.json()
     assert body["corrected"] is False
     log = body["items"][0]["log"]
-    assert log["source"] == "camera" and log["xp_awarded"] == 0 and log["quantity_g"] == 110
+    assert log["source"] == "camera" and log["xp_awarded"] == 5 and log["quantity_g"] == 110
     assert body["items"][0]["verdict"] is None  # no readings yet in this test DB
     logs = c.get("/bins/bin-001/logs").json()
     assert logs[0]["source"] == "camera"
     assert c.get("/bins/bin-001/drops/pending").json() == []
 
 
-def test_confirm_twice_is_rejected(c):
+def test_identical_confirmation_retry_returns_original_receipt(c):
     drop_id = report(c, arm(c)).json()["drop_id"]
     item = {"items": [{"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}
-    assert c.post(f"/drops/{drop_id}/confirm", json=item).status_code == 200
-    assert c.post(f"/drops/{drop_id}/confirm", json=item).status_code == 409
+    first = c.post(f"/drops/{drop_id}/confirm", json=item)
+    retry = c.post(f"/drops/{drop_id}/confirm", json=item)
+    assert first.status_code == retry.status_code == 200
+    assert first.json() == retry.json()
+    assert len(c.get('/bins/bin-001/logs').json()) == 1
     assert len(c.get("/bins/bin-001/logs").json()) == 1
 
 
@@ -155,13 +158,37 @@ def test_dismiss_and_accuracy(c):
 def test_confirm_returns_verdict_when_available(c, monkeypatch):
     async def fake_advise(bin_id, item, refresh):
         return AdviceResponse.model_construct(verdict="great", item=item, reason="dry bin, wet scrap")
-    monkeypatch.setattr(advice, "_advise", fake_advise)
+    # Confirmation deliberately uses local rules, never a network Gemini call.
+    from tests.conftest import ingest_series, raw_for
+    ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=0)
     drop_id = report(c, arm(c)).json()["drop_id"]
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}).json()
     assert r["items"][0]["verdict"]["verdict"] == "great"
 
 
+def test_mixed_drop_the_camera_could_not_separate(c):
+    """The camera reports one 'mixed_scraps' item; the user says what was in
+    it, including meat they took back out. Same pop-up, same drop."""
+    sid = arm(c)
+    drop_id = report(c, sid, items=[{"label": "mixed scraps: rice, peels", "catalog_id": "mixed_scraps", "confidence": 0.41}]).json()["drop_id"]
+    pending = c.get("/bins/bin-001/drops/pending").json()[0]
+    assert pending["items"][0]["category"] == "green"  # the catalog's type, from the rules
+
+    r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
+        {"label": "Mixed food scraps", "catalog_id": "mixed_scraps", "category": "green", "amount": "large"},
+        {"label": "Meat scraps", "catalog_id": "meat", "category": "avoid", "amount": "small", "removed": True},
+    ]}).json()
+    added, meat = (i["log"] for i in r["items"])
+    assert added["category"] == "green" and added["quantity_g"] == 250 and added["xp_awarded"] == 12
+    assert meat["action"] == "skipped" and meat["xp_awarded"] == 5
+    assert r["corrected"] is True
+
+
+def test_a_mix_mentioning_meat_is_never_green(c):
+    """Rules over the camera: a 'mixed' label naming a keep-out food is avoid."""
+    report(c, arm(c), items=[{"label": "mixed scraps with chicken", "catalog_id": "mixed_scraps", "category": "green", "confidence": 0.5}])
+    assert c.get("/bins/bin-001/drops/pending").json()[0]["items"][0]["category"] == "avoid"
 # --- history and photos ---------------------------------------------------------
 #
 # /drops/pending shows only what is still waiting, and only from the last hour.
@@ -326,7 +353,14 @@ def test_a_submitted_photo_confirms_through_the_normal_path(c, monkeypatch):
                json={"items": [{"label": "banana peel", "catalog_id": "banana_peel",
                                 "category": "green", "amount": "handful"}]})
     assert r.status_code == 200
-    assert r.json()["items"][0]["log"]["source"] == "camera"
+    assert r.json()["items"][0]["log"]["source"] == "photo"
+    # The merged confirmation path keeps both photo attribution and the
+    # existing atomic receipt: a lost response must not award volume twice.
+    retry = c.post(f"/drops/{drop_id}/confirm",
+                   json={"items": [{"label": "banana peel", "catalog_id": "banana_peel",
+                                    "category": "green", "amount": "handful"}]})
+    assert retry.status_code == 200
+    assert retry.json() == r.json()
 
     d = c.get(f"/drops/{drop_id}").json()
     assert d["status"] == "confirmed" and d["source"] == "photo"

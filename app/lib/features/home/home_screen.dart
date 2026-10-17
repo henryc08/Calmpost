@@ -13,6 +13,7 @@ import '../../domain/health_score.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
@@ -40,6 +41,20 @@ class HomeScreen extends ConsumerWidget {
     void goTo(AppTab tab) => ref.read(tabProvider.notifier).state = tab;
 
     if (health == null) {
+      final account = ref.watch(socialSessionProvider).valueOrNull;
+      if (account != null && account.binId == null && ref.watch(dataSourceProvider) == DataSource.live) {
+        return SafeArea(child: Padding(padding: const EdgeInsets.all(S.gutter), child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Connect your bin', style: T.title),
+            const SizedBox(height: S.x3),
+            Text('Your account rewards are saved. Pair the bin in Social to see readings and log compost.', style: T.body),
+            const SizedBox(height: S.x5),
+            PillButton(label: 'Open Social', onTap: () => goTo(AppTab.social)),
+          ],
+        )));
+      }
       final bin = ref.watch(binProvider);
       if (bin.hasError) return _Offline(onUseDemo: () => ref.read(dataSourceProvider.notifier).state = DataSource.mock);
       return const Center(
@@ -86,7 +101,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  _ScoreBlock(health: health),
+                  _ScoreBlock(health: health, onDrop: () => Routes.drop(context)),
                 ],
               ),
             ),
@@ -112,7 +127,10 @@ class HomeScreen extends ConsumerWidget {
                 if (game.crates.isNotEmpty || game.packets > 0) ...[const RewardsShelf(), const SectionBreak()],
                 const TodayQuests(),
                 const SectionBreak(),
-                LeagueRace(onOpen: () => goTo(AppTab.social)),
+                if (ref.watch(socialSessionProvider).valueOrNull == null)
+                  LeagueRace(onOpen: () => goTo(AppTab.social))
+                else
+                  PillButton(label: 'Your private leaderboards', onTap: () => goTo(AppTab.social)),
                 const SectionBreak(),
                 StreakCalendar(game: game),
                 const SectionBreak(),
@@ -181,7 +199,7 @@ class _Hud extends ConsumerWidget {
         Pressable(
           onTap: () async {
             if (game.crates.isNotEmpty) {
-              final o = ref.read(gameProvider.notifier).openCrate(0);
+              final o = await ref.read(gameProvider.notifier).openCrateAsync(0);
               if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
             } else if (game.packets > 0) {
               await Routes.greenhouse(context);
@@ -266,8 +284,9 @@ class _LevelRing extends CustomPainter {
 
 /// Score under the world: the number, the state, one plain sentence.
 class _ScoreBlock extends StatelessWidget {
-  const _ScoreBlock({required this.health});
+  const _ScoreBlock({required this.health, required this.onDrop});
   final BinHealth health;
+  final VoidCallback onDrop;
 
   @override
   Widget build(BuildContext context) {
@@ -284,7 +303,10 @@ class _ScoreBlock extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64, color: C.onBrand)),
+            if (health.breakdown.hasMoisture)
+              CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64, color: C.onBrand))
+            else
+              Text('—', style: T.hero.copyWith(fontSize: 64, color: C.onBrand)),
             Padding(
               padding: const EdgeInsets.only(bottom: 9, left: 3),
               child: Text('/100', style: T.label.copyWith(color: C.onBrandMuted)),
@@ -298,10 +320,13 @@ class _ScoreBlock extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: C.onBrand, borderRadius: BorderRadius.circular(R.pill)),
-              child: Text(moodLabel(health.mood).toUpperCase(), style: T.caps.copyWith(color: pillText, fontSize: 10.5)),
+              child: Text(
+                health.breakdown.hasMoisture ? moodLabel(health.mood).toUpperCase() : 'NOT MEASURED',
+                style: T.caps.copyWith(color: pillText, fontSize: 10.5),
+              ),
             ),
             // An honest "live": a bin that stopped reporting says how old its numbers are.
-            if (s.stale)
+            if (s.readingsStale)
               Flexible(
                 child: Text(
                   '   SEEN ${s.ageLabel(DateTime.now()).toUpperCase()}',
@@ -334,6 +359,8 @@ class _ScoreBlock extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: S.x4),
+        PillButton(label: 'Drop something in', icon: PhosphorIconsRegular.camera, dense: true, onTap: onDrop),
       ],
     );
   }
@@ -346,6 +373,8 @@ class _ScoreBlock extends StatelessWidget {
     }
 
     if (s.bottomStage == Stage.ready) return 'The bottom layer has finished curing. Time to harvest.';
+    if (!s.topMeasured) return 'Top-layer moisture is not measured. Check the sensor.';
+    if (!s.moistureCalibrated) return 'Moisture is estimated. Calibrate the probe before relying on the score.';
     if (!s.bottomMeasured) return '${layer('Top layer', s.topMoisture)}.';
     return '${layer('Top layer', s.topMoisture)}, ${layer('bottom layer', s.bottomMoisture)}.';
   }

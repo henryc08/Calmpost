@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../data/mock_repository.dart';
+import '../data/photo_input.dart';
 import '../domain/models.dart';
 import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
@@ -91,6 +92,15 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(recoveredPhotoProvider, (_, next) {
+      if (next.hasError) showToast(ref, 'Could not recover the interrupted photo. Choose it again from Log.');
+      final bytes = next.valueOrNull;
+      if (bytes != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Routes.photo(context, recovered: bytes);
+        });
+      }
+    });
     final tab = ref.watch(tabProvider);
 
     // Opening Layers counts as checking on the bin.

@@ -22,7 +22,8 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)}) : _http = client ?? http.Client();
+  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)})
+    : _http = client ?? http.Client();
 
   @override
   Future<CompostInventory> inventory({String period = 'all'}) async =>
@@ -91,7 +92,11 @@ class ApiRepository implements CalmpostRepository {
 
   void close() => _http.close();
 
-  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json', if (config.token != null) 'Authorization': 'Bearer ${config.token}'};
+  Map<String, String> get _headers => {
+    'X-API-Key': config.apiKey,
+    'Content-Type': 'application/json',
+    if (config.token != null) 'Authorization': 'Bearer ${config.token}',
+  };
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('${config.baseUrl}$path').replace(queryParameters: query);
 
@@ -253,7 +258,13 @@ class ApiRepository implements CalmpostRepository {
         if (i < items.length && items[i]['verdict'] is Map<String, dynamic>)
           adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>, xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
         else if (l.removed)
-          Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.', xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
+          Advice(
+            item: l.item,
+            verdict: Verdict.avoid,
+            headline: 'Kept it out',
+            reason: 'Thanks for taking it back out.',
+            xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0,
+          )
         else
           // No readings to judge against yet: the add is still logged.
           Advice(
@@ -464,6 +475,7 @@ Drop reviewedDropFromJson(Map<String, dynamic> j) {
   final thumb = j['thumbnail_jpeg_b64'] as String? ?? '';
   return Drop(
     id: (j['id'] as num).toInt(),
+    source: j['source'] as String? ?? 'camera',
     geminiOk: j['gemini_ok'] != false,
     thumbnail: thumb.isEmpty ? null : base64Decode(thumb),
     items: [

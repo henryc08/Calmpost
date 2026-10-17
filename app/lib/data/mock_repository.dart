@@ -56,7 +56,7 @@ class MockRepository implements CalmpostRepository {
   }
 
   @override
-  Future<Drop?> pendingDrop() async => null;
+  Future<Drop?> pendingDrop() async => _pending.isEmpty ? null : Drop.fromCamera(_pending.first);
   MockRepository(this.scenario);
 
   final _inventoryLogs = <({FoodItem item, double grams, int? pieces, DateTime time, String source})>[];
@@ -230,7 +230,10 @@ class MockRepository implements CalmpostRepository {
       MockDrop.check => DropSeen(
         Drop(
           id: _dropId,
-          items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91), d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44)],
+          items: [
+            d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91),
+            d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44),
+          ],
         ),
       ),
       MockDrop.mixed => DropSeen(Drop(id: _dropId, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
@@ -251,7 +254,7 @@ class MockRepository implements CalmpostRepository {
         continue;
       }
       out.add(adviseFor(l.item, snap, foodById));
-      _recordItem(l.item, quantityG: l.grams, pieceCount: l.pieceCount, requestId: 'drop:${drop.id}:${out.length}', source: 'camera');
+      _recordItem(l.item, quantityG: l.grams, pieceCount: l.pieceCount, requestId: 'drop:${drop.id}:${out.length}', source: drop.source);
     }
     _pending.removeWhere((d) => d.id == drop.id);
     _reviewed[drop.id] = out;

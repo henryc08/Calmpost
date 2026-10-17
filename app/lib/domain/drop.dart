@@ -43,7 +43,29 @@ class Detection {
 
 /// A detection waiting for the user.
 class Drop {
-  const Drop({required this.id, required this.items, this.geminiOk = true, this.thumbnail});
+  const Drop({required this.id, required this.items, this.geminiOk = true, this.thumbnail, this.source = 'camera'});
+  final String source;
+  bool get fromPhoto => source == 'photo';
+
+  factory Drop.fromCamera(CameraDrop drop) => Drop(
+    id: drop.id,
+    source: drop.source,
+    geminiOk: drop.geminiOk,
+    thumbnail: drop.thumbnailJpeg,
+    items: [
+      for (final g in drop.guesses)
+        Detection(
+          label: g.label,
+          confidence: g.confidence,
+          catalogId: g.catalogId,
+          category: g.category,
+          amount: Amount.values.where((a) => a.name == g.amount).firstOrNull,
+          box: g.box?.map((v) => v.toDouble()).toList(),
+          pieceCount: g.pieceCount,
+          estimatedGrams: g.estGrams,
+        ),
+    ],
+  );
   final int id;
   final List<Detection> items;
 
@@ -152,8 +174,10 @@ FoodItem customFood(String label, FoodCategory category, Amount amount) => FoodI
   note: category == FoodCategory.avoid ? "It won't break down safely in a home bin." : '',
 );
 
-bool keepOutLabel(String label) =>
-    RegExp(r'\b(meat|chicken|beef|pork|bacon|fish|dairy|cheese|milk|butter|yogurt|oil|oily|grease|bone|bread|pet waste|cat litter|glossy)', caseSensitive: false).hasMatch(label);
+bool keepOutLabel(String label) => RegExp(
+  r'\b(meat|chicken|beef|pork|bacon|fish|dairy|cheese|milk|butter|yogurt|oil|oily|grease|bone|bread|pet waste|cat litter|glossy)',
+  caseSensitive: false,
+).hasMatch(label);
 
 /// The rows the pop-up starts with. Catalog items take the catalog's category
 /// (rules); unmatched ones keep the camera's label as a custom item.

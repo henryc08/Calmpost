@@ -119,14 +119,18 @@ class _DropReviewState extends State<DropReview> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(caps, style: T.caps.copyWith(color: unclear ? C.amber : C.brandDeep)),
+        Text(widget.drop.fromPhoto ? 'PHOTO REVIEW' : caps, style: T.caps.copyWith(color: unclear ? C.amber : C.brandDeep)),
         const SizedBox(height: S.x2),
         Text(title, style: T.title),
         const SizedBox(height: S.x1),
         Text(body, style: T.body),
+        if (widget.drop.fromPhoto) Text('Confirm only scraps you actually added to the bin. A photo alone does not log compost.', style: T.small),
         const SizedBox(height: S.x4),
         DropPhoto(drop: widget.drop),
-        if (widget.drop.items.isNotEmpty) ...[const SizedBox(height: S.x2), Text('Camera’s original guess: ${widget.drop.items.map((i) => i.label).join(', ')}', style: T.small)],
+        if (widget.drop.items.isNotEmpty) ...[
+          const SizedBox(height: S.x2),
+          Text('Gemini’s original guess: ${widget.drop.items.map((i) => i.label).join(', ')}', style: T.small),
+        ],
         const SizedBox(height: S.x4),
         if (_lines.isNotEmpty) ...[
           for (final (i, l) in _lines.indexed) ...[
@@ -171,7 +175,7 @@ class _DropReviewState extends State<DropReview> {
                 children: [
                   const Icon(PhosphorIconsRegular.plus, size: 16, color: C.brandDeep),
                   const SizedBox(width: S.x2),
-                  Text('Add something it missed', style: T.button.copyWith(color: C.brandDeep)),
+                  Expanded(child: Text('Add something it missed', style: T.button.copyWith(color: C.brandDeep))),
                 ],
               ),
             ),
@@ -367,7 +371,9 @@ class _EditorState extends State<_Editor> {
                     icon: PhosphorIconsRegular.pencilSimple,
                     onTap: () {
                       _query.clear();
-                      widget.onChanged(l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)));
+                      widget.onChanged(
+                        l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)),
+                      );
                     },
                   ),
               ],

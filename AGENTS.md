@@ -172,7 +172,9 @@ Plain, state-triggered, **max 2 a day**, persisted across restarts: compost look
 
 ---
 
-### 2.9 Single photo submission ✅ *backend + app data layer; capture UI open*
+### 2.9 Single photo submission ✅ *backend + app data layer + capture UI*
+
+Log → **Take or choose a photo** opens Android camera/gallery capture, a local preview and an explicit **Identify and review** action. Orientation is normalized, metadata removed, and images bounded to 1024 px and 1.4 MB before upload. Cancellation, permissions, invalid images and upload failures stay retryable. Android interrupted-picker recovery restores the local preview without uploading. The existing review sheet handles the returned pending drop, including manual identification, corrections and keep-out confirmation; no second confirmation flow is used. An existing pending drop is reviewed before creating another. Source remains `photo` throughout.
 
 The camera drop-in (2.4) watches the bin and decides for itself when something
 arrived. This is the other way round: the user points a phone at something and
@@ -202,7 +204,7 @@ so photos the user framed are excluded from it.
 Integration: photo confirmations retain `source = 'photo'` in `add_log` and
 use the same atomic, retry-safe confirmation receipt as webcam drops. Both
 repository APIs remain available; this does not replace the laptop's USB
-webcam flow. Phone capture UI remains open; player-owned webcam access uses
+webcam flow. Phone capture UI is built; player-owned webcam access uses
 the scoped device authorization described in §2.10.
 Photo identification sends the Gemini key in a request header, never the URL.
 Provider failures return a fixed, safe manual-identification message; raw

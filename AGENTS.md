@@ -39,10 +39,11 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ⏳ second probe |
 | 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
-| 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
+| 2.4 | **Camera drop-in: identify and track what goes in** | ✅ backend + vision + app data layer · ⏳ app sheet (UI) |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
+| 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + app data layer · ⏳ chat UI · ⏳ needs Gemini billing |
 
 ### 2.1 Live sensing & Bin Health Score
 - **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
@@ -127,6 +128,61 @@ Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, 
 
 ---
 
+### 2.8 Trunc: the compost assistant ✅ *backend + app data layer; chat UI open*
+
+Trunc answers free-text composting questions. Everything else in the app takes
+an item name and returns a fixed verdict shape, so there was nowhere to ask
+"why does my bin smell?".
+
+**What the UI has to work with** — `CalmpostRepository.askTrunc` (`app/lib/data/calmpost_repository.dart`):
+
+```dart
+Future<TruncReply> askTrunc(String message, {List<TruncTurn> history, bool includePhotos});
+```
+
+`TruncReply` and `TruncTurn` are in `app/lib/domain/models.dart`. Backed by
+`ApiRepository` (POST `/bins/{id}/chat`) and by `MockRepository`, which answers
+from a script, so **the chat screen can be built with no backend, no API key
+and no Gemini quota**.
+
+Four things to know before building the screen:
+
+- **Stateless.** The server keeps no conversation. Hold the turns in app state
+  and pass them in `history` (oldest first, excluding the question being
+  asked). Nothing to fetch on resume.
+- **There is no refusal UI to build.** An off-topic question returns
+  `onTopic: false` with the redirect text already written. Render it as a
+  normal message.
+- **`isFallback` is not an error.** `model == 'rules-fallback'` means Gemini was
+  unreachable and the sensors answered instead. Still a real reply; no error
+  state.
+- **`context` is for honesty, not decoration.** `{readingsAt, recentAdds,
+  photos}` says what Trunc was actually given. A null `readingsAt` means the
+  bin has never reported, so the answer came from general rules rather than
+  this bin — worth saying quietly.
+
+Mock shortcuts for building the states: ask anything off topic for the refusal,
+and **"test fallback"** for the fallback. `Scenario.tooWet` vs
+`Scenario.healthy` change the answer to "why does my bin smell?", so both
+branches are reachable. Replies are keyword-matched, not random, so a given
+question always gives the same answer.
+
+**Context Trunc gets on the backend** (it does not need asking for): the live
+sensor snapshot, the last 48 h of `add_log` (`recent_adds`, newest first, with
+`hours_ago`), and the newest two camera photos as real image parts. It is told
+to be aware of all of it but to raise it only when it bears on the question.
+
+**Scope and safety.** Compost only, enforced twice: the model classifies each
+question, and the backend substitutes its own line when it says off topic. The
+rules in the prompt are generated from `app/rules/compost.py` rather than
+retyped, so Trunc cannot drift from the verdict sheet and the camera. A reply
+that suggests a keep-out item is replaced by the rules' line
+(`model == 'rules-override'`).
+
+The app never calls Gemini and never holds its key.
+
+---
+
 ## 3. Gemini: what it does and how
 
 **Gemini is the bin's eyes and voice, not its judgement.** Rules in `domain/` (mirrored in the backend) decide; Gemini identifies and explains. If Gemini is slow, fails, or disagrees with the rules, the rule-based answer is shown and nobody notices.
@@ -134,8 +190,9 @@ Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, 
 | Job | Feature | Input | Output (JSON schema) | Model |
 |---|---|---|---|---|
 | **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
-| **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: add \| add_with_browns \| add_with_greens \| avoid, reason, suggest_add[], suggest_avoid[], tip}` | Flash |
+| **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: great \| careful \| avoid, headline, reason, balance, suggest_add[], suggest_avoid[], pair_with[], tip}` | Flash |
 | **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
+| **Trunc chat** | 2.8 | snapshot + `recent_adds` + newest 2 drop photos + the question and prior turns | `{on_topic, reply, used_readings}`; off topic ⇒ the backend's own line | Flash |
 | **Summaries** | 2.5 | snapshot (+ week stats) | `{title, body, bullets[], mood}` | Flash or Flash-Lite |
 
 **Every text call gets the same context snapshot:**
@@ -144,9 +201,11 @@ Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, 
   balance_7d: {greens_kg, browns_kg, ratio},
   stage: {top, bottom, bottom_ready},
   health: {score, breakdown},
-  recent_logs: [last 10 adds],
+  recent_adds: [last 48 h of add_log, newest first, with hours_ago and action],
   need: <computed by rules> }
 ```
+Trunc (2.8) gets the same snapshot plus the newest two camera photos as
+image parts.
 The snapshot is stored with each response (`advice` table), so we can always show *why* the app said something.
 
 **Rule-computed `need` (next best action)**
@@ -236,7 +295,8 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 | Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
 | Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
-| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` |
+| **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, context}`. Stateless: the app owns the conversation. |
+| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` · `GET /bins/{id}/drops/history` (resolved drops, paged; `has_photo` rather than inline base64) · `GET /drops/{id}` · `GET /drops/{id}/photo` (real `image/jpeg`) |
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
 | Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
 

@@ -250,6 +250,96 @@ class MockRepository implements CalmpostRepository {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     _pending.removeWhere((d) => d.id == dropId);
   }
+
+  // --- Trunc ------------------------------------------------------------------
+  //
+  // Scripted so the chat UI can be built with no backend, no API key and no
+  // Gemini quota. Keyword-matched rather than random, so a given question
+  // always gives the same answer and a screenshot is reproducible.
+  //
+  // The four replies below are the four states a chat screen has to handle:
+  // a normal answer, one that leaned on the readings, an off-topic refusal,
+  // and a rules-fallback when the model is unreachable. Ask "test fallback"
+  // or something off topic to see those two without touching the backend.
+
+  @override
+  Future<TruncReply> askTrunc(
+    String message, {
+    List<TruncTurn> history = const [],
+    bool includePhotos = true,
+  }) async {
+    // Long enough that a typing indicator is worth building, and close to what
+    // a real call costs with photos attached.
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+
+    final q = message.toLowerCase();
+    final snap = _last ?? _snapshot(0);
+    final context = TruncContext(
+      readingsAt: snap.time,
+      recentAdds: (_greens + _browns).round(),
+      photos: includePhotos ? 1 : 0,
+    );
+
+    if (q.contains('fallback') || q.contains('test error')) {
+      return TruncReply(
+        reply: "I can't reach my brain right now, so here's what the sensors say "
+            'instead. Right now the top layer is ${snap.topMoisture.round()}% moisture.',
+        model: 'rules-fallback',
+        onTopic: true,
+        usedReadings: true,
+        context: context,
+      );
+    }
+
+    if (!_soundsLikeCompost(q)) {
+      return TruncReply(
+        reply: "I only know about composting, so I'll stay out of that one. "
+            'Ask me about your bin, what to add, or why something smells off.',
+        model: 'mock',
+        onTopic: false,
+        usedReadings: false,
+        context: context,
+      );
+    }
+
+    // Leans on the readings when the question is about this bin's behaviour.
+    final aboutThisBin = ['smell', 'wet', 'dry', 'hot', 'slow', 'why', 'my bin']
+        .any(q.contains);
+    if (aboutThisBin) {
+      final wet = snap.topMoisture > 64;
+      return TruncReply(
+        reply: wet
+            ? 'The top layer is at ${snap.topMoisture.round()}%, which is soggy, and that '
+                'sour smell is what a wet pile does when air cannot get through. Add a '
+                'few handfuls of shredded cardboard and give it a stir.'
+            : 'Nothing looks off: the top layer is ${snap.topMoisture.round()}% moisture and '
+                'running ${(snap.topTemp - snap.ambientTemp).toStringAsFixed(1)}C above the '
+                'room, which is healthy. Keep adding scraps as you have been.',
+        model: 'mock',
+        onTopic: true,
+        usedReadings: true,
+        context: context,
+      );
+    }
+
+    // A general question, answered without reciting the sensors -- the
+    // behaviour the real prompt asks for.
+    return TruncReply(
+      reply: 'Yes, those are fine to compost. Break them up a little first so they '
+          'rot faster, and tuck them under the top layer rather than leaving them '
+          'sitting on it.',
+      model: 'mock',
+      onTopic: true,
+      usedReadings: false,
+      context: context,
+    );
+  }
+
+  static bool _soundsLikeCompost(String q) => const [
+    'compost', 'bin', 'smell', 'moist', 'wet', 'dry', 'brown', 'green', 'worm',
+    'heat', 'hot', 'layer', 'harvest', 'peel', 'scrap', 'cardboard', 'coffee',
+    'egg', 'fruit', 'veg', 'pest', 'fly', 'mould', 'mold', 'rot', 'add', 'put',
+  ].any(q.contains);
 }
 
 bool _setEquals(Set<(String, String)> a, Set<(String, String)> b) =>

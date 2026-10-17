@@ -53,5 +53,25 @@ abstract class CalmpostRepository {
   /// for the accuracy stat.
   Future<void> dismissDrop(int dropId);
 
+  // --- Trunc, the compost assistant -----------------------------------------
+
+  /// POST /bins/{id}/chat: ask Trunc a question.
+  ///
+  /// Stateless on the server, so pass the conversation so far in [history],
+  /// oldest first, excluding the question being asked. The backend adds the
+  /// sensor readings, what was recently added and the last camera photos.
+  ///
+  /// Set [includePhotos] false for a cheaper, faster turn when the question
+  /// plainly does not need them.
+  ///
+  /// Always returns something sayable: an off-topic question comes back with
+  /// `onTopic` false and a ready-made redirect, and an unreachable model comes
+  /// back as `isFallback` with a sensor summary. Neither is an error state.
+  Future<TruncReply> askTrunc(
+    String message, {
+    List<TruncTurn> history,
+    bool includePhotos,
+  });
+
   FoodItem? food(String id);
 }

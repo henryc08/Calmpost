@@ -219,6 +219,24 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<void> dismissDrop(int dropId) => _post('/drops/$dropId/dismiss', const <String, dynamic>{});
+
+  // --- Trunc -------------------------------------------------------------------------
+
+  @override
+  Future<TruncReply> askTrunc(
+    String message, {
+    List<TruncTurn> history = const [],
+    bool includePhotos = true,
+  }) async {
+    final j = await _post('/bins/${config.binId}/chat', {
+      'message': message,
+      'history': [
+        for (final t in history) {'role': t.role.name, 'text': t.text},
+      ],
+      'include_photos': includePhotos,
+    }) as Map<String, dynamic>;
+    return truncReplyFromJson(j);
+  }
 }
 
 class ApiException implements Exception {
@@ -334,5 +352,25 @@ CameraDrop dropFromJson(Map<String, dynamic> j) {
     model: (j['model'] as String?) ?? '',
     error: j['error'] as String?,
     thumbnailJpeg: thumb.isEmpty ? null : base64Decode(thumb),
+  );
+}
+
+/// POST /bins/{id}/chat -> TruncReply.
+TruncReply truncReplyFromJson(Map<String, dynamic> j) {
+  final ctx = (j['context'] as Map<String, dynamic>?) ?? const {};
+  final at = ctx['readings_at'] as String?;
+  return TruncReply(
+    reply: (j['reply'] as String?) ?? '',
+    model: (j['model'] as String?) ?? '',
+    // Absent means on topic: only an off-topic answer sets it false.
+    onTopic: j['on_topic'] != false,
+    usedReadings: j['used_readings'] == true,
+    context: TruncContext(
+      // Null when the bin has never reported, which is not an error: a general
+      // question does not need a reading.
+      readingsAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
+      recentAdds: (ctx['recent_adds'] as num?)?.toInt() ?? 0,
+      photos: (ctx['photos'] as num?)?.toInt() ?? 0,
+    ),
   );
 }

@@ -29,13 +29,57 @@ class PreviewState:
         out = frame.copy()
         x, y, w, h = self.roi.pixels(out)
         moving = self.fraction > self.threshold
-        cv2.rectangle(out, (x, y), (x + w, y + h), (40, 160, 230) if moving else (200, 200, 200), 2)
+        live = (40, 160, 230)
+        idle = (200, 200, 200)
+        cv2.rectangle(out, (x, y), (x + w, y + h), live if moving else idle, 2)
         if self.last_box:
             out = fr.draw_box(out, *self.last_box)
-        bar = int(min(self.fraction / (self.threshold * 4), 1.0) * 200)
-        cv2.rectangle(out, (12, 12), (212, 26), (60, 60, 60), 1)
-        cv2.rectangle(out, (12, 12), (12 + bar, 26), (40, 160, 230) if moving else (180, 180, 180), -1)
-        cv2.putText(out, self.status, (12, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # The overlay is drawn before the frame is scaled to 960 wide, so
+        # sizes are relative to the source frame: a 640px webcam and a 1080p
+        # one end up with the same apparent text size in the browser.
+        s = max(out.shape[1] / 960.0, 0.75)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.72 * s
+        thick = max(1, round(2 * s))
+        pad = round(12 * s)
+        line = round(30 * s)
+
+        rows = [
+            self.status,
+            f"motion {self.fraction * 100:5.1f}%   trigger {self.threshold * 100:.1f}%",
+        ]
+        if self.last_box:
+            rows.append(f"last: {self.last_box[1]}")
+
+        bar_w, bar_h = round(300 * s), round(16 * s)
+        panel_h = pad + len(rows) * line + bar_h + pad
+        panel_w = max(bar_w, *(cv2.getTextSize(r, font, scale, thick)[0][0] for r in rows)) + pad * 2
+
+        # Dark panel behind the text: white-on-white was unreadable against a
+        # bright desk, which is exactly the background the camera looks at.
+        panel = out[0:panel_h, 0:panel_w]
+        if panel.size:
+            out[0:panel_h, 0:panel_w] = cv2.addWeighted(
+                panel, 0.35, np.zeros_like(panel), 0.65, 0
+            )
+
+        yy = pad + round(line * 0.75)
+        for row in rows:
+            cv2.putText(out, row, (pad, yy), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+            yy += line
+
+        # Motion bar, with the trigger threshold marked so you can see how
+        # close you are rather than guessing from a bare bar.
+        bx, by = pad, yy - round(line * 0.55)
+        full = min(self.fraction / (self.threshold * 4), 1.0)
+        cv2.rectangle(out, (bx, by), (bx + bar_w, by + bar_h), (90, 90, 90), -1)
+        cv2.rectangle(out, (bx, by), (bx + int(bar_w * full), by + bar_h),
+                      live if moving else (180, 180, 180), -1)
+        tick = bx + bar_w // 4           # the threshold sits at a quarter of full scale
+        cv2.line(out, (tick, by - round(3 * s)), (tick, by + bar_h + round(3 * s)),
+                 (255, 255, 255), max(1, round(s)), cv2.LINE_AA)
+
         ok, buf = cv2.imencode(".jpg", fr.resize_max(out, 960), [cv2.IMWRITE_JPEG_QUALITY, 70])
         if ok:
             with self._lock:

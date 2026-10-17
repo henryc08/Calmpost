@@ -44,7 +44,7 @@ The camera button arms the **bin camera**, not the phone camera. There is no in-
 These are demo APKs: LAN HTTP, debug release signing and a shared API key are not production security. Validate on a physical Android device before distribution.
 
 Honest about the hardware:
-- **One probe.** The bin has one probe, in the top layer, so the bottom shows **not measured** (never a number) and the health score leaves it out.
+- **Independent probes.** Probe 2 can report bottom moisture without temperature. Missing values stay **not measured**; bottom-layer historical charts are not available yet. Each probe needs its own calibration.
 - **Stale readings.** If the bin stops reporting, "LIVE" becomes "SEEN 20 MIN AGO".
 - **Unreachable backend.** If the phone can't reach the API, Home says so and offers **Use demo data**.
 
@@ -57,6 +57,17 @@ Long-press the Bin World on Home to open the demo picker:
 - The mock scenarios: healthy, too wet, too dry, curing and ready. Use them if the venue network drops.
 
 Web preview links (also `?source=mock|live`) are listed in the agent doc, section 9.
+
+### Assistant, phone photos, history and calibration
+
+- **Home or Log → Ask Trunc:** in-memory conversation, waiting/retry states and the actual sensor/photo context. Ask `test fallback` for a normal rule-based response, or an unrelated question for the redirect. Recent photos are opt-in.
+- **Log → Take or choose a photo:** Android camera or gallery, local preview, then **Identify and review**. The JPEG is resized to at most 1024 px and 1.4 MB. The existing correction sheet confirms what was actually composted; identification alone never logs an add. Interrupted Android capture can restore a preview without uploading it.
+- **Log → Past drops & photos:** confirmed/dismissed records, original guesses beside corrections, and stored photos. Photos are authenticated and may expire. A freshly started mock repository has no history until you confirm or dismiss a drop.
+- **Layers or Profile → Calibrate probes:** choose top/probe 1 or bottom/probe 2, record separate dry/wet raw counts, then save. Historical recalculation is off unless selected. Live calibration requires the paired owner; demo mode saves references in memory without changing physical sensors.
+
+All four screens work in mock mode without Gemini credentials. Real photo identification and AI wording require backend Gemini quota; identification failure still offers manual review and Trunc still supplies rule-based fallback. Mock history and chat do not survive app restart; live drop history is stored by the backend.
+
+Render actual Flutter screenshots with `flutter test test/ui_features_visual_test.dart --dart-define=CAPTURE_REVIEW=true`; output is in `artifacts/ui-features/` at the repository root.
 
 ### Compost inventory
 

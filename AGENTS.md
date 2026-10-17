@@ -184,7 +184,7 @@ asks what it is.
 
 `CalmpostRepository.submitPhoto(Uint8List jpeg)` ⇒ a pending `CameraDrop` with
 `source == 'photo'` (`drop.fromPhoto`). **It is an ordinary drop**, so
-`confirmDrop` and `dismissDrop` finish it exactly as they finish a camera
+the existing UI's `confirmReviewedDrop` and `dismissReviewedDrop` finish it exactly as they finish a camera
 detection — there is no separate photo flow to build, and the XP rules, the
 add_log rows and the history all come for free.
 
@@ -213,6 +213,8 @@ Provider failures return a fixed, safe manual-identification message; raw
 exceptions and tracebacks must not enter drop history, responses, or logs.
 
 **Past drops & photos** is reachable from Log. `dropHistory(before, limit)` pages the existing API; the UI shows resolved records with source, original guesses, confirmed items, corrections and removed items. `dropPhoto(id)` fetches JPEGs with the same authenticated repository headers (never credentials in image URLs). Loading, empty, retry, missing/expired photos and account changes are handled. Mock confirmations/dismissals populate the same history contract. Reading history never awards XP or repeats an add.
+
+Mock pending recovery uses the exact detection shown in the review sheet, including failed/mixed identifications. A no-motion session leaves no pending drop. The separate legacy `confirmDrop` volume-XP implementation is retained, not removed or replaced by UI work.
 
 ---
 

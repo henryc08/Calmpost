@@ -46,6 +46,19 @@ class HistoryRepo extends MockRepository {
 }
 
 void main() {
+  test('mock review recovery preserves the shown guess and no-motion leaves nothing pending', () async {
+    final r = MockRepository(Scenario.healthy)..dropDelay = Duration.zero;
+    r.nextDrop = MockDrop.mixed;
+    final session = await r.startDropSession();
+    final shown = (await r.watchDrop(session).first as DropSeen).drop;
+    expect((await r.pendingDrop())!.items.single.catalogId, 'mixed_scraps');
+    await r.dismissReviewedDrop(shown);
+    expect((await r.dropHistory()).drops.single.guesses, ['mixed scraps: rice, peels']);
+    r.nextDrop = MockDrop.nothing;
+    expect(await r.watchDrop(await r.startDropSession()).first, isA<DropNothing>());
+    await Future<void>.delayed(const Duration(milliseconds: 2100));
+    expect(await r.pendingDrop(), isNull);
+  });
   test('history cursor, corrections and photo authentication use the repository', () async {
     final r = ApiRepository(
       const ApiConfig(baseUrl: 'http://bin.test', apiKey: '', token: 'session'),

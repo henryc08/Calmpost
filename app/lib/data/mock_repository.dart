@@ -261,25 +261,59 @@ class MockRepository implements CalmpostRepository {
 
   @override
   Stream<DropEvent> watchDrop(DropSession session) async* {
+    _reviewSessions.add(session.id);
+    final id = _sessionIds[session.id] ?? _dropId;
     await Future<void>.delayed(dropDelay);
+    if (_cancelledSessions.contains(session.id)) return;
     const box = [360.0, 300.0, 660.0, 640.0];
     Detection d(String label, String? id, FoodCategory c, Amount a, double conf) =>
         Detection(label: label, catalogId: id, category: c, amount: a, confidence: conf, box: box);
-    yield switch (nextDrop) {
-      MockDrop.banana => DropSeen(Drop(id: _dropId, items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.86)])),
+    final event = switch (nextDrop) {
+      MockDrop.banana => DropSeen(Drop(id: id, items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.86)])),
       MockDrop.check => DropSeen(
         Drop(
-          id: _dropId,
+          id: id,
           items: [
             d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91),
             d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44),
           ],
         ),
       ),
-      MockDrop.mixed => DropSeen(Drop(id: _dropId, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
-      MockDrop.unclear => DropSeen(Drop(id: _dropId, items: const [], geminiOk: false)),
+      MockDrop.mixed => DropSeen(Drop(id: id, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
+      MockDrop.unclear => DropSeen(Drop(id: id, items: const [], geminiOk: false)),
       MockDrop.nothing => const DropNothing(),
     };
+    _pending.removeWhere((d) => d.sessionId == session.id);
+    if (event case DropSeen(:final drop)) {
+      _pending.add(
+        CameraDrop(
+          id: drop.id,
+          binId: 'bin-001',
+          sessionId: session.id,
+          time: DateTime.now(),
+          status: DropStatus.pending,
+          geminiOk: drop.geminiOk,
+          latencyMs: dropDelay.inMilliseconds,
+          source: drop.source,
+          thumbnailJpeg: drop.thumbnail,
+          guesses: [
+            for (final d in drop.items)
+              DropGuess(
+                label: d.label,
+                catalogId: d.catalogId ?? 'unknown',
+                confidence: d.confidence,
+                item: foodById[d.catalogId],
+                category: d.category,
+                amount: d.amount?.name,
+                estGrams: d.estimatedGrams,
+                pieceCount: d.pieceCount,
+                box: d.box?.map((v) => v.round()).toList(),
+              ),
+          ],
+        ),
+      );
+    }
+    yield event;
   }
 
   @override
@@ -319,6 +353,8 @@ class MockRepository implements CalmpostRepository {
   int _dropId = 0, _nextGuess = 0;
   final List<CameraDrop> _pending = [];
   final Set<String> _cancelledSessions = {};
+  final Set<String> _reviewSessions = {};
+  final Map<String, int> _sessionIds = {};
   double _confirmedGrams = 0;
   int _confirmedActionXp = 0;
   DateTime _confirmationDay = dayOf(DateTime.now());
@@ -336,11 +372,12 @@ class MockRepository implements CalmpostRepository {
   @override
   Future<DropSession> startDropSession() async {
     final session = DropSession(id: 'mock-${++_dropId}', expiresAt: DateTime.now().add(const Duration(seconds: 60)));
+    _sessionIds[session.id] = _dropId;
     final guesses = _scripted[_nextGuess++ % _scripted.length];
     final dropId = _dropId;
     // Roughly what a real drop costs end to end, so a spinner gets exercised.
     Future<void>.delayed(const Duration(milliseconds: 2000), () {
-      if (_cancelledSessions.contains(session.id)) return;
+      if (_cancelledSessions.contains(session.id) || _reviewSessions.contains(session.id)) return;
       _pending.add(
         CameraDrop(
           id: dropId,

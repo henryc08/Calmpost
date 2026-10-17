@@ -361,5 +361,7 @@ python scripts/serial_bridge.py --api http://127.0.0.1:8000
 The bridge:
 - auto-detects the port and reads at 115200 baud, matching the sketch
 - ignores the board's `#`-prefixed log lines
-- queues samples through network drops
+- reads serial independently of a single background HTTP uploader, so network stalls do not block USB reads
+- timestamps samples before queueing and retries oldest-first, even if no more serial data arrives
+- buffers up to 500 queued samples plus one in flight in memory; a full queue warns and drops incoming samples. Unsent data is lost on exit (also warned), not persisted to disk
 - exits on an auth failure rather than retrying with a revoked token

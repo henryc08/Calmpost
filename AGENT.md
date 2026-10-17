@@ -36,7 +36,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 | # | Feature | Status |
 |---|---|---|
-| 2.1 | Live sensing & Bin Health Score | ✅ app (mock data) · ⏳ firmware + backend |
+| 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ⏳ second probe |
 | 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
@@ -195,7 +195,7 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 
 ## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). Endpoint shapes mirror `CalmpostRepository`, so the app's `ApiRepository` is a mechanical swap (one line in `state/providers.dart`; `backend/examples/calmpost_api.dart` is the client).
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). Endpoint shapes mirror `CalmpostRepository`, and the app's `data/api_repository.dart` reads it: live readings (polled every 3 s), trends, the scrap check, logs and the league. It is picked when the app is built with `--dart-define=API_URL=…` (see `app/README.md`); the demo picker switches between **Live bin** and the mock scenarios. The game economy still runs on the phone; moving it to the server is next.
 
 **The app owns the rules; the server enforces them.**
 - The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
@@ -287,7 +287,7 @@ calmpost/
       app/                  # shell (5-tab nav + event loop), toast + demo picker + ComingNext, notifications
       ui/                   # DESIGN SYSTEM: tokens, type, theme, components, brand (BrandPage/band, segments, PinkPill, Avatar), backdrop
       domain/               # pure Dart: models, health_score, xp_rules, advice_rules
-      data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), food_catalog
+      data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), api_repository + api_config (live bin), food_catalog
       state/                # Riverpod: providers (bin, health, trends, tab), game (XP/streak/quests/economy), celebrations
       features/home/        # ✅ bin_world, home_screen (band + HUD + score), what_to_add, readings_row, streak_calendar, today_quests
       features/layers/      # ✅ layers_screen (zone switcher, chart with add markers, stats, life cycle)
@@ -442,7 +442,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 - **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
 - **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
 - **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
-- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull) (planned: `?drop=1` fakes a camera detection).
+- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull), `?source=mock|live` (planned: `?drop=1` fakes a camera detection).
 
 **Demo script**
 1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
@@ -486,7 +486,7 @@ cd vision && python main.py
 2. **Drop-in UI on mocks** (sheet, pop-up, edit form).
 3. ✅ **Backend + Tiger Data** (ingest, readings, logs, drops, advice, game + economy) and **vision service** (webcam + motion + Gemini).
 4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · Rewards inbox history.
-5. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
+5. ✅ `ApiRepository` (live bin data) · next: game economy from the server, firmware on the real bin, polish on a real phone.
 
 ### Working together
 - **`main` must always build and run.** Pull before you push; run `flutter analyze && flutter test` first.

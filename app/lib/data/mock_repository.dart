@@ -151,7 +151,109 @@ class MockRepository implements CalmpostRepository {
 
   @override
   Future<List<LeagueMember>> leagueCohort() async => _cohort;
+
+  // --- camera drop-in ---------------------------------------------------------
+  //
+  // No camera and no backend here: arming queues a detection a beat later, so
+  // the sheet can be built and demoed on a laptop with nothing plugged in.
+  // Walk through the scripted guesses with [Scenario] unchanged; each arm
+  // serves the next one and then wraps around.
+
+  int _dropId = 0, _nextGuess = 0;
+  final List<CameraDrop> _pending = [];
+
+  /// What the camera "sees", in order: a clean green, a pair, an unknown item
+  /// the user has to name, and a keep-out item. Covers the cases a sheet has
+  /// to handle without needing hardware to produce them.
+  static const _scripted = <List<(String, String, double)>>[
+    [('banana peel', 'banana_peel', 0.95)],
+    [('coffee grounds', 'coffee_grounds', 0.88), ('eggshells', 'eggshells', 0.71)],
+    [('something leafy', 'unknown', 0.41)],
+    [('cheese rind', 'cheese', 0.83)],
+  ];
+
+  @override
+  Future<DropSession> startDropSession() async {
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    final session = DropSession(
+      id: 'mock-${++_dropId}',
+      expiresAt: DateTime.now().add(const Duration(seconds: 60)),
+    );
+    final guesses = _scripted[_nextGuess++ % _scripted.length];
+    // Roughly what a real drop costs end to end, so a spinner gets exercised.
+    Future<void>.delayed(const Duration(milliseconds: 2000), () {
+      _pending.add(CameraDrop(
+        id: _dropId,
+        binId: 'bin-001',
+        sessionId: session.id,
+        time: DateTime.now(),
+        status: DropStatus.pending,
+        geminiOk: true,
+        latencyMs: 1400,
+        model: 'mock',
+        guesses: [
+          for (final (label, id, confidence) in guesses)
+            DropGuess(
+              label: label,
+              catalogId: id,
+              confidence: confidence,
+              item: foodById[id],
+              category: foodById[id]?.category,
+              amount: 'handful',
+            ),
+        ],
+      ));
+    });
+    return session;
+  }
+
+  @override
+  Stream<List<CameraDrop>> watchDrops() async* {
+    while (true) {
+      yield List.unmodifiable(_pending);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  @override
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items) async {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final drop = _pending.where((d) => d.id == dropId).firstOrNull;
+    _pending.removeWhere((d) => d.id == dropId);
+
+    final verdicts = <Advice>[];
+    var xp = 0;
+    for (final i in items) {
+      final item = foodById[i.catalogId];
+      if (item == null) continue;
+      if (!i.removed) {
+        await logItem(item);
+        verdicts.add(adviseFor(item, _last ?? _snapshot(0), foodById));
+      }
+      // Mirrors the backend's rules: nothing for an ordinary add, +5 for
+      // taking a keep-out item back out, +15 when it was the advised action.
+      xp += i.removed ? 5 : (i.wasAdvised ? 15 : 0);
+    }
+
+    final guessed = drop?.guesses.map((g) => (g.catalogId, g.label.toLowerCase())).toSet() ?? const {};
+    final confirmed = items.map((i) => (i.catalogId, i.label.toLowerCase())).toSet();
+    return DropResult(
+      dropId: dropId,
+      corrected: guessed.isNotEmpty && !_setEquals(guessed, confirmed),
+      verdicts: verdicts,
+      xpAwarded: xp,
+    );
+  }
+
+  @override
+  Future<void> dismissDrop(int dropId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    _pending.removeWhere((d) => d.id == dropId);
+  }
 }
+
+bool _setEquals(Set<(String, String)> a, Set<(String, String)> b) =>
+    a.length == b.length && a.every(b.contains);
 
 const _names = [
   ('Priya S.', 342, true, 41),

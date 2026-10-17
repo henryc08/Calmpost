@@ -1,3 +1,5 @@
+import 'dart:typed_data' show Uint8List;
+
 import 'package:flutter/widgets.dart' show IconData;
 
 /// Where a sensor sits in the bin.
@@ -234,3 +236,150 @@ enum CrateTier { sprout, grove, canopy }
 
 /// Gacha rarities for Seed Packet pulls.
 enum Rarity { common, uncommon, rare, epic, legendary }
+
+// --- camera drop-in (AGENTS.md 2.4) -----------------------------------------
+//
+// The app arms the camera, vision/ reports what it saw, the user confirms or
+// corrects it. Nothing here talks to Gemini: the vision service calls it and
+// the backend decides categories by the rules, so a label the rules call
+// avoid stays avoid whatever the model said.
+
+/// A camera session the app armed. The bin watches for about a minute.
+class DropSession {
+  const DropSession({required this.id, required this.expiresAt});
+
+  final String id;
+  final DateTime expiresAt;
+
+  bool get open => DateTime.now().isBefore(expiresAt);
+
+  /// Zero once it has expired, so a countdown never goes negative.
+  Duration get remaining {
+    final left = expiresAt.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+}
+
+enum DropStatus { pending, confirmed, dismissed }
+
+/// One thing the camera thought it saw.
+class DropGuess {
+  const DropGuess({
+    required this.label,
+    required this.catalogId,
+    required this.confidence,
+    this.item,
+    this.category,
+    this.amount,
+    this.estGrams,
+    this.box,
+  });
+
+  /// What the model called it, e.g. "banana peel".
+  final String label;
+
+  /// Catalog id the backend mapped it to, or 'unknown'.
+  final String catalogId;
+
+  final double confidence;
+
+  /// The catalog entry this resolved to, when the app recognises it. Null for
+  /// an unknown item, which the user has to name themselves.
+  final FoodItem? item;
+
+  /// Null when the backend could not categorise it.
+  final FoodCategory? category;
+
+  /// 'small', 'handful' or 'large'.
+  final String? amount;
+
+  final double? estGrams;
+
+  /// [ymin, xmin, ymax, xmax] on a 0-1000 grid, as Gemini returns boxes.
+  /// Scale by the displayed image size to draw it.
+  final List<int>? box;
+}
+
+/// A detection waiting for the user to confirm or dismiss.
+class CameraDrop {
+  const CameraDrop({
+    required this.id,
+    required this.binId,
+    required this.sessionId,
+    required this.time,
+    required this.status,
+    required this.guesses,
+    required this.geminiOk,
+    required this.latencyMs,
+    this.model = '',
+    this.error,
+    this.thumbnailJpeg,
+  });
+
+  final int id;
+  final String binId;
+  final String sessionId;
+  final DateTime time;
+  final DropStatus status;
+
+  /// Empty when the camera saw something move but could not name it.
+  final List<DropGuess> guesses;
+
+  /// False when Gemini was unavailable and the rules-based fallback answered.
+  /// Worth surfacing: the guess is cruder, so the user is likelier to correct it.
+  final bool geminiOk;
+
+  final int latencyMs;
+  final String model;
+  final String? error;
+
+  /// Decoded JPEG ready for Image.memory, or null when none was sent.
+  final Uint8List? thumbnailJpeg;
+}
+
+/// What the user says was actually added, after editing the camera's guess.
+class DropConfirmation {
+  const DropConfirmation({
+    required this.label,
+    this.catalogId = 'unknown',
+    this.category,
+    this.amount,
+    this.removed = false,
+    this.wasAdvised = false,
+    this.adviceId,
+  });
+
+  final String label;
+  final String catalogId;
+  final FoodCategory? category;
+  final String? amount;
+
+  /// The user took a keep-out item back out again: logged as a skip, which
+  /// earns the usual +5 rather than nothing.
+  final bool removed;
+
+  /// It was the suggested next action: +15 by the usual rule.
+  final bool wasAdvised;
+  final int? adviceId;
+}
+
+/// What came back from confirming a drop.
+class DropResult {
+  const DropResult({
+    required this.dropId,
+    required this.corrected,
+    required this.verdicts,
+    required this.xpAwarded,
+  });
+
+  final int dropId;
+
+  /// True when the user changed what the camera guessed. The backend keeps
+  /// this for the accuracy stat.
+  final bool corrected;
+
+  /// One per confirmed item the backend could judge; a removed item has none.
+  final List<Advice> verdicts;
+
+  final int xpAwarded;
+}

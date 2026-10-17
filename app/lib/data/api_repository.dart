@@ -20,10 +20,15 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3)}) : _http = client ?? http.Client();
+  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)}) : _http = client ?? http.Client();
 
   final ApiConfig config;
   final Duration pollEvery;
+
+  /// How often [watchDrops] asks for pending detections. The backend's own
+  /// SSE endpoint re-reads its table once a second, so polling at the same
+  /// rate costs the same latency.
+  final Duration dropPollEvery;
   final http.Client _http;
   BinSnapshot? _last;
 
@@ -144,6 +149,76 @@ class ApiRepository implements CalmpostRepository {
       rethrow;
     }
   }
+
+  // --- camera drop-in ----------------------------------------------------------------
+
+  @override
+  Future<DropSession> startDropSession() async {
+    final j = await _post('/bins/${config.binId}/drops/session', const <String, dynamic>{}) as Map<String, dynamic>;
+    return DropSession(
+      id: j['session_id'] as String,
+      expiresAt: DateTime.parse(j['expires_at'] as String).toLocal(),
+    );
+  }
+
+  /// Polls the pending list rather than reading the SSE stream: the stream
+  /// handler re-queries once a second anyway, so this is the same latency
+  /// without holding a long-lived response open, which is the part that
+  /// breaks on a flaky hotspot and behind proxies on web.
+  @override
+  Stream<List<CameraDrop>> watchDrops() async* {
+    while (true) {
+      try {
+        final rows = (await _get('/bins/${config.binId}/drops/pending') as List).cast<Map<String, dynamic>>();
+        yield [for (final r in rows) dropFromJson(r)];
+      } on Exception {
+        // A dropped request must not kill the watch; the next tick retries.
+      }
+      await Future<void>.delayed(dropPollEvery);
+    }
+  }
+
+  @override
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items) async {
+    final j = await _post('/drops/$dropId/confirm', {
+      'items': [
+        for (final i in items)
+          {
+            'label': i.label,
+            'catalog_id': i.catalogId,
+            // The backend overrides this by its own rules; sending 'unknown'
+            // lets it decide rather than asserting a category we guessed.
+            'category': i.category?.name ?? 'unknown',
+            if (i.amount != null) 'amount': i.amount,
+            'removed': i.removed,
+            'was_advised': i.wasAdvised,
+            if (i.adviceId != null) 'advice_id': i.adviceId,
+          },
+      ],
+    }) as Map<String, dynamic>;
+
+    final verdicts = <Advice>[];
+    var xp = 0;
+    for (final row in ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+      final log = (row['log'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+      xp += (log['xp_awarded'] as num?)?.toInt() ?? 0;
+      final verdict = row['verdict'] as Map<String, dynamic>?;
+      // No verdict for a removed item, and none when the bin has no readings
+      // yet; the add is still logged, so this is not an error.
+      if (verdict == null) continue;
+      final item = foodForLabel((log['item'] as String?) ?? '', log['catalog_id'] as String?);
+      if (item != null) verdicts.add(adviceFromJson(item, verdict));
+    }
+    return DropResult(
+      dropId: (j['drop_id'] as num?)?.toInt() ?? dropId,
+      corrected: j['corrected'] == true,
+      verdicts: verdicts,
+      xpAwarded: xp,
+    );
+  }
+
+  @override
+  Future<void> dismissDrop(int dropId) => _post('/drops/$dropId/dismiss', const <String, dynamic>{});
 }
 
 class ApiException implements Exception {
@@ -212,5 +287,52 @@ Advice adviceFromJson(FoodItem item, Map<String, dynamic> j) {
     headline: (j['headline'] as String?) ?? '',
     reason: (j['reason'] as String?) ?? '',
     pairWith: pair,
+  );
+}
+
+/// Resolves a backend label to a catalog entry: catalog id first, then an
+/// exact name, then a loose contains-match. Null for something the catalog
+/// has never heard of, which the UI has to let the user name.
+FoodItem? foodForLabel(String label, [String? catalogId]) {
+  if (catalogId != null && catalogId != 'unknown') {
+    final byId = foodById[catalogId];
+    if (byId != null) return byId;
+  }
+  final n = label.toLowerCase().trim();
+  if (n.isEmpty) return null;
+  return foodCatalog.where((f) => f.name.toLowerCase() == n || f.id == n).firstOrNull ??
+      foodCatalog.where((f) => f.name.toLowerCase().contains(n) || n.contains(f.name.toLowerCase())).firstOrNull;
+}
+
+/// GET /bins/{id}/drops/pending (and each `drop` SSE event) -> CameraDrop.
+CameraDrop dropFromJson(Map<String, dynamic> j) {
+  final guesses = <DropGuess>[];
+  for (final g in ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+    final label = (g['label'] as String?) ?? '';
+    final catalogId = (g['catalog_id'] as String?) ?? 'unknown';
+    guesses.add(DropGuess(
+      label: label,
+      catalogId: catalogId,
+      confidence: _d(g['confidence']) ?? 0,
+      item: foodForLabel(label, catalogId),
+      category: FoodCategory.values.where((c) => c.name == g['category']).firstOrNull,
+      amount: g['amount'] as String?,
+      estGrams: _d(g['est_grams']),
+      box: (g['box_2d'] as List?)?.cast<num>().map((n) => n.toInt()).toList(),
+    ));
+  }
+  final thumb = (j['thumbnail_jpeg_b64'] as String?) ?? '';
+  return CameraDrop(
+    id: (j['id'] as num).toInt(),
+    binId: (j['bin_id'] as String?) ?? '',
+    sessionId: (j['session_id'] as String?) ?? '',
+    time: DateTime.parse(j['time'] as String).toLocal(),
+    status: DropStatus.values.firstWhere((s) => s.name == j['status'], orElse: () => DropStatus.pending),
+    guesses: guesses,
+    geminiOk: j['gemini_ok'] == true,
+    latencyMs: (j['latency_ms'] as num?)?.toInt() ?? 0,
+    model: (j['model'] as String?) ?? '',
+    error: j['error'] as String?,
+    thumbnailJpeg: thumb.isEmpty ? null : base64Decode(thumb),
   );
 }

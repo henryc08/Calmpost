@@ -29,5 +29,29 @@ abstract class CalmpostRepository {
   /// GET /leagues/current (everyone except you).
   Future<List<LeagueMember>> leagueCohort();
 
+  // --- camera drop-in (AGENTS.md 2.4) ---------------------------------------
+  //
+  // The app never calls Gemini itself and never holds its key: vision/ runs
+  // the camera and the model, the backend stores the detection and applies
+  // the category rules. The app arms a session, watches for detections, then
+  // sends back what the user says was really added.
+
+  /// POST /bins/{id}/drops/session: 'drop something in', arming the camera for
+  /// about a minute. Arming again replaces an open session.
+  Future<DropSession> startDropSession();
+
+  /// Detections waiting on the user, oldest first. Emits the current list on
+  /// every tick, including an empty one, so a UI can tell 'nothing yet' from
+  /// 'no longer pending'. Runs until the subscription is cancelled.
+  Stream<List<CameraDrop>> watchDrops();
+
+  /// POST /drops/{id}/confirm: the user submitted the sheet. Each item becomes
+  /// a log row and gets a verdict, so XP follows the usual rules.
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items);
+
+  /// POST /drops/{id}/dismiss: nothing was added, the trigger was false. Kept
+  /// for the accuracy stat.
+  Future<void> dismissDrop(int dropId);
+
   FoodItem? food(String id);
 }

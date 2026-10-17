@@ -11,10 +11,20 @@ with Flutter 3.47's final `IconData` class. No upgrade of the entire app is requ
 1. Configure `backend/.env` as described in `backend/README.md` and install its requirements.
    The backend needs a reachable Tiger/Postgres database. Starting it applies the idempotent
    social migration automatically. Existing readings and demo users are preserved.
-2. Start the backend:
+2. Start the backend. Paths are relative to the repo root, so these work from any clone.
+
+   Windows (PowerShell):
+
+   ```powershell
+   cd backend
+   .venv\Scripts\Activate.ps1
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
+
+   macOS/Linux:
 
    ```bash
-   cd ~/Documents/Calmpost/backend
+   cd backend
    source .venv/bin/activate
    uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
@@ -22,19 +32,35 @@ with Flutter 3.47's final `IconData` class. No upgrade of the entire app is requ
 3. Build/run the app pointing at that backend:
 
    ```bash
-   cd ~/Documents/Calmpost/app
+   cd app
    flutter pub get
-   flutter run --dart-define=API_URL=http://192.168.1.42:8000
+   flutter run -d chrome --dart-define=API_URL=http://localhost:8000
    ```
 
-   Replace the example LAN address with your laptop's address. Both phones must reach
-   the same backend. Social uses per-person sessions and does not require `API_KEY`.
-   The signed-out legacy live-bin demo still uses the old `API_KEY` configuration.
-   Without a compiled URL, the account form lets you enter the community server address.
+   Social uses per-person sessions and does not require `API_KEY`. The signed-out legacy
+   live-bin demo still uses the old `API_KEY` configuration. Without a compiled URL, the
+   account form lets you enter the community server address.
 
-   Web development: run on `localhost` with `flutter run -d chrome`. Secure browser
-   storage needs HTTPS or localhost. Public deployments require HTTPS; only private
-   network/loopback addresses may use HTTP during local development.
+   Web development: run on `localhost`. Secure browser storage needs HTTPS or localhost,
+   and `localhost:8000` is the simplest backend address for a browser test on one machine.
+
+4. For two phones, swap `localhost` for the laptop's LAN address (`ipconfig` → IPv4
+   Address) and both phones must reach that same backend:
+
+   ```bash
+   flutter run --dart-define=API_URL=http://172.20.10.3:8000
+   ```
+
+   **Use a phone hotspot, not campus Wi-Fi.** Two independent reasons:
+
+   - `normalizeServer` in `app/lib/data/social_repository.dart` permits plain HTTP only
+     for `localhost`, `127.x`, `10.x`, `192.168.x` and `172.16–31.x`. Campus Wi-Fi here
+     hands out carrier-grade NAT addresses in `100.64.0.0/10` (this laptop on eduroam is
+     `100.102.7.50`), which is **not** in that list, so sign-in fails with "Use HTTPS for
+     a public server" before a request is even sent. A hotspot address such as
+     `172.20.10.3` is inside the allowed range.
+   - Campus networks commonly block device-to-device traffic, so a phone could not reach
+     the laptop even if the address validated.
 
 ## Try it with two people
 

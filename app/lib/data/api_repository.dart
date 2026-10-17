@@ -65,6 +65,7 @@ class ApiRepository implements CalmpostRepository {
       'check-in' => config.token == null ? '$user/check-in' : '/social/check-in',
       'quest' => '/quests/${args['id']}/claim',
       'daily' => '$user/daily-goal/${args['index']}/claim',
+      'level' => '$user/levels/${args['level']}/claim',
       'crate' => '$user/crates/${_crateIds[args['index'] as int]}/open',
       'pull' => '$user/gacha/pull',
       'equip' => '$user/equip',
@@ -358,9 +359,7 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<CameraDrop> submitPhoto(Uint8List jpeg) async {
-    final j = await _post('/bins/${config.binId}/drops/photo', {
-      'image_jpeg_b64': base64Encode(jpeg),
-    }) as Map<String, dynamic>;
+    final j = await _post('/bins/${config.binId}/drops/photo', {'image_jpeg_b64': base64Encode(jpeg)}) as Map<String, dynamic>;
     return dropFromJson(j);
   }
 

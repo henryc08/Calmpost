@@ -196,7 +196,7 @@ def test_equip_finish_and_title(c):
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_gold"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "title_sage"}).status_code == 200
     assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_aurora"}).status_code == 409  # not owned
-    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "fern"}).status_code == 422  # plants aren't equipped
+    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "fern"}).status_code == 409  # not owned
     p = profile(c)
     assert p["equipped_finish"] == "finish_gold" and p["title"] == "Loam Sage" and p["level_title"] == "Scrap Saver"
 

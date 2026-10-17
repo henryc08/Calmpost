@@ -126,7 +126,7 @@ Why this design:
 Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Layers), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
 
 ### 2.6 Game & economy
-Streak calendar, daily quests, XP and levels, **Loam** currency, **crates** from achievements, **Seed Packet** gacha for cosmetic collectibles, weekly leagues and friends. All numbers are in §8.
+Streak calendar, daily quests, XP and levels, **Loam** currency, **crates** from achievements, **Seed Packet** gacha for plants with equippable buffs plus cosmetic finishes/titles, weekly leagues and friends. Tap the Home level ring to open the **growth trail** and claim rewards for each reached level. All numbers are in §8.
 **Core loop:** open → check health → do the next best action → streak day fills in → quests pay XP + Loam → achievements drop crates → crates and Loam open Seed Packets → collection grows → league rank moves.
 
 ### 2.7 Notifications
@@ -482,7 +482,7 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 | Streak | consecutive days with ≥ 1 care action (open Layers, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
 | Lid Lock | streak freeze; covers one missed day; hold max 2; 60 Loam |
 | Daily quests | "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
-| Levels | level n needs 30·n·(n−1) XP; titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
+| Levels | 50 levels; **every level-up costs 120 XP**, including 1→2 and 10→11. Level n needs `120·(n−1)` lifetime XP. Existing XP, claimed rewards and collections are retained; displayed levels are recalculated from this flat curve. Titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
 | Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia; top 7 up, bottom 5 down; XP from confirmed compostable volume and care |
 | Friends | leaderboard, co-op friend quests, nudges |
 | Impact | kg kept from landfill, CO₂e avoided (0.55 kg per kg), $ fertilizer saved; labelled as estimates; on Profile |
@@ -525,8 +525,25 @@ Today's XP (from any source, including compostable volume) fills a track with th
 | Good Neighbour | 1 / 5 / 20 friend quests | Sprout / Grove / Canopy |
 | Collector | 10 / 30 / all collectibles | Sprout / Grove / Canopy |
 
+### Level map and seed buffs
+- Tap the Home level ring to open the growth trail: five chapters of ten levels, current progress, locked/reached/claimed rewards, and the active seed. Every reached level can be claimed once, including level 1 and previously reached levels.
+- Level n grants **20 + 5·(n−1) Loam**. Every third level also grants one Seed Packet; every fifth grants a Sprout crate (Grove instead on multiples of ten). Guaranteed plants: **Sprout at 1**, **Clover at 5**, **Wild Bloom at 10**. Level rewards never grant XP. Seed unlocks preserve existing copies.
+- **One active owned plant, 24 distinct buff profiles.** Commons grant only +1 XP or Loam on a specific activity. Uncommons grant small dual perks or 10–20% quest bonuses; rares grant broader 20–35% specialties; epics grant 40–50% quest specialties plus care perks; legendaries grant dual quest bonuses with a 60% primary focus. See the examples below; the complete per-seed mapping is in `domain/progression.dart`.
+- Flat common bonuses avoid rounding tiny percentages to zero. Percentage bonuses round down **per award**. Care bonuses still share the 60 XP action cap; quest rewards are separate. Volume XP, sensor health, safety verdicts, harvests and other payouts are unchanged. Activating another plant replaces the effects; duplicates never stack. Effects apply to future payouts (quests use the active seed at claim time), not old ledger rows. Quest-specific effects use the server's quest key, never client-supplied reward amounts.
+- The mapping and pure rules live in `domain/progression.dart`, mirrored in `backend/app/rules/progression.py`. Live rewards use the server ledger and player lock, not client multipliers. `POST /users/{id}/levels/{level}/claim` checks earned levels and uses idempotent receipts; `/equip` now also accepts owned specimens. Migration `096_progression.sql` adds nullable `equipped_seed` without rewriting balances. Deploy the backend migration before the new app.
+- Seed unlocks/reveals and collection details show curated, offline **field notes** from [US EPA: Composting at Home](https://www.epa.gov/recycle/composting-home), plus a practical action and copyable source link. These are general environmental lessons, not species-specific growing advice. Fantasy plants and game-only buffs are labelled explicitly. No Gemini call is required.
+
+| Rarity | Example seed | Active effects |
+|---|---|---|
+| Common | Sprout · First steps | +1 XP on the layers quest only |
+| Uncommon | Lotus · Still water | +20% XP and Loam on the healthy-layers quest only |
+| Rare | Oak · Deep roots | +25% XP on all daily quests |
+| Epic | Ember Fern · Kindled growth | +50% XP and +40% Loam on the next-action quest; +5 XP for following advice (action cap applies) |
+| Legendary | Ghost Orchid · Hidden riches | +25% XP and +60% Loam on all daily quests |
+| Legendary | Golden Sprout · Golden age | +60% XP and +25% Loam on all daily quests |
+
 ### Seed Packets (gacha, in the Greenhouse)
-Cosmetic only. The catalog is `data/collectibles.dart` (40 items), and the rules are in `domain/gacha.dart` (pure, unit-tested):
+Plants have equippable buffs; finishes and titles stay cosmetic. The catalog is `data/collectibles.dart` (40 items), and the rules are in `domain/gacha.dart` (pure, unit-tested):
 - **24 specimens** (plants: Fern … Ghost Orchid, Golden Sprout) for the collection.
 - **10 bin finishes**: equipping one recolours the health ring and marker on the Home band (Classic white, Mint, Sky, Blossom, Copper, Aurora, Gold…).
 - **6 titles**: equipping one replaces the level title in the HUD and on Profile (Early Riser, Night Composter, Worm Whisperer, Keeper of Balance, Mycelium Mind, Loam Sage).
@@ -548,7 +565,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 ## 9. Mock data & demo
 
 - **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
-- **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
+- **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, 2340 XP (Level 20 on the flat curve), no active seed until chosen.
 - **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
 - **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull), `?source=mock|live`, `?drop=banana|check|mixed|unclear|nothing` (opens the drop-in with that fake detection).
 

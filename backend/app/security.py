@@ -78,6 +78,7 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
                     "/users/{user_id}/collection", "/users/{user_id}/daily-goal",
                     "/quests/today", "/leagues/current"}
         writable = {"/bins/{bin_id}/advice/check", "/bins/{bin_id}/chat",
+                    "/users/{user_id}/levels/{level}/claim",
                     "/quests/{key}/claim", "/users/{user_id}/daily-goal/{index}/claim",
                     "/users/{user_id}/crates/{crate_id}/open", "/users/{user_id}/gacha/pull",
                     "/users/{user_id}/equip", "/users/{user_id}/lid-locks/buy"}

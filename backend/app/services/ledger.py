@@ -10,7 +10,7 @@ from datetime import date, datetime, time, timezone
 import asyncpg
 
 from .. import db
-from ..rules import game
+from ..rules import game, progression
 
 
 async def award(
@@ -37,7 +37,7 @@ async def award(
             return await award(conn, user_id, kind, bin_id=bin_id, xp=xp, loam=loam,
                                dedupe_key=dedupe_key, meta=meta, at=at)
     await ensure_user(conn, user_id)
-    await conn.fetchval("SELECT user_id FROM user_state WHERE user_id = $1 FOR UPDATE", user_id)
+    seed = await conn.fetchval("SELECT equipped_seed FROM user_state WHERE user_id = $1 FOR UPDATE", user_id)
     xp = game.XP.get(kind, 0) if xp is None else xp
 
     if dedupe_key is not None:
@@ -46,6 +46,16 @@ async def award(
         )
         if existing is not None:
             return 0
+
+    # Resolve the single owned seed under the same lock as awards/equipping.
+    if seed and not await conn.fetchval("SELECT 1 FROM collection WHERE user_id=$1 AND collectible_id=$2 AND copies>0", user_id, seed):
+        seed = None
+    base_xp, base_loam = xp, loam
+    quest = (meta or {}).get('quest')
+    xp = progression.seed_xp(xp, kind, seed, quest=quest)
+    loam = progression.seed_loam(loam, kind, seed, quest=quest)
+    if xp != base_xp or loam != base_loam:
+        meta = {**(meta or {}), 'seed': seed, 'base_xp': base_xp, 'base_loam': base_loam}
 
     if xp and kind in game.CAPPED_KINDS:
         earned = await conn.fetchval(

@@ -12,6 +12,7 @@ import '../data/food_catalog.dart';
 import '../domain/gacha.dart';
 import '../domain/models.dart';
 import '../domain/xp_rules.dart';
+import '../domain/progression.dart';
 import 'celebrations.dart';
 import 'providers.dart';
 import 'game_codec.dart';
@@ -40,6 +41,8 @@ class GameState {
     required this.pity,
     required this.equippedFinish,
     this.equippedTitle,
+    this.equippedSeed,
+    this.levelClaimed = const {},
     required this.dailyClaimed,
     required this.harvests,
     required this.kgDiverted,
@@ -85,6 +88,10 @@ class GameState {
   final PityState pity;
   final String equippedFinish;
   final String? equippedTitle;
+  final String? equippedSeed;
+  final Set<int> levelClaimed;
+  String? get activeSeed => (owned[equippedSeed] ?? 0) > 0 ? equippedSeed : null;
+  int get levelRewardsReady => level - levelClaimed.where((n) => n <= level).length;
 
   int get collected => owned.values.where((n) => n > 0).length;
   Color get ringColor => collectibleById[equippedFinish]?.color ?? const Color(0xFFFFFFFF);
@@ -128,6 +135,8 @@ class GameState {
     PityState? pity,
     String? equippedFinish,
     String? equippedTitle,
+    String? equippedSeed,
+    Set<int>? levelClaimed,
     Set<int>? dailyClaimed,
     int? harvests,
     double? kgDiverted,
@@ -159,6 +168,8 @@ class GameState {
     pity: pity ?? this.pity,
     equippedFinish: equippedFinish ?? this.equippedFinish,
     equippedTitle: equippedTitle ?? this.equippedTitle,
+    equippedSeed: equippedSeed ?? this.equippedSeed,
+    levelClaimed: levelClaimed ?? this.levelClaimed,
     dailyClaimed: dailyClaimed ?? this.dailyClaimed,
     harvests: harvests ?? this.harvests,
     kgDiverted: kgDiverted ?? this.kgDiverted,
@@ -456,6 +467,22 @@ class GameController extends Notifier<GameState> {
   }
 
   Future<bool> buyLidLockAsync() async => isLive ? await _remote('lid-lock') != null : buyLidLock();
+  Future<bool> claimLevelAsync(int level) async {
+    if (isLive) return await _remote('level', {'level': level}) != null;
+    if (level < 1 || level > state.level || state.levelClaimed.contains(level)) return false;
+    final reward = rewardForLevel(level);
+    final owned = {...state.owned};
+    if (reward.seed != null) owned[reward.seed!] = math.max(1, owned[reward.seed!] ?? 0);
+    state = state.copyWith(
+      levelClaimed: {...state.levelClaimed, level},
+      loam: state.loam + reward.loam,
+      packets: state.packets + reward.packets,
+      crates: [...state.crates, if (reward.crate != null) reward.crate!],
+      owned: owned,
+    );
+    return true;
+  }
+
   Future<bool> equipAsync(Collectible c) async {
     if (isLive) return await _remote('equip', {'collectible_id': c.id}) != null;
     if ((state.owned[c.id] ?? 0) == 0) return false;
@@ -537,7 +564,7 @@ class GameController extends Notifier<GameState> {
   void _checkIn() {
     final quest = state.quests.firstWhere((q) => q.id == 'checkin');
     if (quest.done) return;
-    final xp = xpForAction(base: Xp.checkIn, earnedToday: state.actionXpToday);
+    final xp = xpForAction(base: seedXp(Xp.checkIn, 'check_in', state.activeSeed), earnedToday: state.actionXpToday);
     state = state.copyWith(actionXpToday: state.actionXpToday + xp);
     _progressQuest('checkin', 1);
     _addXp(xp);
@@ -553,7 +580,10 @@ class GameController extends Notifier<GameState> {
     final followed = added && advice.verdict != Verdict.avoid && suggestedIds.contains(advice.item.id);
     final keptOut = !added && advice.verdict == Verdict.avoid;
     final grams = added && advice.item.category != FoodCategory.avoid ? (quantityG ?? advice.item.grams).clamp(0, 5000).toDouble() : 0.0;
-    final base = volumeXp(grams, alreadyLogged: state.volumeGramsToday) + (followed ? Xp.followedSuggestion : (keptOut ? Xp.avoidedBadAdd : 0));
+    final care = followed
+        ? seedXp(Xp.followedSuggestion, 'followed_suggestion', state.activeSeed)
+        : (keptOut ? seedXp(Xp.avoidedBadAdd, 'avoided_bad_add', state.activeSeed) : 0);
+    final base = volumeXp(grams, alreadyLogged: state.volumeGramsToday) + care;
     final xp = xpForAction(base: base, earnedToday: state.actionXpToday);
     final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added, quantityG: quantityG ?? advice.item.grams);
     state = state.copyWith(
@@ -589,10 +619,13 @@ class GameController extends Notifier<GameState> {
     final q = state.quests.firstWhere((q) => q.id == id);
     if (!q.done || q.claimed) return;
     final quests = [for (final x in state.quests) x.id == id ? x.copyWith(claimed: true) : x];
-    state = state.copyWith(quests: quests, loam: state.loam + q.loam, questsClaimedAllTime: state.questsClaimedAllTime + 1);
-    _party.push(QuestCelebration(q, allDone: quests.every((x) => x.claimed)));
-    _toast.show('Quest done · +${q.loam} Loam', xp: q.xp);
-    _addXp(q.xp);
+    final xp = seedXp(q.xp, 'daily_quest', state.activeSeed, quest: q.id);
+    final loam = seedLoam(q.loam, 'daily_quest', state.activeSeed, quest: q.id);
+    state = state.copyWith(quests: quests, loam: state.loam + loam, questsClaimedAllTime: state.questsClaimedAllTime + 1);
+    final paid = Quest(id: q.id, title: q.title, icon: q.icon, goal: q.goal, xp: xp, loam: loam, progress: q.progress, claimed: true, unit: q.unit);
+    _party.push(QuestCelebration(paid, allDone: quests.every((x) => x.claimed)));
+    _toast.show('Quest done · +$loam Loam', xp: xp);
+    _addXp(xp);
   }
 
   void harvest() => _act(_harvest);
@@ -676,7 +709,7 @@ class GameController extends Notifier<GameState> {
       case CollectibleType.title:
         state = state.copyWith(equippedTitle: c.id);
       case CollectibleType.specimen:
-        break;
+        state = state.copyWith(equippedSeed: c.id);
     }
   }
 

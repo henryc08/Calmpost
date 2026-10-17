@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../domain/models.dart';
+import '../../domain/progression.dart';
 import '../../state/game.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
@@ -42,6 +43,7 @@ class _QuestRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final claimable = q.done && !q.claimed;
+    final seed = ref.watch(gameProvider.select((g) => g.activeSeed));
     final progress = q.unit.isEmpty ? '${q.progress.floor()}/${q.goal.floor()}' : '${q.progress.toStringAsFixed(1)}/${q.goal.floor()} ${q.unit}';
 
     return Padding(
@@ -96,17 +98,25 @@ class _QuestRow extends ConsumerWidget {
                 fit: BoxFit.scaleDown,
                 child: claimable
                     ? PillButton(label: 'Claim', dense: true, onTap: () => ref.read(gameProvider.notifier).claimQuestAsync(q.id))
+                    : q.claimed
+                    ? Text('Claimed', style: T.small)
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text('+${q.xp} XP', style: T.num.copyWith(fontSize: 12, color: q.claimed ? C.faint : C.ink2)),
+                          Text(
+                            '+${seedXp(q.xp, 'daily_quest', seed, quest: q.id)} XP',
+                            style: T.num.copyWith(fontSize: 12, color: q.claimed ? C.faint : C.ink2),
+                          ),
                           const SizedBox(height: 3),
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const LoamCoin(size: 12),
                               const SizedBox(width: 3),
-                              Text('${q.loam}', style: T.num.copyWith(fontSize: 12, color: q.claimed ? C.faint : C.loam)),
+                              Text(
+                                '${seedLoam(q.loam, 'daily_quest', seed, quest: q.id)}',
+                                style: T.num.copyWith(fontSize: 12, color: q.claimed ? C.faint : C.loam),
+                              ),
                             ],
                           ),
                         ],

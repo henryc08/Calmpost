@@ -1,6 +1,7 @@
 """Seed Packet gacha rules. No I/O. Mirrors app/lib/domain/gacha.dart.
 
-Cosmetic only: a collectible never changes XP, health or league standing.
+Plants can equip progression buffs; finishes and titles stay cosmetic.
+No collectible changes measured health or compost safety advice.
 """
 
 import random

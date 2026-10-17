@@ -349,6 +349,28 @@ python -m pytest                      # from backend/
 
 The hypertables, aggregates and policies themselves only run on Tiger Cloud. `scripts/smoke_test.py` against the real database is the final check. More detail in [TESTING.md](TESTING.md).
 
+## Level rewards and active seeds
+
+Apply the normal startup migrations before updating the app: `096_progression.sql`
+adds `user_state.equipped_seed` and preserves existing XP/collections. Levels now
+cost a flat **120 XP per level-up**, up to level 50; prior balances and reward
+receipts are not rewritten. Displayed levels are recalculated. The game
+response includes `level_claimed` and `equipped_seed`.
+
+`POST /users/{id}/levels/{level}/claim` grants a reached level's reward once;
+identical retries report `duplicate: true` without paying again. Level 1 includes
+a guaranteed Sprout. `/users/{id}/equip` accepts an owned plant as the single
+active seed, in addition to independent finish/title slots. See AGENTS §8 for
+the reward schedule and rarity-scaled, per-seed buffs. Commons add just one
+point to a specific activity; rarer seeds offer stronger specialties, up to
+60% quest XP or Loam plus a secondary 25% bonus for legendaries. Quest-specific
+effects use the quest key recorded by `claim_quest`, not client reward amounts.
+Flat bonuses preserve tiny common effects; percentage bonuses round down per
+award. Duplicate copies never stack. Buffs are applied in
+the ledger under the player lock, before the unchanged action cap; they never
+modify volume XP, bin readings or safety advice. They apply only to future
+eligible awards, never retroactively.
+
 ## The USB bridge
 
 The board prints JSON over USB serial and doesn't use Wi-Fi, so the bridge is the ingest path. **Three processes run together:** the API, the bridge, and (optionally) the watcher. See TESTING.md. Running only the watcher is the usual reason nothing seems to happen.

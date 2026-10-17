@@ -7,6 +7,7 @@ import '../../app/toast.dart';
 import '../../data/collectibles.dart';
 import '../../domain/gacha.dart';
 import '../../domain/models.dart';
+import '../../domain/progression.dart';
 import '../../state/game.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
@@ -14,6 +15,7 @@ import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'collectible_art.dart';
 import 'pull_reveal.dart';
+import 'collectible_details.dart';
 
 /// The Greenhouse: spend Loam on Seed Packets (the gacha), see what Loam is
 /// for, browse and equip your collection.
@@ -111,6 +113,18 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
           ],
         ),
         children: [
+          const SectionLabel('ACTIVE SEED'),
+          const SizedBox(height: S.x3),
+          Text(
+            g.activeSeed == null ? 'No seed active yet' : '${collectibleById[g.activeSeed]!.name} · ${buffLabel(seedBuffs[g.activeSeed]!)}',
+            style: T.heading,
+          ),
+          const SizedBox(height: S.x2),
+          Text(
+            'Tap an owned plant to activate its buff and read its field note. Rarer seeds have stronger, specialized buffs. Only one is active; duplicates never stack.',
+            style: T.small,
+          ),
+          const SectionBreak(),
           const _WhatLoamIsFor(),
           const SectionBreak(),
           SectionLabel('COLLECTION', trailing: Text('${g.collected} / ${collectibles.length}', style: T.num.copyWith(fontSize: 13))),
@@ -141,72 +155,14 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
                 _CollectionTile(
                   item: c,
                   count: g.owned[c.id] ?? 0,
-                  equipped: c.id == g.equippedFinish || c.id == g.equippedTitle,
-                  onTap: (g.owned[c.id] ?? 0) > 0 ? () => _details(c) : null,
+                  equipped: c.id == g.equippedFinish || c.id == g.equippedTitle || c.id == g.activeSeed,
+                  onTap: (g.owned[c.id] ?? 0) > 0 ? () => showCollectibleDetails(context, c) : null,
                 ),
             ],
           ),
           const SectionBreak(),
           const _OddsTable(),
         ].animate(interval: M.stagger).fadeIn(duration: 320.ms, curve: M.ease),
-      ),
-    );
-  }
-
-  void _details(Collectible c) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: C.paper,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(R.hero))),
-      builder: (context) => Consumer(
-        builder: (context, ref, _) {
-          final g = ref.watch(gameProvider);
-          final equipped = c.id == g.equippedFinish || c.id == g.equippedTitle;
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(S.gutter, S.x6, S.gutter, S.x4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CollectibleBadge(item: c, size: 110),
-                  const SizedBox(height: S.x4),
-                  Text(c.name, style: T.title.copyWith(fontSize: 26)),
-                  const SizedBox(height: S.x2),
-                  RarityPill(c.rarity),
-                  const SizedBox(height: S.x3),
-                  Text(
-                    switch (c.type) {
-                      CollectibleType.specimen => c.blurb,
-                      CollectibleType.finish => '${c.blurb} Equip it to recolour the health ring on Home.',
-                      CollectibleType.title => 'Shown under your name on Home, Profile and in the league.',
-                    },
-                    textAlign: TextAlign.center,
-                    style: T.body,
-                  ),
-                  const SizedBox(height: S.x2),
-                  Text('Owned ×${g.owned[c.id] ?? 0}', style: T.small),
-                  if (c.type != CollectibleType.specimen) ...[
-                    const SizedBox(height: S.x5),
-                    SizedBox(
-                      width: double.infinity,
-                      child: PillButton(
-                        label: equipped ? 'Equipped' : 'Equip',
-                        onTap: equipped
-                            ? null
-                            : () async {
-                                final saved = await ref.read(gameProvider.notifier).equipAsync(c);
-                                if (!saved || !context.mounted) return;
-                                showToast(ref, '${c.name} equipped');
-                                Navigator.of(context).pop();
-                              },
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        },
       ),
     );
   }

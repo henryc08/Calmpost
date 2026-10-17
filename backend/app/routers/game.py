@@ -96,6 +96,9 @@ async def profile(user_id: str) -> GameResponse:
         packets=st["packets"],
         equipped_finish=st["equipped_finish"],
         equipped_title=equipped_title,
+        equipped_seed=st['equipped_seed'],
+        level_claimed=[int(r['dedupe_key'].split(':')[1]) for r in await db.fetch(
+            "SELECT dedupe_key FROM point_events WHERE user_id=$1 AND kind='level_reward'", user_id)],
         collected=collected or 0,
         collection_total=len(COLLECTIBLES),
         impact=ImpactStats(**game.impact(grams or 0)),

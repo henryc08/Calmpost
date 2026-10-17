@@ -69,9 +69,12 @@ _TITLES = (
 )
 
 
+XP_PER_LEVEL = 120
+
+
 def xp_for_level(n: int) -> int:
-    """Level n needs 30*n*(n-1) lifetime XP (xpForLevel)."""
-    return 60 * (n - 1) * n // 2
+    """Every step costs the same amount; lifetime XP is preserved."""
+    return XP_PER_LEVEL * (n - 1)
 
 
 def level_for_xp(xp: int) -> int:

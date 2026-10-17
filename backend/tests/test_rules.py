@@ -62,7 +62,7 @@ def test_daily_action_cap():
 
 def test_levels_and_titles_match_the_app():
     assert game.level_for_xp(0) == 1
-    assert game.level_for_xp(2340) == 9
+    assert game.level_for_xp(2340) == 20  # lifetime XP retained, flat 120 XP per step
     assert game.title_for_level(9) == "Soil Whisperer"
 
 
@@ -131,4 +131,4 @@ def test_statement_splitter_handles_quotes_and_do_blocks():
 def test_schema_files_apply_in_order():
     names = [p.name for p in db.schema_files()]
     assert names == sorted(names)
-    assert names[0].startswith("000_") and names[-1].startswith("095_")
+    assert names[0].startswith("000_") and names[-1].startswith("096_")

@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 import '../features/drop/drop_sheet.dart';
 import '../features/greenhouse/greenhouse_screen.dart';
 import '../features/social/social_screen.dart';
+import '../features/levels/level_map.dart';
+import '../features/greenhouse/collectible_details.dart';
+import '../data/collectibles.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  static Future<void> levels(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LevelMapScreen()));
+  static Future<void> seed(BuildContext context, String id) => showCollectibleDetails(context, collectibleById[id]!);
+
   /// Camera drop-in: arm the camera, then review what it saw.
   static Future<void> drop(BuildContext context) => showDropSheet(context);
 

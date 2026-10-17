@@ -43,17 +43,24 @@ class HomeScreen extends ConsumerWidget {
     if (health == null) {
       final account = ref.watch(socialSessionProvider).valueOrNull;
       if (account != null && account.binId == null && ref.watch(dataSourceProvider) == DataSource.live) {
-        return SafeArea(child: Padding(padding: const EdgeInsets.all(S.gutter), child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Connect your bin', style: T.title),
-            const SizedBox(height: S.x3),
-            Text('Your account rewards are saved. Pair the bin in Social to see readings and log compost.', style: T.body),
-            const SizedBox(height: S.x5),
-            PillButton(label: 'Open Social', onTap: () => goTo(AppTab.social)),
-          ],
-        )));
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(S.gutter),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Connect your bin', style: T.title),
+                const SizedBox(height: S.x3),
+                Text('Your account rewards are saved. Pair the bin in Social to see readings and log compost.', style: T.body),
+                const SizedBox(height: S.x5),
+                PillButton(label: 'Open Social', onTap: () => goTo(AppTab.social)),
+                const SizedBox(height: S.x3),
+                PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
+              ],
+            ),
+          ),
+        );
       }
       final bin = ref.watch(binProvider);
       if (bin.hasError) return _Offline(onUseDemo: () => ref.read(dataSourceProvider.notifier).state = DataSource.mock);
@@ -156,18 +163,26 @@ class _Hud extends ConsumerWidget {
     final level = game.level;
     final from = xpForLevel(level);
     final to = xpForLevel(level + 1);
-    final xp01 = (game.totalXp - from) / (to - from);
+    final xp01 = level == 50 ? 1.0 : (game.totalXp - from) / (to - from);
     final inbox = game.crates.length + game.packets;
 
     return Row(
       children: [
-        SizedBox(
-          width: 34,
-          height: 34,
-          child: CustomPaint(
-            painter: _LevelRing(xp01),
-            child: Center(
-              child: Text('$level', style: T.num.copyWith(fontSize: 13, color: C.onBrand)),
+        Semantics(
+          label: 'Open level map',
+          button: true,
+          child: Pressable(
+            key: const ValueKey('open-level-map'),
+            onTap: () => Routes.levels(context),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: CustomPaint(
+                painter: _LevelRing(xp01),
+                child: Center(
+                  child: Text('$level', style: T.num.copyWith(fontSize: 13, color: C.onBrand)),
+                ),
+              ),
             ),
           ),
         ),
@@ -186,6 +201,13 @@ class _Hud extends ConsumerWidget {
               SizedBox(
                 width: 90,
                 child: ThinBar(value: xp01, color: C.onBrand, track: C.onBrand.withValues(alpha: 0.28), height: 3),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                level == 50 ? 'Max level · view rewards' : '${to - game.totalXp} XP to grow',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: T.small.copyWith(fontSize: 10, color: C.onBrand),
               ),
             ],
           ),
@@ -401,6 +423,8 @@ class _Offline extends StatelessWidget {
             Text('Check that the API is running on the laptop and that the phone is on the same network. Still trying every few seconds.', style: T.body),
             const SizedBox(height: S.x5),
             PillButton(label: 'Use demo data', onTap: onUseDemo),
+            const SizedBox(height: S.x3),
+            PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
           ],
         ),
       ),

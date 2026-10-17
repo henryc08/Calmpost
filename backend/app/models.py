@@ -314,6 +314,8 @@ class GameResponse(BaseModel):
     packets: int
     equipped_finish: str
     equipped_title: str | None = None
+    equipped_seed: str | None = None
+    level_claimed: list[int] = Field(default_factory=list)
     collected: int
     collection_total: int
     impact: ImpactStats

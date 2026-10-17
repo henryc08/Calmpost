@@ -47,11 +47,12 @@ void main() {
               'best_streak': 0, 'care_days': [], 'lock_days': [], 'achievements': [],
               'daily_goal': {'xp_today': 12, 'goals': []}, 'packets': 0,
               'impact': {'kg_diverted': .25}, 'grams_today': 250,
+              'equipped_seed': 'sprout', 'level_claimed': [1],
             };
           case '/users/player_test/rewards':
             response = {'crates': []};
           case '/users/player_test/collection':
-            response = {'items': [], 'pity': {'since_epic': 0, 'since_legendary': 0}};
+            response = {'items': [{'id': 'sprout', 'copies': 1}], 'pity': {'since_epic': 0, 'since_legendary': 0}};
           case '/quests/today':
             response = {'quests': []};
           case '/bins/bin-001/logs':
@@ -60,6 +61,8 @@ void main() {
             return http.Response('{}', 404);
           case '/social/check-in':
             response = {'xp_awarded': 5};
+          case '/users/player_test/levels/1/claim':
+            response = {'duplicate': true};
           default:
             throw StateError('Unexpected request ${r.url.path}');
         }
@@ -80,6 +83,10 @@ void main() {
     expect(loaded.totalXp, 12);
     expect(loaded.kgDiverted, .25);
     expect(loaded.loam, 0);
+    expect(loaded.activeSeed, 'sprout');
+    expect(loaded.levelClaimed, {1});
+    await repo.gameAction('level', {'level': 1});
+    expect(paths, contains('/users/player_test/levels/1/claim'));
     await repo.gameAction('check-in', {});
     expect(paths, contains('/social/check-in'));
     expect(paths, isNot(contains('/users/player_test/check-in')));

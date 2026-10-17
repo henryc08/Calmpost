@@ -72,7 +72,9 @@ const streakMilestones = [3, 7, 14, 30, 50, 100, 365];
 
 bool isStreakMilestone(int days) => streakMilestones.contains(days);
 
-/// Level n needs 60·n·(n+1)/2 lifetime XP.
+/// Every step costs the same amount. Existing lifetime XP is preserved.
+const xpPerLevel = 120;
+
 int levelForXp(int xp) {
   var n = 1;
   while (xpForLevel(n + 1) <= xp && n < 50) {
@@ -81,7 +83,7 @@ int levelForXp(int xp) {
   return n;
 }
 
-int xpForLevel(int n) => 60 * (n - 1) * n ~/ 2;
+int xpForLevel(int n) => xpPerLevel * (n - 1);
 
 const _titles = [
   (1, 'Scrap Saver'),

@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from .. import db
 from ..catalog.collectibles import BY_ID as COLLECTIBLES_BY_ID
 from ..catalog.collectibles import COLLECTIBLES
-from ..rules import game, gacha
+from ..rules import game, gacha, progression
 from . import binstate, ledger
 
 _rng = random.SystemRandom()
@@ -68,15 +68,40 @@ async def claim_quest(user_id: str, key: str) -> dict:
     progress = (await quest_progress(user_id))[key]
     if progress < q["goal"]:
         raise HTTPException(409, "quest is not complete yet")
+    claim_key = f"quest:{key}:{date.today().isoformat()}"
     async with db.pool().acquire() as conn, conn.transaction():
         await ledger.ensure_user(conn, user_id)
         xp = await ledger.award(
             conn, user_id, "daily_quest", xp=q["xp"], loam=q["loam"],
-            dedupe_key=f"quest:{key}:{date.today().isoformat()}", meta={"quest": key},
+            dedupe_key=claim_key, meta={"quest": key},
         )
     if xp == 0:
         raise HTTPException(409, "quest already claimed today")
-    return {"quest": key, "xp_awarded": q["xp"], "loam_awarded": q["loam"]}
+    paid_loam = await db.fetchval("SELECT loam FROM point_events WHERE user_id=$1 AND dedupe_key=$2", user_id, claim_key)
+    return {"quest": key, "xp_awarded": xp, "loam_awarded": paid_loam}
+
+
+async def claim_level(user_id: str, level: int) -> dict:
+    if not 1 <= level <= progression.MAX_LEVEL:
+        raise HTTPException(404, "unknown level")
+    reward = progression.level_reward(level)
+    key = f"level:{level}"
+    async with db.pool().acquire() as conn, conn.transaction():
+        await ledger.ensure_user(conn, user_id)
+        await conn.fetchval("SELECT user_id FROM user_state WHERE user_id=$1 FOR UPDATE", user_id)
+        xp, _ = await ledger.balances(user_id, conn)
+        if game.level_for_xp(xp) < level:
+            raise HTTPException(409, "reach this level first")
+        if await conn.fetchval("SELECT 1 FROM point_events WHERE user_id=$1 AND dedupe_key=$2", user_id, key):
+            return {"level": level, **reward, "duplicate": True}
+        await ledger.award(conn, user_id, "level_reward", xp=0, loam=reward['loam'], dedupe_key=key)
+        await conn.execute("UPDATE user_state SET packets=packets+$2 WHERE user_id=$1", user_id, reward['packets'])
+        if reward['crate']:
+            await grant_crate(conn, user_id, reward['crate'], 'level_reward', key)
+        if reward['seed']:
+            # Guaranteed unlock, not a random pull; never reduces existing copies.
+            await conn.execute("INSERT INTO collection(user_id,collectible_id) VALUES($1,$2) ON CONFLICT(user_id,collectible_id) DO UPDATE SET copies=greatest(collection.copies,1)", user_id, reward['seed'])
+    return {"level": level, **reward, "duplicate": False}
 
 
 # --- daily goal ----------------------------------------------------------------
@@ -352,12 +377,10 @@ async def equip(user_id: str, collectible_id: str) -> dict:
     c = COLLECTIBLES_BY_ID.get(collectible_id)
     if c is None:
         raise HTTPException(404, "unknown collectible")
-    if c["type"] == "specimen":
-        raise HTTPException(422, "plants are collected, not equipped")
     copies = await db.fetchval("SELECT copies FROM collection WHERE user_id = $1 AND collectible_id = $2", user_id, collectible_id)
     if not copies:
         raise HTTPException(409, "you don't own that yet")
-    column = "equipped_finish" if c["type"] == "finish" else "equipped_title"
+    column = {"finish": "equipped_finish", "title": "equipped_title", "specimen": "equipped_seed"}[c['type']]
     await db.execute(f"UPDATE user_state SET {column} = $2 WHERE user_id = $1", user_id, collectible_id)
     return {"equipped": collectible_id, "type": c["type"]}
 

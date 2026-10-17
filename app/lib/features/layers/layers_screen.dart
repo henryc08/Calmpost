@@ -13,6 +13,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Live readings per zone, a 24 h chart with the healthy band, and what it means.
 class LayersScreen extends ConsumerStatefulWidget {
@@ -104,6 +105,7 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
         ],
         SectionLabel(
           'LAST 24 HOURS',
+          info: InfoTip.chart,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

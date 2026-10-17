@@ -2,12 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'state/game.dart';
 
 import 'app/shell.dart';
 import 'ui/theme.dart';
 import 'ui/tokens.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
@@ -18,7 +20,8 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const ProviderScope(child: CalmpostApp()));
+  final storage = await SharedPreferences.getInstance();
+  runApp(ProviderScope(overrides: [gameStorageProvider.overrideWithValue(storage)], child: const CalmpostApp()));
 }
 
 class CalmpostApp extends StatelessWidget {

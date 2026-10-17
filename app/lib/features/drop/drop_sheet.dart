@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/toast.dart';
 import '../../data/food_catalog.dart';
+import '../../data/calmpost_repository.dart';
 import '../../domain/drop.dart';
 import '../../domain/models.dart';
 import '../../state/game.dart';
@@ -53,10 +54,12 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   bool _saving = false;
   StreamSubscription<DropEvent>? _sub;
   Timer? _tick;
+  late CalmpostRepository _repo;
 
   @override
   void initState() {
     super.initState();
+    _repo = ref.read(repositoryProvider);
     _arm();
   }
 
@@ -64,6 +67,10 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   void dispose() {
     _sub?.cancel();
     _tick?.cancel();
+    final session = _session;
+    if (session != null && (_phase == _Phase.watching || _phase == _Phase.arming)) {
+      unawaited(_repo.cancelDropSession(session).catchError((_) {}));
+    }
     super.dispose();
   }
 
@@ -73,20 +80,31 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     setState(() => _phase = _Phase.arming);
     final repo = ref.read(repositoryProvider);
     try {
-      final session = await repo.startDropSession();
+      final pending = await repo.pendingDrop();
       if (!mounted) return;
+      if (pending != null) {
+        _review(pending);
+        return;
+      }
+      final session = await repo.startDropSession();
+      if (!mounted) {
+        await repo.cancelDropSession(session);
+        return;
+      }
       setState(() {
         _session = session;
         _phase = _Phase.watching;
       });
       _tick = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
-      _sub = repo.watchDrop(session).listen(
-        (e) => switch (e) {
-          DropSeen(:final drop) => _review(drop),
-          DropNothing() => _end(_Phase.nothing),
-        },
-        onError: (_) => _end(_Phase.failed),
-      );
+      _sub = repo
+          .watchDrop(session)
+          .listen(
+            (e) => switch (e) {
+              DropSeen(:final drop) => _review(drop),
+              DropNothing() => _end(_Phase.nothing),
+            },
+            onError: (_) => _end(_Phase.failed),
+          );
     } catch (_) {
       if (mounted) setState(() => _phase = _Phase.failed);
     }
@@ -109,17 +127,30 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     final drop = _drop!;
     setState(() => _saving = true);
     final tips = ref.read(suggestionProvider)?.add.map((f) => f.id).toSet() ?? const <String>{};
     try {
-      final verdicts = await ref.read(repositoryProvider).confirmDrop(drop, _lines, advisedIds: tips);
-      final outcomes = ref.read(gameProvider.notifier).recordDrop(verdicts, added: [for (final l in _lines) !l.removed], suggestedIds: tips);
+      final game = ref.read(gameProvider.notifier);
+      final verdicts = await _repo.confirmDrop(drop, _lines, advisedIds: tips);
+      if (!mounted) return;
+      final xp = _repo.serverGame
+          ? verdicts.fold<int>(0, (sum, a) => sum + (a.xpAwarded ?? 0))
+          : game
+                .recordDrop(
+                  verdicts,
+                  added: [for (final l in _lines) !l.removed],
+                  suggestedIds: tips,
+                  quantities: [for (final l in _lines) amountGrams[l.amount]!],
+                )
+                .fold<int>(0, (sum, o) => sum + o.xp);
+      if (_repo.serverGame) await game.refreshLive();
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       setState(() {
         _verdicts = verdicts;
-        _xp = outcomes.fold(0, (sum, o) => sum + o.xp);
+        _xp = xp;
         _saving = false;
         _phase = _Phase.done;
       });
@@ -132,12 +163,17 @@ class _DropSheetState extends ConsumerState<DropSheet> {
 
   Future<void> _dismiss() async {
     final drop = _drop;
-    Navigator.of(context).pop();
-    showToast(ref, 'Got it. Nothing logged.');
-    if (drop != null) {
-      try {
-        await ref.read(repositoryProvider).dismissDrop(drop);
-      } catch (_) {}
+    setState(() => _saving = true);
+    try {
+      if (drop != null) await _repo.dismissDrop(drop);
+      if (!mounted) return;
+      showToast(ref, 'Got it. Nothing logged.');
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showToast(ref, 'Could not dismiss this drop. Please retry.');
+      }
     }
   }
 
@@ -166,7 +202,10 @@ class _DropSheetState extends ConsumerState<DropSheet> {
             duration: M.base,
             curve: M.ease,
             alignment: Alignment.topCenter,
-            child: KeyedSubtree(key: ValueKey(_phase), child: _body().animate().fadeIn(duration: 240.ms, curve: M.ease)),
+            child: KeyedSubtree(
+              key: ValueKey(_phase),
+              child: _body().animate().fadeIn(duration: 240.ms, curve: M.ease),
+            ),
           ),
         ],
       ),
@@ -214,13 +253,15 @@ class _DropSheetState extends ConsumerState<DropSheet> {
           children: [
             const LiveDot(color: C.brand),
             const SizedBox(width: S.x1),
-            Text('CAMERA ON', style: T.caps.copyWith(color: C.brandDeep)),
+            Text('BIN CAMERA REQUESTED', style: T.caps.copyWith(color: C.brandDeep)),
           ],
         ),
         const SizedBox(height: S.x2),
         Text('Watching the bin…', style: T.title),
         const SizedBox(height: S.x1),
-        Text('Drop your scraps in now. You\'ll get to check what it saw before anything is logged.', style: T.body),
+        Text('Place your scraps under the bin camera. You\'ll check the photo and correct any mistakes before saving.', style: T.body),
+        const SizedBox(height: S.x3),
+        Text('Uses the bin’s camera, not your phone camera. Live preview is not available in this build.', style: T.small),
         const SizedBox(height: S.x6),
         Center(
           child: SizedBox(
@@ -228,7 +269,9 @@ class _DropSheetState extends ConsumerState<DropSheet> {
             height: 132,
             child: CustomPaint(
               painter: _Countdown(left / total),
-              child: Center(child: Text('${(left / 1000).ceil()}', style: T.display.copyWith(color: C.ink))),
+              child: Center(
+                child: Text('${(left / 1000).ceil()}', style: T.display.copyWith(color: C.ink)),
+              ),
             ),
           ),
         ),
@@ -250,23 +293,25 @@ class _DropSheetState extends ConsumerState<DropSheet> {
       children: [
         Row(
           children: [
-            Expanded(child: Text('LOGGED', style: T.caps.copyWith(color: C.brandDeep))),
+            Expanded(
+              child: Text('LOGGED', style: T.caps.copyWith(color: C.brandDeep)),
+            ),
             if (_xp > 0) PinkPill('+$_xp XP'),
           ],
         ),
         const SizedBox(height: S.x2),
         Text(_verdicts.length == 1 ? _verdicts.first.headline : 'Here\'s what that does', style: T.title),
         const SizedBox(height: S.x4),
-        for (final (i, a) in _verdicts.indexed) ...[
-          if (i > 0) const Hairline(),
-          _VerdictRow(advice: a, removed: _lines[i].removed),
-        ],
+        for (final (i, a) in _verdicts.indexed) ...[if (i > 0) const Hairline(), _VerdictRow(advice: a, removed: _lines[i].removed)],
         if (fixed) ...[
           const SizedBox(height: S.x4),
           Text('Thanks for the fix. The camera uses corrections like this to get better in your bin.', style: T.small),
         ],
         const SizedBox(height: S.x5),
-        SizedBox(width: double.infinity, child: PillButton(label: 'Done', onTap: () => Navigator.of(context).pop())),
+        SizedBox(
+          width: double.infinity,
+          child: PillButton(label: 'Done', onTap: () => Navigator.of(context).pop()),
+        ),
       ],
     );
   }
@@ -293,7 +338,11 @@ class _DropSheetState extends ConsumerState<DropSheet> {
             borderRadius: BorderRadius.all(Radius.circular(4)),
             child: LinearProgressIndicator(minHeight: 4, color: C.brand, backgroundColor: C.sunk),
           ),
-        if (primary != null) SizedBox(width: double.infinity, child: PillButton(label: primary.$1, onTap: primary.$2)),
+        if (primary != null)
+          SizedBox(
+            width: double.infinity,
+            child: PillButton(label: primary.$1, onTap: primary.$2),
+          ),
         if (secondary != null)
           Center(
             child: TextButton(

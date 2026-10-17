@@ -37,7 +37,11 @@ What comes from the backend:
 - the add log
 - the league table
 
-Suggestions and the catalog use the app's own rules. The game economy (XP, Loam, quests, crates, Seed Packets) still runs on the phone for now.
+Suggestions and the catalog use the app's own rules. Live XP, Loam, quests, crates, Seed Packets, equipment and Lid Locks now use the server economy. Demo progression is separately persisted on-device. Confirmed compostable volume earns 1 XP per 20 g (rounded cumulatively per day), plus care bonuses, within the shared 60 XP daily action cap.
+
+The camera button arms the **bin camera**, not the phone camera. There is no in-app live preview yet. Existing pending drops are recovered, and users correct the item/type/amount before saving. Logging failures remain visible; identical retries do not duplicate saved additions.
+
+These are demo APKs: LAN HTTP, debug release signing and a shared API key are not production security. Validate on a physical Android device before distribution.
 
 Honest about the hardware:
 - **One probe.** The bin has one probe, in the top layer, so the bottom shows **not measured** (never a number) and the health score leaves it out.

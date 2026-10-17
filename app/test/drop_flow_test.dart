@@ -122,7 +122,7 @@ void main() {
     await _tapVisible(tester, _s(find.text('Save')));
     await _settle(tester, 800);
     expect(_s(find.text('KEPT OUT · Meat scraps')), findsOneWidget);
-    expect(c.read(gameProvider).totalXp, before + Xp.avoidedBadAdd);
+    expect(c.read(gameProvider).totalXp, before + Xp.avoidedBadAdd + 12); // 250 g mixed scraps
     expect(c.read(gameProvider).logs.map((l) => l.item.id).take(2).toSet(), {'mixed_scraps', 'meat'});
     await _finish(tester);
   });

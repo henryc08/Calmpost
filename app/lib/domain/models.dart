@@ -14,6 +14,8 @@ enum Verdict { great, careful, avoid }
 
 enum Balance { needsGreens, needsBrowns, balanced }
 
+enum BinNeed { browns, greens, water, mix, nothing }
+
 /// The bin's overall state, driven by the health score and moisture.
 enum BinMood { thriving, healthy, fair, dry, wet, struggling }
 
@@ -35,6 +37,12 @@ class BinSnapshot {
     required this.healthyHoursToday,
     this.bottomMeasured = true,
     this.stale = false,
+    this.topMeasured = true,
+    this.topTemperatureMeasured = true,
+    this.bottomTemperatureMeasured = true,
+    this.airMeasured = true,
+    this.ambientMeasured = true,
+    this.moistureCalibrated = true,
   });
 
   final DateTime time;
@@ -69,6 +77,10 @@ class BinSnapshot {
 
   /// The bin hasn't reported for a while (live data only).
   final bool stale;
+  final bool topMeasured, topTemperatureMeasured, bottomTemperatureMeasured;
+  final bool airMeasured, ambientMeasured, moistureCalibrated;
+
+  bool get readingsStale => stale || DateTime.now().difference(time) > const Duration(minutes: 2);
 
   /// How old the reading is, e.g. "12 min ago" (shown when [stale]).
   String ageLabel(DateTime now) {
@@ -107,21 +119,23 @@ class FoodItem {
 }
 
 class Advice {
-  const Advice({required this.item, required this.verdict, required this.headline, required this.reason, this.pairWith = const []});
+  const Advice({required this.item, required this.verdict, required this.headline, required this.reason, this.pairWith = const [], this.xpAwarded});
   final FoodItem item;
   final Verdict verdict;
   final String headline;
   final String reason;
   final List<FoodItem> pairWith;
+  final int? xpAwarded;
 }
 
 /// What the bin needs right now.
 class Suggestion {
-  const Suggestion({required this.balance, required this.line, required this.add, required this.avoid});
+  const Suggestion({required this.balance, required this.line, required this.add, required this.avoid, this.need = BinNeed.nothing});
   final Balance balance;
   final String line;
   final List<FoodItem> add;
   final List<FoodItem> avoid;
+  final BinNeed need;
 }
 
 class Quest {
@@ -219,7 +233,7 @@ class Achievement {
 }
 
 class LogEntry {
-  const LogEntry({required this.item, required this.verdict, required this.time, required this.xp, required this.added});
+  const LogEntry({required this.item, required this.verdict, required this.time, required this.xp, required this.added, this.quantityG});
   final FoodItem item;
   final Verdict verdict;
   final DateTime time;
@@ -227,6 +241,7 @@ class LogEntry {
 
   /// False when the user checked an item and kept it out.
   final bool added;
+  final double? quantityG;
 }
 
 /// Reward crates, earned from achievements and milestones.

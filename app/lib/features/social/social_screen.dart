@@ -30,8 +30,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> {
   Widget build(BuildContext context) {
     final st = ref.watch(standingsProvider);
     final me = st.members.firstWhere((m) => m.isYou);
-    final now = DateTime.now();
-    final reset = DateTime(now.year, now.month, now.day + (8 - now.weekday));
+    final now = DateTime.now().toUtc();
+    final reset = DateTime.utc(now.year, now.month, now.day + (7 - now.weekday % 7));
     final left = reset.difference(now);
     final next = leagueTiers[(st.tier.index + 1).clamp(0, leagueTiers.length - 1)];
     final toPromo = st.yourRank <= promoteCount ? 0 : st.promotionCutoffXp - me.xp + 1;

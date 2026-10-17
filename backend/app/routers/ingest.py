@@ -91,7 +91,7 @@ async def ingest(
                 payload.co2_status,
             )
             await conn.execute(
-                "UPDATE bins SET last_seen_at = $2 WHERE bin_id = $1", auth_bin_id, ts
+                "UPDATE bins SET last_seen_at = greatest(last_seen_at, $2) WHERE bin_id = $1", auth_bin_id, ts
             )
 
     global _stored

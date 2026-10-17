@@ -180,7 +180,7 @@ class _Hud extends ConsumerWidget {
         Pressable(
           onTap: () async {
             if (game.crates.isNotEmpty) {
-              final o = ref.read(gameProvider.notifier).openCrate(0);
+              final o = await ref.read(gameProvider.notifier).openCrateAsync(0);
               if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
             } else if (game.packets > 0) {
               await Routes.greenhouse(context);
@@ -284,7 +284,10 @@ class _ScoreBlock extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64, color: C.onBrand)),
+            if (health.breakdown.hasMoisture)
+              CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64, color: C.onBrand))
+            else
+              Text('—', style: T.hero.copyWith(fontSize: 64, color: C.onBrand)),
             Padding(
               padding: const EdgeInsets.only(bottom: 9, left: 3),
               child: Text('/100', style: T.label.copyWith(color: C.onBrandMuted)),
@@ -298,10 +301,13 @@ class _ScoreBlock extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: C.onBrand, borderRadius: BorderRadius.circular(R.pill)),
-              child: Text(moodLabel(health.mood).toUpperCase(), style: T.caps.copyWith(color: pillText, fontSize: 10.5)),
+              child: Text(
+                health.breakdown.hasMoisture ? moodLabel(health.mood).toUpperCase() : 'NOT MEASURED',
+                style: T.caps.copyWith(color: pillText, fontSize: 10.5),
+              ),
             ),
             // An honest "live": a bin that stopped reporting says how old its numbers are.
-            if (s.stale)
+            if (s.readingsStale)
               Flexible(
                 child: Text(
                   '   SEEN ${s.ageLabel(DateTime.now()).toUpperCase()}',
@@ -340,6 +346,8 @@ class _ScoreBlock extends StatelessWidget {
     }
 
     if (s.bottomStage == Stage.ready) return 'The bottom layer has finished curing. Time to harvest.';
+    if (!s.topMeasured) return 'Top-layer moisture is not measured. Check the sensor.';
+    if (!s.moistureCalibrated) return 'Moisture is estimated. Calibrate the probe before relying on the score.';
     if (!s.bottomMeasured) return '${layer('Top layer', s.topMoisture)}.';
     return '${layer('Top layer', s.topMoisture)}, ${layer('bottom layer', s.bottomMoisture)}.';
   }

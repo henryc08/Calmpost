@@ -42,7 +42,20 @@ class DropReview extends StatefulWidget {
 }
 
 /// Quick picks when the camera couldn't tell (common things that go in together).
-const _quickPicks = ['mixed_scraps', 'veg_peels', 'banana_peel', 'apple_core', 'coffee_grounds', 'tea_bag', 'eggshells', 'citrus', 'lettuce', 'cardboard', 'paper_towel', 'newspaper'];
+const _quickPicks = [
+  'mixed_scraps',
+  'veg_peels',
+  'banana_peel',
+  'apple_core',
+  'coffee_grounds',
+  'tea_bag',
+  'eggshells',
+  'citrus',
+  'lettuce',
+  'cardboard',
+  'paper_towel',
+  'newspaper',
+];
 
 /// The safety question for a mix: these are always keep-out.
 const _keepOutPicks = ['meat', 'fish', 'cheese', 'oily_food', 'bones'];
@@ -54,6 +67,7 @@ class _DropReviewState extends State<DropReview> {
   List<DropLine> get _lines => widget.lines;
 
   void _set(List<DropLine> lines, {bool edit = true}) {
+    if (widget.saving) return;
     if (edit) _edited = true;
     widget.onChanged(lines);
   }
@@ -98,6 +112,8 @@ class _DropReviewState extends State<DropReview> {
       ),
     };
     final saveLabel = widget.tier == DropTier.confident && !_edited ? 'Yes, that\'s right' : 'Save';
+    final valid = _lines.isNotEmpty && _lines.every((l) => l.item.name != 'Something else' && (!l.keepOut || l.removed));
+    final grams = _lines.where((l) => !l.keepOut && !l.removed).fold<double>(0, (sum, l) => sum + amountGrams[l.amount]!);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,6 +125,10 @@ class _DropReviewState extends State<DropReview> {
         Text(body, style: T.body),
         const SizedBox(height: S.x4),
         DropPhoto(drop: widget.drop),
+        if (widget.drop.items.isNotEmpty) ...[
+          const SizedBox(height: S.x2),
+          Text('Camera’s original guess: ${widget.drop.items.map((i) => i.label).join(', ')}', style: T.small),
+        ],
         const SizedBox(height: S.x4),
         if (_lines.isNotEmpty) ...[
           for (final (i, l) in _lines.indexed) ...[
@@ -118,16 +138,12 @@ class _DropReviewState extends State<DropReview> {
               // In the unclear tier the whole screen is the question.
               showCheck: !unclear,
               open: _editing == i,
-              onTap: () => setState(() => _editing = _editing == i ? null : i),
+              onTap: () {
+                if (!widget.saving) setState(() => _editing = _editing == i ? null : i);
+              },
               onRemovedChanged: (v) => _replace(i, l.copyWith(removed: v)),
             ),
-            if (_editing == i)
-              _Editor(
-                line: l,
-                search: widget.search,
-                onChanged: (line) => _replace(i, line),
-                onRemove: () => _remove(i),
-              ),
+            if (_editing == i) _Editor(line: l, search: widget.search, onChanged: (line) => _replace(i, line), onRemove: () => _remove(i)),
           ],
           const Hairline(),
         ] else
@@ -161,9 +177,16 @@ class _DropReviewState extends State<DropReview> {
             ),
           ),
         const SizedBox(height: S.x5),
+        Text('${grams.round()} g compostable · 1 XP per 20 g\nCare bonuses may apply. Daily action cap: 60 XP.', style: T.small),
+        const SizedBox(height: S.x3),
+        if (!valid && _lines.any((l) => l.keepOut && !l.removed))
+          Padding(
+            padding: const EdgeInsets.only(bottom: S.x3),
+            child: Text('Confirm that keep-out items have been removed before saving.', style: T.small.copyWith(color: C.clay)),
+          ),
         SizedBox(
           width: double.infinity,
-          child: PillButton(label: widget.saving ? 'Saving…' : saveLabel, onTap: _lines.isEmpty || widget.saving ? null : widget.onSave),
+          child: PillButton(label: widget.saving ? 'Saving…' : saveLabel, onTap: !valid || widget.saving ? null : widget.onSave),
         ),
         const SizedBox(height: S.x2),
         Center(
@@ -215,16 +238,15 @@ class _LineRow extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Flexible(child: Text(line.item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.heading)),
-                          if (line.check && showCheck) ...[
-                            const SizedBox(width: S.x2),
-                            const Badge2('Check this', color: C.amber, background: C.amberSoft),
-                          ],
+                          Flexible(
+                            child: Text(line.item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.heading),
+                          ),
+                          if (line.check && showCheck) ...[const SizedBox(width: S.x2), const Badge2('Check this', color: C.amber, background: C.amberSoft)],
                         ],
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '$type · $amount$sure',
+                        '$type · $amount ≈ ${amountGrams[line.amount]!.round()} g$sure',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: T.small.copyWith(color: line.keepOut ? C.clay : C.muted),
@@ -303,7 +325,11 @@ class _EditorState extends State<_Editor> {
           Container(
             height: 42,
             padding: const EdgeInsets.symmetric(horizontal: S.x3),
-            decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(R.pill), border: Border.all(color: C.line)),
+            decoration: BoxDecoration(
+              color: C.surface,
+              borderRadius: BorderRadius.circular(R.pill),
+              border: Border.all(color: C.line),
+            ),
             child: Row(
               children: [
                 const Icon(PhosphorIconsRegular.magnifyingGlass, size: 16, color: C.muted),
@@ -341,7 +367,9 @@ class _EditorState extends State<_Editor> {
                     icon: PhosphorIconsRegular.pencilSimple,
                     onTap: () {
                       _query.clear();
-                      widget.onChanged(l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)));
+                      widget.onChanged(
+                        l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)),
+                      );
                     },
                   ),
               ],

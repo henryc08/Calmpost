@@ -30,7 +30,8 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
   _Filter _filter = _Filter.all;
 
   Future<void> _pull(int count, {required bool fromPackets}) async {
-    final out = ref.read(gameProvider.notifier).pull(count, fromPackets: fromPackets);
+    final out = await ref.read(gameProvider.notifier).pullAsync(count, fromPackets: fromPackets);
+    if (!mounted) return;
     if (out == null) {
       showToast(ref, fromPackets ? 'No Seed Packets left' : 'Not enough Loam yet');
       return;
@@ -132,7 +133,9 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: S.x4,
             crossAxisSpacing: S.x2,
-            childAspectRatio: 0.72,
+            // Fixed art plus two scaled text lines; width-based aspect ratios
+            // can clip newly unlocked names at Android accessibility sizes.
+            mainAxisExtent: 76 + MediaQuery.textScalerOf(context).scale(11.5) * 2.4,
             children: [
               for (final c in items)
                 _CollectionTile(
@@ -190,8 +193,9 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
                         label: equipped ? 'Equipped' : 'Equip',
                         onTap: equipped
                             ? null
-                            : () {
-                                ref.read(gameProvider.notifier).equip(c);
+                            : () async {
+                                final saved = await ref.read(gameProvider.notifier).equipAsync(c);
+                                if (!saved || !context.mounted) return;
                                 showToast(ref, '${c.name} equipped');
                                 Navigator.of(context).pop();
                               },
@@ -287,9 +291,9 @@ class _WhatLoamIsFor extends ConsumerWidget {
             label: 'Buy',
             dense: true,
             onTap: canLock
-                ? () {
-                    ref.read(gameProvider.notifier).buyLidLock();
-                    showToast(ref, 'Lid Lock added. Your streak is safer.');
+                ? () async {
+                    final bought = await ref.read(gameProvider.notifier).buyLidLockAsync();
+                    if (bought && context.mounted) showToast(ref, 'Lid Lock added. Your streak is safer.');
                   }
                 : null,
           ),

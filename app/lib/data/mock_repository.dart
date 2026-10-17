@@ -40,6 +40,16 @@ const _bases = {
 };
 
 class MockRepository implements CalmpostRepository {
+  @override
+  bool get serverGame => false;
+  @override
+  Future<Map<String, dynamic>> loadGame() async => {};
+  @override
+  Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args) async => {};
+  @override
+  Future<void> cancelDropSession(DropSession session) async {}
+  @override
+  Future<Drop?> pendingDrop() async => null;
   MockRepository(this.scenario);
 
   final Scenario scenario;
@@ -121,17 +131,20 @@ class MockRepository implements CalmpostRepository {
   }
 
   @override
-  Future<void> logItem(FoodItem item) async {
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false}) async {
+    if (!added) return null;
+    final cups = (quantityG ?? item.grams) / 110;
     switch (item.category) {
       case FoodCategory.brown:
         _moistureTarget -= 9;
-        _browns += 1;
+        _browns += cups;
       case FoodCategory.green:
         _moistureTarget += item.wet ? 6 : 2;
-        _greens += 1;
+        _greens += cups;
       case FoodCategory.avoid:
         break;
     }
+    return null;
   }
 
   @override
@@ -199,7 +212,7 @@ class MockRepository implements CalmpostRepository {
         continue;
       }
       out.add(adviseFor(l.item, snap, foodById));
-      await logItem(l.item);
+      await logItem(l.item, quantityG: amountGrams[l.amount]);
     }
     return out;
   }

@@ -22,7 +22,7 @@ from .. import db
 from ..rules import compost
 
 # A bin that has not reported for this long is shown as offline.
-STALE_AFTER = timedelta(minutes=20)
+STALE_AFTER = timedelta(minutes=2)
 
 
 async def bin_row(bin_id: str):
@@ -189,18 +189,20 @@ async def snapshot(bin_id: str) -> dict | None:
     # there is a value and no error flag.
     co2_ok = latest["co2_ppm"] is not None and latest["co2_status"] in (0, None)
     ambient = latest["air_temp_c"]
-    probe_layer = latest["probe_layer"]
-    pct = latest["moisture_pct"]
+    probes = {r['probe_layer']: r for r in await db.fetch(
+        "SELECT DISTINCT ON (probe_layer) * FROM readings WHERE bin_id=$1 ORDER BY probe_layer,time DESC", bin_id)}
 
     layers: dict[str, dict] = {}
     for layer in ("top", "bottom"):
-        if layer == probe_layer:
+        probe = probes.get(layer)
+        if probe is not None and datetime.now(timezone.utc) - probe['time'] <= STALE_AFTER:
+            pct = probe['moisture_pct']
             layers[layer] = {
                 "measured": True,
                 "moisture_pct": pct,
-                "moisture_raw": latest["moisture_raw"],
+                "moisture_raw": probe["moisture_raw"],
                 "moisture_state": compost.moisture_state(pct),
-                "temp_c": latest["probe_temp_c"],
+                "temp_c": probe["probe_temp_c"],
             }
         else:
             # No second probe in this build. Say so rather than imply 0.
@@ -217,15 +219,20 @@ async def snapshot(bin_id: str) -> dict | None:
     stages = {}
     for layer, v in layers.items():
         if v["measured"]:
+            mature = await db.fetchval("""SELECT EXISTS(SELECT 1 FROM stage_history h
+                WHERE h.bin_id=$1 AND h.layer=$2 AND h.stage IN ('active','hot')
+                AND h.time < now()-interval '14 days'
+                AND NOT EXISTS(SELECT 1 FROM stage_history x WHERE x.bin_id=h.bin_id
+                  AND x.layer=h.layer AND x.stage='harvested' AND x.time>h.time))""", bin_id, layer)
             stages[layer] = compost.stage(
-                v["temp_c"], ambient, latest["co2_ppm"], v["moisture_pct"], slope, co2_ok
+                v["temp_c"], ambient, latest["co2_ppm"], v["moisture_pct"], slope, co2_ok, has_mature_history=mature
             )
         else:
             stages[layer] = "started"
 
     now = datetime.now(timezone.utc)
     last_seen = binr["last_seen_at"]
-    stale = last_seen is None or (now - last_seen) > STALE_AFTER
+    stale = (now - latest['time']) > STALE_AFTER
 
     notes: list[str] = []
     if not binr["calibrated"]:
@@ -313,6 +320,13 @@ def state_hash(snap: dict, item: str | None) -> str:
     top = snap["layers"]["top"]
     air = snap["air"]
     coarse = {
+        "rule_band": [top['moisture_pct'] is not None and top['moisture_pct'] > 64,
+                      top['moisture_pct'] is not None and top['moisture_pct'] < 36],
+        "need": compost.need_for(snap),
+        "stages": snap['stages'],
+        "stale": snap.get('stale', False),
+        "calibrated": snap.get('moisture_calibrated', False),
+        "balance_rule": compost.balance_of(top['moisture_pct'], snap['greens_7d'], snap['browns_7d']),
         "item": (item or "").strip().lower(),
         "moisture": round(top["moisture_pct"] / 5) if top["moisture_pct"] is not None else None,
         "temp": round(top["temp_c"] / 2) if top["temp_c"] is not None else None,

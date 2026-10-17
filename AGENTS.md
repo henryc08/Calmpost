@@ -21,7 +21,7 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 
 ## 1. Key ideas (don't break these)
 
-1. **Reward balance, never volume.** Adding a scrap earns **0 XP** on its own. XP and Loam come only from *care*: following the next best action, keeping layers in their healthy range, balancing greens and browns, finishing quests, harvesting. If a mechanic would reward dumping more food in the bin, it's wrong.
+1. **Reward compostable volume as well as care.** Confirmed green and brown additions earn **1 XP per 20 g** (estimated mass is our volume proxy), alongside care bonuses. Accumulate grams across the day before rounding, so splitting one drop does not create extra XP. Volume, following advice (+15), keeping an unsuitable item out (+5), and check-in XP share the **60 XP daily action cap**. Keep-out materials earn no volume XP. Nothing earns rewards until it is saved; retries must not double-log or double-award. Volume rewards do not override compost safety advice.
 2. **Same scrap, different answer.** Advice is always based on the bin's *current* readings. This is our demo moment, so protect it.
 3. **Honest about accuracy.** Moisture is our most reliable signal; temperature and CO₂ add context. Stage and "ready" are guides, not lab results. The camera can be wrong, so **the user always confirms what it saw**.
 4. **Sleek, minimal, grown-up.** Calm editorial design, one living illustration per screen, open layout instead of boxes. **No mascot, no cartoons.**
@@ -66,7 +66,7 @@ Each feature lists what the user sees, how it works, and its status.
 When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked.
 
 **What the user does**
-1. On Home, tap **Drop something in** (forest pill under the score). This arms the camera for 60 s and opens a "Watching the bin…" sheet with a live preview and a countdown.
+1. On Home, tap **Drop something in** (forest pill under the score). This first resumes an existing pending drop, or arms the **bin camera** for 60 s and opens a "Watching the bin…" sheet with a countdown. This is not the phone camera. An in-app live preview is **not implemented**; the laptop preview is separate. Closing the waiting sheet cancels the session.
 2. Drop the scrap in.
 3. A pop-up slides up: **"Something was added"**. The photo appears with a box around the item, then the details fill in one by one:
    - **Item:** "Banana peel"
@@ -77,7 +77,7 @@ When you drop something into the bin, a camera sees it, Gemini identifies it, an
    - **Confident** (every item matched, ≥ 60%): "Is this right?" with **Yes, that's right**.
    - **Check** (some item < 60% or not in the catalog): the same, with those rows marked **Check this**.
    - **Couldn't tell** (no items, Gemini failed, or a mix it couldn't separate): "What went in?" with a quick multi-pick of common items, **Mixed food scraps** (a catalog green, ~150 g), and **Any of these in it?** (meat, fish, dairy, oily food, bones). A keep-out item in a drop says "Take it back out, then tick here"; ticking logs it as a skip (+5).
-5. **Submit.** The drop becomes a tracked add: the scrap-check verdict appears (great / careful / avoid) and XP is awarded by the normal rules (0 for adding; +15 if it was the next best action). If it's a **Keep out** item, the app says to take it back out, and confirming that earns the usual +5.
+5. **Submit.** The confirmed amount earns volume XP (1 per 20 g for compostable greens/browns), plus +15 if it follows the next best action, subject to the daily action cap. The scrap-check verdict appears only after saving succeeds. A **Keep out** item earns no volume XP; confirming its removal earns the usual +5. Camera guesses remain visible while correcting, and are retained separately from the confirmed items.
 6. **"Nothing was added"** dismisses a false trigger.
 
 **What "tracked" means**
@@ -128,7 +128,7 @@ Streak calendar, daily quests, XP and levels, **Loam** currency, **crates** from
 **Core loop:** open → check health → do the next best action → streak day fills in → quests pay XP + Loam → achievements drop crates → crates and Loam open Seed Packets → collection grows → league rank moves.
 
 ### 2.7 Notifications
-Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, crate earned, "something was added but not confirmed" (from 2.4, after 10 min).
+Plain, state-triggered, **max 2 a day**, persisted across restarts: compost looks ready (**foreground-triggered Android alert**, built), streak at risk, crate earned, "something was added but not confirmed" (planned). Background/push delivery is not implemented. A sensor guide must not claim that texture or smell was measured.
 
 ---
 
@@ -200,14 +200,14 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 
 ## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). Endpoint shapes mirror `CalmpostRepository`, and the app's `data/api_repository.dart` reads it: live readings (polled every 3 s), trends, the scrap check, logs and the league. It is picked when the app is built with `--dart-define=API_URL=…` (see `app/README.md`); the demo picker switches between **Live bin** and the mock scenarios. The game economy still runs on the phone; moving it to the server is next.
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks, logs, leagues and the game economy. Live check-ins, quest/daily claims, crate opens, pulls, equipment and Lid Locks use server responses, not local grants. Game state refreshes after actions and every minute while the app is mounted. It is picked with `--dart-define=API_URL=…`; the demo picker switches between **Live bin** and mocks. Demo progression is separately persisted on-device using SharedPreferences; it is never uploaded as live rewards.
 
 **The app owns the rules; the server enforces them.**
 - The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
 - The food and collectible catalogs are **generated** from `lib/data/*.dart` by `python -m scripts.sync_catalogs`, which also writes `vision/catalog.json`.
 - All XP and Loam are awarded server-side into an append-only ledger, so the client can't award itself anything. Pulls are rolled on the server.
 
-**Layout:** `app/rules` (pure) → `app/services` (DB + Gemini) → `app/routers` (HTTP). `sql/000…090_*.sql` are applied in order on every boot. Each file is idempotent, and older databases (including the first schema's `seeds` column) upgrade in place.
+**Layout:** `app/rules` (pure) → `app/services` (DB + Gemini) → `app/routers` (HTTP). `sql/000…095_*.sql` are applied in order on every boot. Each file is idempotent. Migration 095 adds manual-log request receipts and camera-confirmation receipts: identical retries return the original result; changed payloads conflict. A whole camera drop saves in one transaction, with deterministic verdicts (no Gemini network call inside confirmation). A per-player lock serializes XP caps and ledger deduplication.
 
 **Tiger Data schema**
 
@@ -245,7 +245,7 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
 | Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
 
-**Auth:** the app and vision send `X-API-Key`. The board/bridge sends `X-Device-Token` (only its hash is stored).
+**Auth:** the app and vision send a **shared demo** `X-API-Key`, not per-user authentication. This does not isolate users/bins and is not safe for a public multi-user deployment. The board/bridge sends `X-Device-Token` (only its hash is stored). Re-registering an existing bin returns 409 instead of replacing its owner/token. Database TLS verifies certificates and hostnames; set `DATABASE_CA_FILE` to the provider's CA PEM if it is not in the system trust store.
 
 **Environment** (`backend/.env` and `vision/.env`, both git-ignored, **never commit them**):
 - `backend/.env`: `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_API_KEY`, `DEVICE_TOKEN`
@@ -377,12 +377,12 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 
 | Mechanic | Rule |
 |---|---|
-| XP | followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100 · **add a scrap (manual or camera) = 0**. Action XP capped at 60/day |
+| XP | **confirmed compostable volume +1 per 20 g**, rounded cumulatively per day · followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100. Volume and other action XP share the 60/day cap |
 | Streak | consecutive days with ≥ 1 care action (open Layers, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
 | Lid Lock | streak freeze; covers one missed day; hold max 2; 60 Loam |
 | Daily quests | "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
 | Levels | level n needs 30·n·(n−1) XP; titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
-| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia; top 7 up, bottom 5 down; XP only from care |
+| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia; top 7 up, bottom 5 down; XP from confirmed compostable volume and care |
 | Friends | leaderboard, co-op friend quests, nudges |
 | Impact | kg kept from landfill, CO₂e avoided (0.55 kg per kg), $ fertilizer saved; labelled as estimates; on Profile |
 
@@ -397,7 +397,7 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 | League finish (promoted/safe/demoted) | 150/60/20 | | | |
 
 ### Daily goal (Home)
-Today's XP (from any source) fills a track with three rewards, each claimed once a day: **20 XP → 15 Loam · 40 XP → 30 Loam · 60 XP → Sprout crate**. It resets at midnight. Because XP only comes from care, the daily goal can't be hit by dumping food in.
+Today's XP (from any source, including compostable volume) fills a track with three rewards, each claimed once a day: **20 XP → 15 Loam · 40 XP → 30 Loam · 60 XP → Sprout crate**. It resets at midnight. The action cap limits volume and repeat-action rewards; safety advice still applies.
 
 ### Crates
 
@@ -454,7 +454,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 **Demo script**
 1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
 2. Tap **Drop something in** and drop a banana peel under the webcam. The pop-up appears with the photo and box, filling in "Banana peel · Green · Handful".
-3. If it's wrong, correct it live, then Submit. The verdict is **great**, and +15 XP because it was the next action.
+3. If it's wrong, correct the item and amount, then Submit. The saved compostable amount earns volume XP, with +15 more if it follows the next action (subject to the cap).
 4. Switch to `tooWet` and drop another peel. Now it's **careful, add browns first**.
 5. Open Layers: the drop markers are on the chart, and today's streak day fills in.
 6. Claim a quest → Loam ticks up → open a crate → pull a Seed Packet.
@@ -492,8 +492,17 @@ cd vision && python main.py
 1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
 2. ✅ **Drop-in UI** (sheet, "Is this right?" review, edit form, mixed drops), on mocks and the live API.
 3. ✅ **Backend + Tiger Data** (ingest, readings, logs, drops, advice, game + economy) and **vision service** (webcam + motion + Gemini).
-4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · Rewards inbox history.
-5. ✅ `ApiRepository` (live bin data) · next: game economy from the server, firmware on the real bin, polish on a real phone.
+4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · next: Rewards inbox history.
+5. ✅ `ApiRepository` (live bin data + server game/economy), durable demo progress, atomic retry-safe logging · next: real-phone/hardware validation and production authentication/signing.
+
+### Reliability and remaining deployment limits
+- Unknown/failed sensors stay unknown, omitted score terms are reweighted, uncalibrated moisture is labelled, and readings older than two minutes are stale. Current layer readings are kept separate; charts request their layer explicitly.
+- `need` supports browns, greens, water, mix and nothing. No current top reading means no automatic material recommendation. Changing a rule threshold invalidates advice even if coarse sensor buckets match.
+- A quiet new/dry bin is not ready. The readiness guide additionally requires recorded active/hot history at least 14 days old after the last harvest. This is a conservative product heuristic, **not a validation of compost maturity**.
+- Serial samples receive a timestamp before queueing so retrying preserves capture time. Vision opens the camera only for armed sessions, polls cancellation during watching, and clears its preview after the session.
+- A recommendation is **not permission to log**: any catalog green/brown can be logged, including a `careful` verdict, earning volume XP without an unearned advice bonus. Manual verdict sheets scroll so the add button remains reachable with Android large-text accessibility settings. Hard keep-out materials remain a separate safety case.
+- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Production signing, per-user authorization, background notifications, real friends, summary generation, rewards history, and a phone-camera/live-preview workflow remain unfinished. Do not describe these as production-ready.
+- Visual review: `cd app && flutter test test/visual_correction_test.dart --dart-define=CAPTURE_REVIEW=true` writes actual phone-sized Flutter renders to `artifacts/review/`. Detections are simulated and the missing photo is labelled; this is not a real Gemini/hardware accuracy test.
 
 ### Working together
 - **`main` must always build and run.** Pull before you push; run `flutter analyze && flutter test` first.

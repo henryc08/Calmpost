@@ -21,19 +21,21 @@ class WhatToAdd extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ready = snapshot.bottomStage == Stage.ready;
+    final ready = snapshot.bottomMeasured && snapshot.bottomStage == Stage.ready;
     final (title, accent) = ready
         ? ('Harvest the bottom layer', C.leaf)
-        : switch (suggestion.balance) {
-            Balance.needsBrowns => ('Add something dry', C.water),
-            Balance.needsGreens => ('Add fresh scraps', C.amber),
-            Balance.balanced => ('Keep it balanced', C.leaf),
+        : switch (suggestion.need) {
+            BinNeed.browns => ('Add something dry', C.water),
+            BinNeed.greens => ('Add fresh scraps', C.amber),
+            BinNeed.water => ('Just a little water', C.water),
+            BinNeed.mix => ('Give it a stir', C.leaf),
+            BinNeed.nothing => (!snapshot.topMeasured || snapshot.readingsStale ? 'Check the bin first' : 'Nothing to add today', C.leaf),
           };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('WHAT TO ADD', trailing: PinkPill('+${Xp.followedSuggestion} XP')),
+        SectionLabel('WHAT TO ADD', trailing: suggestion.add.isEmpty ? null : const PinkPill('+${Xp.followedSuggestion} XP')),
         const SizedBox(height: S.x3),
         Text(title, style: T.title.copyWith(fontSize: 28)),
         const SizedBox(height: S.x2),

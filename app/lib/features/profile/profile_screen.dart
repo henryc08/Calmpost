@@ -127,19 +127,20 @@ class _Rewards extends ConsumerWidget {
       children: [
         SectionLabel('REWARDS WAITING', trailing: waiting > 0 ? PinkPill('$waiting new') : null),
         const SizedBox(height: S.x3),
-        Row(
+        Wrap(
+          spacing: S.x4,
+          runSpacing: S.x3,
           children: [
-            for (final c in g.crates) ...[_RewardMark(icon: PhosphorIconsFill.package, label: crateName(c).split(' ').first), const SizedBox(width: S.x4)],
-            for (var i = 0; i < g.packets; i++) ...[const _RewardMark(icon: PhosphorIconsFill.plant, label: 'Packet'), const SizedBox(width: S.x4)],
-            const Spacer(),
+            for (final c in g.crates) _RewardMark(icon: PhosphorIconsFill.package, label: crateName(c).split(' ').first),
+            if (g.packets > 0) _RewardMark(icon: PhosphorIconsFill.plant, label: '${g.packets} packets'),
             PillButton(
               label: 'Open',
               dense: true,
               onTap: g.crates.isEmpty
                   ? () => Routes.greenhouse(context)
                   : () async {
-                      final o = ref.read(gameProvider.notifier).openCrate(0);
-                      if (o != null) await revealCrate(context, o.tier, o.loam, o.packets);
+                      final o = await ref.read(gameProvider.notifier).openCrateAsync(0);
+                      if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
                     },
             ),
           ],

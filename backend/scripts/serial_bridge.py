@@ -20,6 +20,7 @@ Expected input, one object per line:
 """
 
 import argparse
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -76,6 +77,7 @@ def to_payload(raw: dict, default_device: str) -> dict | None:
         return None
 
     out.setdefault("device_id", default_device)
+    out.setdefault("time", datetime.now(timezone.utc).isoformat())
     return out
 
 

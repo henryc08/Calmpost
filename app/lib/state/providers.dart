@@ -86,13 +86,19 @@ final standingsProvider = Provider<Standing>((ref) {
       if (c != 0) return c;
       return a.isYou ? -1 : (b.isYou ? 1 : 0);
     });
-  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[GameState.tierIndex]);
+  return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[ref.watch(gameProvider.select((g) => g.leagueTier))]);
 });
 
 /// 24 h trend for one zone + metric (sparklines, layer charts).
-final trendProvider = FutureProvider.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
+final trendProvider = FutureProvider.autoDispose.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
   ref.watch(scenarioProvider);
-  return ref.watch(repositoryProvider).trends(key.$1, key.$2);
+  final repo = ref.watch(repositoryProvider);
+  if (repo.serverGame) {
+    final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+    ref.onDispose(timer.cancel);
+    ref.onCancel(timer.cancel);
+  }
+  return repo.trends(key.$1, key.$2);
 });
 
 /// Bottom-nav tabs.

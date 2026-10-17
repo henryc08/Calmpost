@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../domain/advice_rules.dart';
@@ -21,12 +20,8 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(
-    this.config, {
-    http.Client? client,
-    this.pollEvery = const Duration(seconds: 3),
-    this.dropPollEvery = const Duration(seconds: 1),
-  }) : _http = client ?? http.Client();
+  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)})
+    : _http = client ?? http.Client();
 
   final ApiConfig config;
   final Duration pollEvery;
@@ -35,6 +30,58 @@ class ApiRepository implements CalmpostRepository {
   final Duration dropPollEvery;
   final http.Client _http;
   BinSnapshot? _last;
+  List<int> _crateIds = [];
+
+  @override
+  bool get serverGame => true;
+
+  @override
+  Future<Map<String, dynamic>> loadGame() async {
+    final user = '/users/${config.userId}';
+    // Profile settles earned rewards before the dependent reads.
+    final profile = await _get('$user/game');
+    final data = await Future.wait([
+      _get('$user/rewards'),
+      _get('$user/collection'),
+      _get('/quests/today', {'user_id': config.userId}),
+      _get('/bins/${config.binId}/logs'),
+    ]);
+    Map<String, dynamic>? league;
+    try {
+      league = await _get('/leagues/current', {'user_id': config.userId});
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) rethrow;
+    }
+    _crateIds = [for (final c in data[0]['crates']) c['id'] as int];
+    return {'profile': profile, 'rewards': data[0], 'collection': data[1], 'quests': data[2], 'logs': data[3], 'league': league};
+  }
+
+  @override
+  Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args) async {
+    final user = '/users/${config.userId}';
+    final path = switch (action) {
+      'check-in' => '$user/check-in',
+      'quest' => '/quests/${args['id']}/claim',
+      'daily' => '$user/daily-goal/${args['index']}/claim',
+      'crate' => '$user/crates/${_crateIds[args['index'] as int]}/open',
+      'pull' => '$user/gacha/pull',
+      'equip' => '$user/equip',
+      'lid-lock' => '$user/lid-locks/buy',
+      _ => throw ArgumentError('Unknown game action'),
+    };
+    return await _post(path, args, action == 'quest' ? {'user_id': config.userId} : null) as Map<String, dynamic>;
+  }
+
+  @override
+  Future<void> cancelDropSession(DropSession session) async {
+    await _post('/bins/${config.binId}/drops/session/${session.id}/close', {'reason': 'cancelled'});
+  }
+
+  @override
+  Future<Drop?> pendingDrop() async {
+    final pending = await _get('/bins/${config.binId}/drops/pending') as List;
+    return pending.isEmpty ? null : dropFromJson(pending.first as Map<String, dynamic>);
+  }
 
   void close() => _http.close();
 
@@ -83,7 +130,8 @@ class ApiRepository implements CalmpostRepository {
       Metric.temperature => zone == Zone.air ? 'air_temp' : 'temperature',
       Metric.co2 => 'co2',
     };
-    final j = await _get('/bins/${config.binId}/trends', {'hours': '24', 'metrics': name}) as Map<String, dynamic>;
+    final j =
+        await _get('/bins/${config.binId}/trends', {'hours': '24', 'metrics': name, 'layer': zone == Zone.bottom ? 'bottom' : 'top'}) as Map<String, dynamic>;
     final series = (j['series'] as List).cast<Map<String, dynamic>>();
     if (series.isEmpty) return const [];
     return [
@@ -101,13 +149,19 @@ class ApiRepository implements CalmpostRepository {
   }
 
   @override
-  Future<void> logItem(FoodItem item) async {
-    try {
-      await _post('/bins/${config.binId}/logs', {'item': item.name, 'catalog_id': item.id, 'category': item.category.name, 'action': 'added'});
-    } catch (e) {
-      // The add already counts on the phone; don't break the sheet over it.
-      debugPrint('logItem failed: $e');
-    }
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false}) async {
+    final j =
+        await _post('/bins/${config.binId}/logs', {
+              'item': item.name,
+              'catalog_id': item.id,
+              'category': item.category.name,
+              'action': added ? 'added' : 'skipped',
+              'quantity_g': (quantityG ?? item.grams).round(),
+              'request_id': requestId,
+              'was_advised': wasAdvised,
+            })
+            as Map<String, dynamic>;
+    return (j['xp_awarded'] as num?)?.toInt() ?? 0;
   }
 
   // --- local rules and catalog -----------------------------------------------------
@@ -186,12 +240,24 @@ class ApiRepository implements CalmpostRepository {
     return [
       for (final (i, l) in lines.indexed)
         if (i < items.length && items[i]['verdict'] is Map<String, dynamic>)
-          adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>)
+          adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>, xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
         else if (l.removed)
-          Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.')
+          Advice(
+            item: l.item,
+            verdict: Verdict.avoid,
+            headline: 'Kept it out',
+            reason: 'Thanks for taking it back out.',
+            xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0,
+          )
         else
           // No readings to judge against yet: the add is still logged.
-          adviseFor(l.item, _last ?? _neutral, foodById),
+          Advice(
+            item: l.item,
+            verdict: Verdict.careful,
+            headline: 'Saved',
+            reason: 'No current readings to judge this addition. Check the bin before adding more.',
+            xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0,
+          ),
     ];
   }
 
@@ -246,7 +312,7 @@ BinSnapshot snapshotFromJson(Map<String, dynamic> j) {
   final top = layers['top'] ?? const <String, dynamic>{};
   final bottom = layers['bottom'] ?? const <String, dynamic>{};
   final air = (j['air'] as Map<String, dynamic>?) ?? const {};
-  final ambient = _d(air['ambient_temp_c']) ?? 21.0;
+  final ambient = _d(air['ambient_temp_c']) ?? 0;
   final topMoisture = _d(top['moisture_pct']) ?? 0;
   final topTemp = _d(top['temp_c']) ?? ambient;
   final bottomMeasured = bottom['measured'] == true && bottom['moisture_pct'] != null;
@@ -266,12 +332,18 @@ BinSnapshot snapshotFromJson(Map<String, dynamic> j) {
     healthyHoursToday: _d(j['healthy_hours_today']) ?? 0,
     bottomMeasured: bottomMeasured,
     stale: j['stale'] == true,
+    topMeasured: top['measured'] == true && top['moisture_pct'] != null,
+    topTemperatureMeasured: top['temp_c'] != null,
+    bottomTemperatureMeasured: bottom['temp_c'] != null,
+    airMeasured: air['co2_ok'] != false && air['co2_ppm'] != null,
+    ambientMeasured: air['ambient_temp_c'] != null,
+    moistureCalibrated: j['moisture_calibrated'] == true,
   );
 }
 
 /// POST /bins/{id}/advice/check -> Advice. pair_with names are matched to the
 /// catalog; anything it doesn't know is dropped.
-Advice adviceFromJson(FoodItem item, Map<String, dynamic> j) {
+Advice adviceFromJson(FoodItem item, Map<String, dynamic> j, {int? xpAwarded}) {
   FoodItem? match(String name) {
     final n = name.toLowerCase().trim();
     return foodCatalog.where((f) => f.name.toLowerCase() == n || f.id == n).firstOrNull ??
@@ -289,6 +361,7 @@ Advice adviceFromJson(FoodItem item, Map<String, dynamic> j) {
     headline: (j['headline'] as String?) ?? '',
     reason: (j['reason'] as String?) ?? '',
     pairWith: pair,
+    xpAwarded: xpAwarded,
   );
 }
 
@@ -312,20 +385,3 @@ Drop dropFromJson(Map<String, dynamic> j) {
     ],
   );
 }
-
-/// Stand-in readings before the first poll returns: a mid-range bin.
-final _neutral = BinSnapshot(
-  time: DateTime.fromMillisecondsSinceEpoch(0),
-  topMoisture: 50,
-  topTemp: 30,
-  bottomMoisture: 50,
-  bottomTemp: 22,
-  co2: 1500,
-  ambientTemp: 21,
-  co2SlopePerDay: 0,
-  greens7d: 3,
-  browns7d: 6,
-  topStage: Stage.active,
-  bottomStage: Stage.started,
-  healthyHoursToday: 0,
-);

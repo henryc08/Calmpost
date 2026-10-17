@@ -106,7 +106,7 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
             )
             return answer, "rules-always-avoid"
 
-    if not settings.gemini_api_key:
+    if not settings.gemini_api_key or item is None or snapshot.get('stale') or not snapshot['layers']['top']['measured']:
         return fallback(snapshot, item), "rules-fallback"
 
     question = (
@@ -159,8 +159,8 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
     # Rules decide, Gemini words it (AGENTS.md key idea 5). For an item the
     # rules know, their verdict stands. If the model disagrees, show the rules'
     # answer whole, so the headline and reason match the verdict. Items outside
-    # the catalogue are the model's call.
-    if item and compost.categorise(item) != "unknown":
+    # the catalogue must also retain the conservative rules verdict.
+    if item:
         ruled = fallback(snapshot, item)
         if answer.get("verdict") != ruled["verdict"]:
             log.info("gemini said %s for %r, rules say %s; using rules",
@@ -173,7 +173,7 @@ async def _ask_gemini(body: dict) -> dict:
     """One structured-output call. Raises on any failure (the caller falls back)."""
     settings = get_settings()
     url = ENDPOINT.format(model=settings.gemini_model)
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=4) as client:
         resp = await client.post(url, params={"key": settings.gemini_api_key}, json=body)
         resp.raise_for_status()
         data = resp.json()
@@ -209,18 +209,21 @@ def fallback(snapshot: dict, item: str | None) -> dict:
     wet = pct is not None and pct > 64
     dry = pct is not None and pct < 36
 
-    if balance == "needs_browns":
+    need = compost.need_for(snapshot)
+    if need == "browns":
         suggest_add = ["shredded cardboard", "shredded paper", "dry leaves"]
         line = "The bin is green-heavy -- add some dry browns."
         tip = "Tear the cardboard small so it mixes in."
-    elif balance == "needs_greens":
+    elif need == "greens":
         suggest_add = ["vegetable peels", "coffee grounds", "fruit scraps"]
         line = "The bin needs greens, or a splash of water."
         tip = "Bury greens under a little brown to keep flies off."
     else:
-        suggest_add = ["vegetable peels", "shredded cardboard"]
-        line = "The bin looks balanced -- keep layering."
-        tip = "Alternate a scoop of greens with a handful of browns."
+        suggest_add = []
+        line = {"water": "The mix is balanced but dry. Add a little water, not more food.",
+                "mix": "CO2 is rising without much warmth. Stir the top layer to let air in.",
+                "nothing": "Nothing needs adding right now."}[need]
+        tip = "Check the bin before adding more."
 
     suggest_avoid = ["meat", "cheese", "oily food"]
 
@@ -237,6 +240,9 @@ def fallback(snapshot: dict, item: str | None) -> dict:
         if avoid:
             verdict, headline = "avoid", "Keep it out"
             reason = f"{name.capitalize()}: {avoid}. Bin it, or use your city's green bin."
+        elif snapshot.get('stale') or not top['measured'] or pct is None:
+            verdict, headline = "careful", "Check the bin first"
+            reason = "Current moisture is unavailable. Check the bin by hand before adding more."
         elif category == "green":
             if wet:
                 verdict, headline = "careful", "Add browns first"
@@ -294,7 +300,7 @@ def fallback(snapshot: dict, item: str | None) -> dict:
 
     # suggestFor(): a finished bottom layer is the headline news.
     if item is None and stages["bottom"] == "ready":
-        line = "The bottom layer has finished curing and is ready to harvest."
+        line = "The bottom layer looks ready. Check its texture and smell; sensors are only a guide."
         reason = line
 
     return {

@@ -78,7 +78,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       ),
       hero: _SearchField(controller: _search, onChanged: (q) => setState(() => _query = q)),
       children: [
-        if (_query.isEmpty && suggestion != null) ...[
+        if (_query.isEmpty && suggestion != null && suggestion.add.isNotEmpty) ...[
           const SectionLabel('RECOMMENDED NOW', trailing: PinkPill('+15 XP each')),
           const SizedBox(height: S.x2),
           for (final (i, f) in suggestion.add.indexed) ...[

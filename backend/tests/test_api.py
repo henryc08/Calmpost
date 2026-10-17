@@ -70,15 +70,15 @@ def test_same_scrap_different_answer(c):
     assert meat["verdict"] == "avoid" and meat["model"] == "rules-always-avoid"
 
 
-# --- logging: care earns XP, volume never does -------------------------------------
+# --- logging: compostable volume and verified care earn XP -------------------------
 
 def test_logging_rules(c):
     plain = c.post("/bins/bin-001/logs", json={"item": "Banana peel", "catalog_id": "banana_peel"}).json()
-    assert plain["xp_awarded"] == 0 and plain["category"] == "green"
+    assert plain["xp_awarded"] == 5 and plain["category"] == "green"
     assert plain["quantity_g"] == 110  # the catalog's typical weight
 
     tip = c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "was_advised": True}).json()
-    assert tip["xp_awarded"] == game.XP["followed_suggestion"]
+    assert tip["xp_awarded"] == 2  # 40 g; no readings to verify the claimed advice
 
     kept_out = c.post("/bins/bin-001/logs", json={"item": "Cheese & dairy", "action": "skipped"}).json()
     assert kept_out["xp_awarded"] == game.XP["avoided_bad_add"] and kept_out["category"] == "avoid"
@@ -137,7 +137,7 @@ def test_quests_are_claimed_not_auto_paid(c):
 def test_daily_goal_rewards(c):
     c.post(f"/users/{USER}/check-in")  # 5
     c.post("/quests/checkin/claim", params={"user_id": USER})  # 10
-    c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "was_advised": True})  # 15
+    c.post("/bins/bin-001/logs", json={"item": "Shredded cardboard", "quantity_g": 300})  # 15 volume XP
     goal = c.get(f"/users/{USER}/daily-goal").json()
     assert goal["xp_today"] == 30 and goal["goals"][0]["reached"] and not goal["goals"][1]["reached"]
 
@@ -262,9 +262,9 @@ def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
     r = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"}).json()
     assert r["verdict"] == "great" and r["model"] == "rules-override"
 
-    # Outside the catalogue, the model's answer is used.
+    # Unknown items also retain the conservative deterministic verdict.
     r = c.post("/bins/bin-001/advice/check", json={"item": "durian rind"}, params={"refresh": "true"}).json()
-    assert r["verdict"] == "avoid" and r["model"] != "rules-override"
+    assert r["verdict"] == "careful" and r["model"] == "rules-override"
 
 
 def test_starter_finish_can_always_be_re_equipped(c):

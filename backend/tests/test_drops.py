@@ -101,7 +101,7 @@ def test_bad_payloads(c):
 
 # --- confirm / dismiss -----------------------------------------------------------
 
-def test_confirm_logs_camera_add_with_zero_xp(c):
+def test_confirm_logs_camera_add_with_volume_xp(c):
     drop_id = report(c, arm(c)).json()["drop_id"]
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green", "amount": "handful"}]})
@@ -109,18 +109,21 @@ def test_confirm_logs_camera_add_with_zero_xp(c):
     body = r.json()
     assert body["corrected"] is False
     log = body["items"][0]["log"]
-    assert log["source"] == "camera" and log["xp_awarded"] == 0 and log["quantity_g"] == 110
+    assert log["source"] == "camera" and log["xp_awarded"] == 5 and log["quantity_g"] == 110
     assert body["items"][0]["verdict"] is None  # no readings yet in this test DB
     logs = c.get("/bins/bin-001/logs").json()
     assert logs[0]["source"] == "camera"
     assert c.get("/bins/bin-001/drops/pending").json() == []
 
 
-def test_confirm_twice_is_rejected(c):
+def test_identical_confirmation_retry_returns_original_receipt(c):
     drop_id = report(c, arm(c)).json()["drop_id"]
     item = {"items": [{"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}
-    assert c.post(f"/drops/{drop_id}/confirm", json=item).status_code == 200
-    assert c.post(f"/drops/{drop_id}/confirm", json=item).status_code == 409
+    first = c.post(f"/drops/{drop_id}/confirm", json=item)
+    retry = c.post(f"/drops/{drop_id}/confirm", json=item)
+    assert first.status_code == retry.status_code == 200
+    assert first.json() == retry.json()
+    assert len(c.get('/bins/bin-001/logs').json()) == 1
     assert len(c.get("/bins/bin-001/logs").json()) == 1
 
 
@@ -155,7 +158,9 @@ def test_dismiss_and_accuracy(c):
 def test_confirm_returns_verdict_when_available(c, monkeypatch):
     async def fake_advise(bin_id, item, refresh):
         return AdviceResponse.model_construct(verdict="great", item=item, reason="dry bin, wet scrap")
-    monkeypatch.setattr(advice, "_advise", fake_advise)
+    # Confirmation deliberately uses local rules, never a network Gemini call.
+    from tests.conftest import ingest_series, raw_for
+    ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=0)
     drop_id = report(c, arm(c)).json()["drop_id"]
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}).json()
@@ -175,7 +180,7 @@ def test_mixed_drop_the_camera_could_not_separate(c):
         {"label": "Meat scraps", "catalog_id": "meat", "category": "avoid", "amount": "small", "removed": True},
     ]}).json()
     added, meat = (i["log"] for i in r["items"])
-    assert added["category"] == "green" and added["quantity_g"] == 250 and added["xp_awarded"] == 0
+    assert added["category"] == "green" and added["quantity_g"] == 250 and added["xp_awarded"] == 12
     assert meat["action"] == "skipped" and meat["xp_awarded"] == 5
     assert r["corrected"] is True
 

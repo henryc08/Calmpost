@@ -36,8 +36,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 .venv\Scripts\python.exe -m scripts.smoke_test --token <device token>
 ```
 
-16 checks: ingest, live, trends, the advice verdict, the always-avoid rule,
-all three XP rules, game/quests/leagues, and four auth rejections. Expect
+17 checks: ingest, live, trends, the advice verdict, the always-avoid rule,
+the XP rules, check-in, game/quests/leagues, and four auth rejections. Expect
 `all checks passed`.
 
 Interactive docs — the fastest way to poke one endpoint by hand:
@@ -56,10 +56,28 @@ The sketch (`firmware/sensor_output/sensor_output.ino`) prints one JSON line
 per second at **115200** and does not use Wi-Fi, so the path is
 **USB → serial bridge → API**.
 
+### Three things must be running
+
+This is the most common reason "nothing is happening": `watch_db` only READS
+Tiger Data. It does not talk to the board. With no bridge running you are
+watching a database that nothing is feeding.
+
+| Terminal | Command | Job |
+| -------- | ------- | --- |
+| 1 | `uvicorn app.main:app --host 0.0.0.0 --port 8000` | the API that writes to Tiger |
+| 2 | `python examples/serial_bridge.py --port COM3` | Arduino → API |
+| 3 | `python -m scripts.watch_db` | shows what landed (optional) |
+
 ```bash
 pip install pyserial requests
 .venv\Scripts\python.exe examples/serial_bridge.py --port COM3 --api http://127.0.0.1:8000
 ```
+
+### Wi-Fi and hotspots do not matter for this path
+
+The sketch talks over USB, so only the laptop needs internet (to reach Tiger
+Cloud) and any network will do. A hotspot only matters later, when the
+Flutter app on a phone needs to reach the laptop's LAN IP.
 
 Expected output, one line per second:
 
@@ -92,9 +110,9 @@ curl -s -X POST "http://127.0.0.1:8000/bins/bin-001/advice/check?refresh=true" \
 ```
 
 Squeeze the probe wet / let it dry (or post a synthetic reading), then run it
-again with `?refresh=true`. `verdict` should move between `add`,
-`add_with_browns` and `avoid`, and `input_snapshot` shows the readings each
-answer was based on.
+again with `?refresh=true`. `verdict` should move between `great`, `careful`
+and `avoid` (the app's Verdict enum), and `input_snapshot` shows the readings
+each answer was based on.
 
 ---
 
@@ -248,3 +266,25 @@ asyncio.run(m())"
 Server logs are the first place to look for any 500: the traceback names the
 file and line. Run uvicorn in a visible terminal rather than the background
 while debugging.
+
+## XP awards come back as 0
+
+Action XP is capped at 60 per day (`dailyActionCap` in xp_rules.dart), so once
+that is spent, further follows/skips/check-ins correctly award 0. It is the
+anti-farming rule working, not a bug. Check what today has already paid:
+
+```bash
+.venv\Scripts\python.exe -c "
+import asyncio; from app import db
+async def m():
+    await db.connect()
+    for r in await db.fetch(\"\"\"SELECT kind, sum(xp)::int xp FROM point_events
+        WHERE user_id='demo-user' AND time >= date_trunc('day', now())
+        GROUP BY kind ORDER BY xp DESC\"\"\"):
+        print(dict(r))
+    await db.disconnect()
+asyncio.run(m())"
+```
+
+Health-based XP (`healthy_layer_day`) sits outside the cap deliberately: it
+depends on the sensors, so it cannot be farmed by tapping.

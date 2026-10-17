@@ -4,14 +4,15 @@ FastAPI + Tiger Data + Gemini. A thin API by design: it keeps the database
 and Gemini keys off the phone.
 
 ```
-ESP32 ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
-   │                       │ ▲
-   │ (USB path)     Gemini ◀┘ │
-   ▼                          │ REST
-serial_bridge.py ─────────────┤
-                              │
-                     Flutter app (Riverpod)
+Arduino ──USB serial──▶ serial_bridge.py ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
+                                                              │ ▲
+                                                       Gemini ◀┘ │ REST
+                                                                 │
+                                                  Flutter app (Riverpod)
 ```
+
+The sketch lives at `firmware/sensor_output/sensor_output.ino` and talks over
+USB, so the laptop running the bridge is the only machine needing internet.
 
 **The Flutter app never connects to Tiger Data directly.** It calls these
 endpoints; `ApiRepository` mirrors `CalmpostRepository` method for method, so
@@ -31,11 +32,11 @@ python -m scripts.init_db --bin bin-001
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-`--host 0.0.0.0` matters: the ESP32 and the phone need to reach the laptop,
-not just localhost. Interactive docs at <http://127.0.0.1:8000/docs>.
+`--host 0.0.0.0` matters: the phone running the app needs to reach the
+laptop, not just localhost. (The board does not -- it is on USB.) Interactive docs at <http://127.0.0.1:8000/docs>.
 
-`init_db` prints a `device_token` **once**. Put it in `firmware/secrets.h`,
-or give it to the serial bridge.
+`init_db` prints a `device_token` **once**. Put it in `backend/.env` as
+`DEVICE_TOKEN=...`, which is where the serial bridge reads it from.
 
 Demo data:
 
@@ -52,8 +53,9 @@ Scenarios match `MockRepository`: `healthy`, `too_wet`, `too_dry`, `curing`,
 
 The firmware sends `moisture_raw`, a raw ADC count, and the backend converts
 it using each bin's own curve. Until you calibrate, that conversion uses
-defaults that are almost certainly wrong for your probe — a raw count of 412
-reads as 100% with the defaults.
+defaults that are almost certainly wrong for your probe. The sketch sets
+`analogReadResolution(10)`, so raw counts run **0-1023** (around 470 in open
+air on our board).
 
 Moisture is **45% of the health score**, so this is the single most valuable
 five minutes you can spend on the hardware:
@@ -65,7 +67,7 @@ five minutes you can spend on the hardware:
 ```bash
 curl -X POST http://127.0.0.1:8000/bins/bin-001/calibration \
   -H "X-API-Key: $APP_API_KEY" -H "Content-Type: application/json" \
-  -d '{"moisture_raw_dry": 2600, "moisture_raw_wet": 1150}'
+  -d '{"moisture_raw_dry": 472, "moisture_raw_wet": 230}'
 ```
 
 `backfill` (default true) replays the new curve over stored history so the
@@ -76,7 +78,7 @@ charts don't kink at the moment you calibrated. Until it's done,
 
 | Caller      | Header           | Value                     |
 | ----------- | ---------------- | ------------------------- |
-| ESP32/bridge| `X-Device-Token` | the token from `init_db`  |
+| Bridge      | `X-Device-Token` | the token from `init_db`  |
 | Flutter app | `X-API-Key`      | `APP_API_KEY` from `.env` |
 
 Only the token's SHA-256 is stored, so a leaked database can't be replayed
@@ -100,7 +102,7 @@ touches only `app/security.py`.
 | POST   | `/bins/{id}/logs`               | log an add, or a skip |
 | GET    | `/bins/{id}/logs`               | recent add log |
 | POST   | `/bins/{id}/harvest`            | harvest a layer (+100 XP) |
-| GET    | `/users/{id}/game`              | level, XP, Seeds, streak, impact, badges |
+| GET    | `/users/{id}/game`              | level, XP, loam, streak, impact, badges |
 | POST   | `/users/{id}/check-in`          | ticks the streak when the bin screen opens |
 | GET    | `/quests/today`                 | today's three care quests + progress |
 | GET    | `/leagues/current`              | this week's cohort, ranked |
@@ -129,8 +131,10 @@ charting a bad number.
 POST /bins/bin-001/advice/check   {"item": "banana peel"}
 
 {
-  "verdict": "add_with_browns",
-  "reason": "The top layer is already wet, so add a dry brown with it.",
+  "verdict": "careful",
+  "headline": "Add browns first",
+  "reason": "Your top layer is 67% wet, which is soggy. Mix in shredded cardboard.",
+  "pair_with": ["shredded cardboard", "newspaper"],
   "suggest_add": ["shredded cardboard", "shredded paper"],
   "suggest_avoid": ["meat", "dairy", "oily or greasy food"],
   "balance": "needs_browns",
@@ -179,7 +183,7 @@ Five hypertables, per CLAUDE.md:
 | `readings` | one **wide** row per POST, raw + derived moisture |
 | `add_log` | adds and skips, categorised green/brown/avoid |
 | `advice` | every answer **plus the input snapshot** |
-| `point_events` | XP/Seeds ledger, append-only |
+| `point_events` | XP/loam ledger, append-only |
 | `stage_history` | Batch Journey transitions |
 
 Plus `bins`, `user_state`, `leagues`, `league_members`.
@@ -224,8 +228,10 @@ drift from the app's.
 
 ## The USB bridge
 
-If the board is wired over USB instead of Wi-Fi, set `WIFI_ENABLED = false`
-in the sketch and run:
+The board prints JSON over USB serial and does not use Wi-Fi, so the bridge
+is the ingest path. **Three processes must run together** -- the API, the
+bridge, and (optionally) the watcher. See TESTING.md; running only the
+watcher is the usual reason nothing appears to happen.
 
 ```bash
 pip install pyserial requests

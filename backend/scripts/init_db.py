@@ -47,8 +47,8 @@ async def main() -> None:
                 )
         print(f"\nbin_id      : {args.bin_id}")
         print(f"device_token: {token}")
-        print("\nPut that in firmware/secrets.h as DEVICE_TOKEN, or pass it to")
-        print("the serial bridge. It is shown once -- only its hash is stored.")
+        print("\nPut that in backend/.env as DEVICE_TOKEN=... -- the serial bridge")
+        print("reads it from there. Shown once; only its hash is stored.")
         print("\nNext: calibrate the moisture probe, or percentages are guesses:")
         print(f"  POST /bins/{args.bin_id}/calibration "
               '{"moisture_raw_dry": <probe in air>, "moisture_raw_wet": <probe in water>}')

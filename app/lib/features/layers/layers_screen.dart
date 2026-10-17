@@ -36,7 +36,13 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
     final trend = ref.watch(trendProvider((_zone, metric))).valueOrNull ?? const <TrendPoint>[];
     final logs = ref.watch(gameProvider.select((g) => g.logs));
 
-    final unmeasured = _zone == Zone.bottom && !s.bottomMeasured;
+    final unmeasured = switch ((_zone, metric)) {
+      (Zone.air, _) => !s.airMeasured,
+      (Zone.bottom, Metric.temperature) => !s.bottomTemperatureMeasured,
+      (Zone.bottom, _) => !s.bottomMeasured,
+      (Zone.top, Metric.temperature) => !s.topTemperatureMeasured,
+      _ => !s.topMeasured,
+    };
     final (value, unit) = switch (metric) {
       _ when unmeasured => ('—', ''),
       Metric.moisture => ('${s.moisture(_zone).round()}', '%'),
@@ -55,8 +61,8 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
 
     return BrandPage(
       title: 'Layers',
-      subtitle: s.stale ? 'Kitchen bin · last reading ${s.ageLabel(DateTime.now())}' : 'Kitchen bin · live',
-      trailing: s.stale ? null : const LiveDot(color: C.onBrand),
+      subtitle: s.readingsStale ? 'Kitchen bin · last reading ${s.ageLabel(DateTime.now())}' : 'Kitchen bin · live',
+      trailing: s.readingsStale ? null : const LiveDot(color: C.onBrand),
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -137,8 +143,12 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
         const SectionBreak(),
         const SectionLabel('WHAT IT MEANS'),
         const SizedBox(height: S.x3),
-        Text(_meaning(_zone, s), style: T.body.copyWith(fontSize: 15)),
-        if (_zone != Zone.air) ...[
+        Text(
+          unmeasured ? 'No usable reading from this sensor. Unknown is not zero; check the sensor connection.' : _meaning(_zone, s),
+          style: T.body.copyWith(fontSize: 15),
+        ),
+        if (!s.moistureCalibrated && _zone != Zone.air) Text('Moisture is uncalibrated: treat the percentage as an estimate.', style: T.small),
+        if (_zone != Zone.air && !unmeasured) ...[
           const SectionBreak(),
           SectionLabel('LIFE CYCLE', trailing: Text('Guide from sensor trends', style: T.small.copyWith(fontSize: 11))),
           const SizedBox(height: S.x4),
@@ -153,6 +163,8 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
   }
 
   static String _heroLine(Zone z, BinSnapshot s) => switch (z) {
+    Zone.top when !s.topTemperatureMeasured || !s.ambientMeasured => 'Fresh scraps and browns · temperature unavailable',
+    Zone.air when !s.airMeasured => 'CO₂ unavailable · check the air sensor',
     Zone.top => 'Fresh scraps and browns · ${s.topTemp.round()}°C, ${(s.topTemp - s.ambientTemp).round()}° above the room',
     Zone.bottom when !s.bottomMeasured => 'Older compost, slowly finishing · no probe here yet',
     Zone.bottom => 'Older compost, slowly finishing · ${s.bottomTemp.round()}°C',
@@ -204,7 +216,7 @@ class _Chart extends StatelessWidget {
       maxY = values.reduce(math.max) * 1.4;
     }
     final pad = (maxY - minY) * 0.12;
-    final first = points.first.time;
+    final first = DateTime.now().subtract(const Duration(hours: 24));
     final spots = [for (final p in points) FlSpot(p.time.difference(first).inMinutes / 60, p.value)];
     String fmt(double v) => switch (metric) {
       Metric.moisture => '${v.round()}%',

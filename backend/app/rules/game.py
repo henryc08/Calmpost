@@ -1,8 +1,7 @@
 """Game and economy rules. No I/O.
 
 Mirrors app/lib/domain/xp_rules.dart and app/lib/state/game.dart (and
-AGENTS.md section 8). The core rule: care earns XP and Loam; volume never
-does. Logging a scrap is worth ZERO.
+AGENTS.md section 8). Confirmed compostable volume and care both earn XP.
 """
 
 import hashlib
@@ -23,7 +22,12 @@ XP = {
 # Action XP is capped per day so it cannot be farmed by tapping
 # (xpForAction / dailyActionCap). Sensor-driven XP and quest rewards are not.
 DAILY_ACTION_CAP = 60
-CAPPED_KINDS = ("followed_suggestion", "avoided_bad_add", "check_in")
+GRAMS_PER_XP = 20
+CAPPED_KINDS = ("compost_added", "followed_suggestion", "avoided_bad_add", "check_in")
+
+
+def volume_xp(grams: float, already_logged: float = 0) -> int:
+    return int((already_logged + max(0, grams)) // GRAMS_PER_XP) - int(already_logged // GRAMS_PER_XP)
 
 
 def cap_xp(base: int, earned_today: int) -> int:
@@ -31,8 +35,9 @@ def cap_xp(base: int, earned_today: int) -> int:
 
 
 # Ledger kinds that count as caring for the bin (keep a streak alive).
-# A plain log is NOT one of them.
+# A confirmed compostable addition keeps the streak alive.
 CARE_KINDS = (
+    "compost_added",
     "followed_suggestion",
     "avoided_bad_add",
     "check_in",
@@ -64,9 +69,12 @@ _TITLES = (
 )
 
 
+XP_PER_LEVEL = 120
+
+
 def xp_for_level(n: int) -> int:
-    """Level n needs 30*n*(n-1) lifetime XP (xpForLevel)."""
-    return 60 * (n - 1) * n // 2
+    """Every step costs the same amount; lifetime XP is preserved."""
+    return XP_PER_LEVEL * (n - 1)
 
 
 def level_for_xp(xp: int) -> int:

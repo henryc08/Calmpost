@@ -41,12 +41,14 @@ class Outcome:
 
 class Watcher:
     def __init__(self, camera: FrameSource, trigger: MotionTrigger, identifier: Identifier,
-                 clock: Callable[[], float] = time.monotonic, on_frame: Callable | None = None):
+                 clock: Callable[[], float] = time.monotonic, on_frame: Callable | None = None,
+                 still_armed: Callable[[], bool] | None = None):
         self.camera = camera
         self.trigger = trigger
         self.identifier = identifier
         self.clock = clock
         self.on_frame = on_frame or (lambda frame, status, fraction: None)
+        self.still_armed = still_armed or (lambda: True)
 
     def watch(self, window_s: float, hints: list[str] | None = None) -> Outcome:
         self.trigger.reset()
@@ -54,9 +56,13 @@ class Watcher:
         before = None
         started_at = None
         recent: deque = deque(maxlen=60)  # ~2 s of (t, frame) before motion
+        next_check = 0.0
 
         while True:
             t = self.clock() - t0
+            if t >= next_check:
+                if not self.still_armed(): return Outcome('cancelled')
+                next_check = t + 1.0
             frame = self.camera.read()
             if frame is None:
                 return Outcome("camera_lost")

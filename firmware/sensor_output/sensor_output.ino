@@ -8,10 +8,13 @@ const char DEVICE_ID[] = "bin-001";
 
 const int MOISTURE_PIN = A0;
 const int TEMPERATURE_PIN = 2;
+const int MOISTURE_PIN_2 = A1;
+const int TEMPERATURE_PIN_2 = 3;
 const unsigned long SAMPLE_INTERVAL_MS = 1000;
 
 DFRobot_STCC4_I2C* co2Sensor = nullptr;
 DallasTemperature* temperatureProbe = nullptr;
+DallasTemperature* temperatureProbe2 = nullptr;
 
 bool co2Ready = false;
 
@@ -53,6 +56,15 @@ void setup() {
   temperatureProbe = &probe;
   temperatureProbe->begin();
 
+  static OneWire oneWire2(TEMPERATURE_PIN_2);
+  static DallasTemperature probe2(&oneWire2);
+  temperatureProbe2 = &probe2;
+  temperatureProbe2->begin();
+
+  // Both externally powered probes convert together to keep the 1 s interval.
+  temperatureProbe->setWaitForConversion(false);
+  temperatureProbe2->setWaitForConversion(false);
+
   // Allow CO2 measurements to settle before sending samples.
   delay(20000);
 }
@@ -62,15 +74,24 @@ void loop() {
 
   // Read moisture as a raw ADC value.
   int moistureRaw = analogRead(MOISTURE_PIN);
+  int moistureRaw2 = analogRead(MOISTURE_PIN_2);
 
-  // Read the waterproof temperature probe.
+  // Start both probes, then wait once for the maximum 12-bit conversion time.
   temperatureProbe->requestTemperatures();
+  temperatureProbe2->requestTemperatures();
+  delay(750);
   float probeTemp = temperatureProbe->getTempCByIndex(0);
+  float probeTemp2 = temperatureProbe2->getTempCByIndex(0);
 
   bool probeValid =
       probeTemp != DEVICE_DISCONNECTED_C &&
       probeTemp >= -55.0 &&
       probeTemp <= 125.0;
+
+  bool probeValid2 =
+      probeTemp2 != DEVICE_DISCONNECTED_C &&
+      probeTemp2 >= -55.0 &&
+      probeTemp2 <= 125.0;
 
   // Read CO2 and the board's air temperature/humidity.
   uint16_t co2Ppm = 0;
@@ -102,6 +123,12 @@ void loop() {
   Serial.print(",\"moisture_raw\":");
   Serial.print(moistureRaw);
 
+  Serial.print(",\"probe_temp_c_2\":");
+  printNumberOrNull(probeTemp2, probeValid2, 2);
+
+  Serial.print(",\"moisture_raw_2\":");
+  Serial.print(moistureRaw2);
+
   Serial.print(",\"co2_ppm\":");
   if (co2Valid) {
     Serial.print(co2Ppm);
@@ -124,7 +151,7 @@ void loop() {
 
   Serial.println("}");
 
-  // Include sensor-reading time in the five-second interval.
+  // Include sensor-reading time in the one-second interval.
   unsigned long elapsed = millis() - sampleStarted;
   if (elapsed < SAMPLE_INTERVAL_MS) {
     delay(SAMPLE_INTERVAL_MS - elapsed);

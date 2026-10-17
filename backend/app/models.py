@@ -22,9 +22,14 @@ Metric = Literal["moisture", "temperature", "co2", "air_temp", "air_humidity"]
 class IngestPayload(BaseModel):
     """Exactly what the firmware sends, one wide sample per POST:
 
-        {"device_id":"bin-001","probe_temp_c":25.3,"moisture_raw":412,
-         "co2_ppm":850,"air_temp_c":24.1,"air_humidity_pct":58.2,
+        {"device_id":"bin-001","probe_temp_c":22.25,"moisture_raw":464,
+         "probe_temp_c_2":null,"moisture_raw_2":482,
+         "co2_ppm":1498,"air_temp_c":22.67,"air_humidity_pct":40.83,
          "co2_status":0}
+
+    Probe 1 (probe_temp_c / moisture_raw) is the top layer, probe 2 the
+    bottom. probe_temp_c_2 arrives null today: the second probe reports
+    moisture but not temperature.
 
     Every sensor field is optional so a failed sensor still lets the rest of
     the sample through. The board has no reliable clock, so `time` is
@@ -38,6 +43,8 @@ class IngestPayload(BaseModel):
     time: datetime | None = None
     probe_temp_c: float | None = Field(default=None, ge=-40, le=125)
     moisture_raw: int | None = Field(default=None, ge=0, le=65535)
+    probe_temp_c_2: float | None = Field(default=None, ge=-40, le=125)
+    moisture_raw_2: int | None = Field(default=None, ge=0, le=65535)
     co2_ppm: float | None = Field(default=None, ge=0, le=40000)
     air_temp_c: float | None = Field(default=None, ge=-40, le=125)
     air_humidity_pct: float | None = Field(default=None, ge=0, le=100)
@@ -50,6 +57,7 @@ class IngestResult(BaseModel):
     time: datetime
     # Echoed back so the firmware author can see calibration working.
     moisture_pct: float | None = None
+    moisture_pct_2: float | None = None
     calibrated: bool = False
 
 
@@ -150,13 +158,15 @@ class TrendsResponse(BaseModel):
 # --- add log ---------------------------------------------------------------
 
 class LogCreate(BaseModel):
-    item: str
+    item: str = Field(min_length=1, max_length=120)
+    request_id: str | None = Field(default=None, min_length=1, max_length=100)
     # The app's food catalog id when known (FoodItem.id).
     catalog_id: str | None = None
     category: Category = "unknown"
     # "skipped" records trusting an avoid verdict, which is what earns XP.
     action: Literal["added", "skipped"] = "added"
-    quantity_g: int | None = Field(default=None, ge=0)
+    quantity_g: int | None = Field(default=None, ge=0, le=5000)
+    piece_count: int | None = Field(default=None, ge=1, le=999, strict=True)
     source: Literal["manual", "photo", "seed", "camera"] = "manual"
     was_advised: bool = False
     advice_id: int | None = None
@@ -168,9 +178,11 @@ class LogEntry(BaseModel):
     bin_id: str
     time: datetime
     item: str
+    catalog_id: str | None = None
     category: Category
     action: Literal["added", "skipped"]
     quantity_g: int | None = None
+    piece_count: int | None = None
     source: str
     was_advised: bool
     notes: str | None = None
@@ -288,6 +300,10 @@ class GameResponse(BaseModel):
     user_id: str
     display_name: str
     total_xp: int
+    week_xp: int = 0
+    action_xp_today: int = 0
+    grams_today: float = 0
+    stats: dict = Field(default_factory=dict)
     level: int
     # The equipped title if any, otherwise the level title.
     title: str
@@ -308,6 +324,8 @@ class GameResponse(BaseModel):
     packets: int
     equipped_finish: str
     equipped_title: str | None = None
+    equipped_seed: str | None = None
+    level_claimed: list[int] = Field(default_factory=list)
     collected: int
     collection_total: int
     impact: ImpactStats
@@ -394,3 +412,6 @@ class CalibrationUpdate(BaseModel):
     moisture_raw_wet: int = Field(ge=0, le=65535)
     # Recompute moisture_pct across stored history with the new curve.
     backfill: bool = True
+    # 1 = the top-layer probe, 2 = the bottom one. They are different physical
+    # sensors with their own dry/wet counts, so they calibrate separately.
+    probe: Literal[1, 2] = 1

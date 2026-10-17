@@ -104,7 +104,9 @@ curl -X POST http://127.0.0.1:8000/bins/bin-001/calibration \
 | Caller                       | Header           | Value                     |
 | ---------------------------- | ---------------- | ------------------------- |
 | Bridge / board               | `X-Device-Token` | the token from `init_db`  |
-| Flutter app, `vision/`       | `X-API-Key`      | `APP_API_KEY` from `.env` |
+| Demo app / vision            | `X-API-Key`      | `APP_API_KEY` from `.env` |
+| Registered player            | `Authorization: Bearer` | the signed-in session |
+| Vision for a player-owned bin | `X-Device-Token` | that bin's device token |
 
 - **Hashed tokens:** only the device token's SHA-256 is stored, and re-registering a bin revokes the old token.
 - **Bound to one bin:** a token only posts for its own bin, and a mismatch returns 403.
@@ -184,7 +186,7 @@ The verdict is `great`, `careful` or `avoid`, matching the app's Log sheet.
 
 ### Camera drop-in (`vision/`)
 
-The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Every route needs `X-API-Key`.
+The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Demo routes use `X-API-Key`. Registered owners use bearer sessions; vision reports to their bins using scoped `X-Device-Token` authentication.
 
 ```
 App     POST /bins/{id}/drops/session               arm the camera for 60 s
@@ -201,7 +203,7 @@ App     GET  /bins/{id}/drops/sessions/{sid}        is the sheet still watching?
 ```
 
 - **Confirming logs normally.** Each confirmed item follows the usual `/logs` rules:
-  - adding an item earns 0
+  - confirmed compostable material earns 1 XP per 20 g (cumulative daily rounding)
   - `was_advised` earns +15
   - `removed` earns +5 (the user took a keep-out item back out)
 - **Amounts become grams:** small 40, handful 110, large 250.
@@ -226,11 +228,11 @@ Adding a second probe needs no migration: post with `probe_layer: "bottom"`.
 
 Everything is enforced here, so the numbers the app shows can't be faked by the client. All of these rules come from the app (`xp_rules.dart`, `state/game.dart`, `gacha.dart`), and the parity tests keep the two in step.
 
-**XP: reward balance, never volume.**
+**XP: reward confirmed compostable volume and care.**
 
 | Action | XP |
 | ------ | -- |
-| **Logging a scrap** | **0** |
+| **Confirmed green/brown material** | **1 per 20 g**, rounded cumulatively per day |
 | Followed the suggestion | 15 |
 | Trusted an avoid verdict and skipped it | 5 |
 | Check-in (once a day) | 5 |
@@ -238,9 +240,13 @@ Everything is enforced here, so the numbers the app shows can't be faked by the 
 | Weekly balance | 30 |
 | Harvest | 100 (+50 Loam) |
 
-- **Daily cap:** follow, skip and check-in XP together cap at **60 a day**.
+- **Daily cap:** volume, follow, skip and check-in XP together cap at **60 a day**.
 - **Uncapped:** quest and daily-goal rewards aren't capped.
-- **Streaks count care, not logs:** a check-in, a followed suggestion or a quest keeps a streak alive.
+- **Streaks:** confirmed compostable volume also counts. Keep-out additions earn no volume XP.
+
+Manual logs accept a stable `request_id`. Identical retries return the original receipt; changed bodies return 409. Camera confirmations save every row and reward atomically and return the same receipt on retry. Care bonuses are checked against the current bin need, not simply trusted from `was_advised`.
+
+Database TLS now verifies hostname/certificate. If your provider requires a private CA, set `DATABASE_CA_FILE` to its trusted PEM file. The shared app API key is still demo-only authorization, not user isolation; do not expose this API as a public multi-user service.
 
 **Loam** is the soft currency. It is never bought with money.
 
@@ -345,6 +351,28 @@ python -m pytest                      # from backend/
 
 The hypertables, aggregates and policies themselves only run on Tiger Cloud. `scripts/smoke_test.py` against the real database is the final check. More detail in [TESTING.md](TESTING.md).
 
+## Level rewards and active seeds
+
+Apply the normal startup migrations before updating the app: `097_progression.sql`
+adds `user_state.equipped_seed` and preserves existing XP/collections. Levels now
+cost a flat **120 XP per level-up**, up to level 50; prior balances and reward
+receipts are not rewritten. Displayed levels are recalculated. The game
+response includes `level_claimed` and `equipped_seed`.
+
+`POST /users/{id}/levels/{level}/claim` grants a reached level's reward once;
+identical retries report `duplicate: true` without paying again. Level 1 includes
+a guaranteed Sprout. `/users/{id}/equip` accepts an owned plant as the single
+active seed, in addition to independent finish/title slots. See AGENTS §8 for
+the reward schedule and rarity-scaled, per-seed buffs. Commons add just one
+point to a specific activity; rarer seeds offer stronger specialties, up to
+60% quest XP or Loam plus a secondary 25% bonus for legendaries. Quest-specific
+effects use the quest key recorded by `claim_quest`, not client reward amounts.
+Flat bonuses preserve tiny common effects; percentage bonuses round down per
+award. Duplicate copies never stack. Buffs are applied in
+the ledger under the player lock, before the unchanged action cap; they never
+modify volume XP, bin readings or safety advice. They apply only to future
+eligible awards, never retroactively.
+
 ## The USB bridge
 
 The board prints JSON over USB serial and doesn't use Wi-Fi, so the bridge is the ingest path. **Three processes run together:** the API, the bridge, and (optionally) the watcher. See TESTING.md. Running only the watcher is the usual reason nothing seems to happen.
@@ -357,5 +385,30 @@ python scripts/serial_bridge.py --api http://127.0.0.1:8000
 The bridge:
 - auto-detects the port and reads at 115200 baud, matching the sketch
 - ignores the board's `#`-prefixed log lines
-- queues samples through network drops
+- reads serial independently of a single background HTTP uploader, so network stalls do not block USB reads
+- timestamps samples before queueing and retries oldest-first, even if no more serial data arrives
+- buffers up to 500 queued samples plus one in flight in memory; a full queue warns and drops incoming samples. Unsent data is lost on exit (also warned), not persisted to disk
 - exits on an auth failure rather than retrying with a revoked token
+
+## Confirmed compost inventory
+
+`GET /bins/{id}/inventory?period=all|week` returns grouped confirmed compostable
+inputs, estimated `grams`, `pieces`, `entries`, `uncounted_entries`, and the
+server ledger's `total_xp`, `volume_xp` and `care_xp`. Week boundaries are Sunday
+00:00 UTC. Item rows include catalog id, label, category, `vision_entries` and
+`last_added_at`. Group rankings expose aggregate grams/pieces and the XP breakdown;
+they do not expose private ingredient lists.
+
+Manual log bodies and `/social/care-log` accept optional `piece_count` (1–999).
+Drop reports and vision/photo identification carry optional `piece_count`;
+confirmation also accepts exact **total** `quantity_g` (1–5000). Count never
+multiplies the mass. Old logs have unknown counts, rather than an invented one.
+The inventory excludes skips, keep-out materials, pending/dismissed detections
+and zero-weight entries. Saved inputs remain in the history after harvesting;
+they are not measurements of remaining or finished compost.
+
+Migration `096_compost_inventory.sql` runs at boot. No historical XP is re-awarded.
+Amount XP remains 1 per 20 g rounded cumulatively each day, sharing the 60/day
+action cap with care actions. Registered owners use their bearer session for
+camera review; the vision service uses the bin's `DEVICE_TOKEN` for detection
+reporting. That device token cannot confirm, award XP, or read inventories.

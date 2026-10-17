@@ -32,9 +32,18 @@ empty list.
 For each new item:
 - label: short plain name, e.g. "banana peel" (not "banana" if it's a peel)
 - catalog_id: the closest id from the allowed list, or "unknown" if none fits
+- piece_count: number of distinct pieces of this same item (1-999). Group identical items in one row. Omit if uncountable; never derive count from weight.
 - est_grams: rough weight in grams
 - confidence: 0 to 1, how sure you are of catalog_id
 - box_2d: [ymin, xmin, ymax, xmax] of the item in image 2, scaled 0-1000
+
+A mix you can't separate into items (plate scrapings, a bowl of leftovers):
+return ONE item with catalog_id "mixed_scraps" and a label naming what you
+can see, e.g. "mixed scraps: rice, peels". If any meat, fish, bones, dairy or
+oily food is visible in it, also list that as its own item.
+
+Don't guess with confidence. A blurry, covered or unfamiliar item gets a low
+confidence (below 0.6) so the person is asked to check it.
 """
 
 
@@ -47,6 +56,7 @@ class Detection:
     amount: str | None       # small | handful | large
     confidence: float
     box_2d: list[int] | None
+    piece_count: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -72,6 +82,7 @@ def schema(catalog_ids: list[str]) -> dict:
                     "properties": {
                         "label": {"type": "STRING"},
                         "catalog_id": {"type": "STRING", "enum": catalog_ids},
+                        "piece_count": {"type": "INTEGER"},
                         "est_grams": {"type": "NUMBER"},
                         "confidence": {"type": "NUMBER"},
                         "box_2d": {"type": "ARRAY", "items": {"type": "INTEGER"}},
@@ -105,6 +116,8 @@ def parse(raw: dict) -> list[Detection]:
         if not label or label.lower() in IGNORE_LABELS:
             continue  # a hand-only detection is not a drop
         cid = it.get("catalog_id") if it.get("catalog_id") in known else catalog.UNKNOWN
+        pieces = it.get("piece_count")
+        pieces = pieces if type(pieces) is int and 1 <= pieces <= 999 else None
         grams = it.get("est_grams")
         grams = float(grams) if isinstance(grams, (int, float)) and 0 < grams < 5000 else None
         if grams is None and cid != catalog.UNKNOWN:
@@ -116,7 +129,7 @@ def parse(raw: dict) -> list[Detection]:
         out.append(Detection(
             label=label, catalog_id=cid, category=catalog.category_of(cid),
             est_grams=grams, amount=catalog.amount_of(grams), confidence=round(conf, 2),
-            box_2d=_valid_box(it.get("box_2d")),
+            box_2d=_valid_box(it.get("box_2d")), piece_count=pieces,
         ))
     return out
 

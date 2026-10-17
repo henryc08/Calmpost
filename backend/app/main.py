@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
-from .routers import advice, bins, drops, economy, game, ingest, social
+from .routers import advice, bins, chat, drops, economy, game, ingest, social
 
 logging.basicConfig(level=logging.INFO)
 
@@ -47,6 +47,7 @@ app.add_middleware(
 app.include_router(ingest.router)
 app.include_router(bins.router)
 app.include_router(advice.router)
+app.include_router(chat.router)
 app.include_router(game.router)
 app.include_router(drops.router)
 app.include_router(economy.router)

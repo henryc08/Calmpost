@@ -6,7 +6,7 @@ import 'package:calmpost/domain/xp_rules.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 BinSnapshot snap({double topM = 50, double botM = 50, double greens = 3, double browns = 7, Stage bottom = Stage.curing}) => BinSnapshot(
-  time: DateTime(2026, 10, 16),
+  time: DateTime.now(),
   topMoisture: topM,
   topTemp: 35,
   bottomMoisture: botM,
@@ -69,9 +69,10 @@ void main() {
   });
 
   group('xp rules', () {
-    test('logging a scrap earns nothing on its own', () {
-      expect(Xp.log, 0);
-      expect(xpForAction(base: Xp.log, earnedToday: 0), 0);
+    test('compostable volume earns XP without a split-drop advantage', () {
+      expect(volumeXp(110), 5);
+      expect(volumeXp(10, alreadyLogged: 110), 1);
+      expect(volumeXp(120), volumeXp(110) + volumeXp(10, alreadyLogged: 110));
     });
 
     test('daily action cap', () {

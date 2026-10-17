@@ -66,6 +66,12 @@
     "grams": 120.0
   },
   {
+    "id": "mixed_scraps",
+    "name": "Mixed food scraps",
+    "category": "green",
+    "grams": 150.0
+  },
+  {
     "id": "cardboard",
     "name": "Shredded cardboard",
     "category": "brown",

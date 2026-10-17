@@ -39,6 +39,18 @@ async def require_device(
 
 async def require_app_key(request: Request, x_api_key: str | None = Header(None, alias="X-API-Key")) -> None:
     """Legacy demo key or a scoped player session. Shared keys cannot impersonate players."""
+    route = request.scope["route"].path
+    if request.headers.get("X-Device-Token") and not request.headers.get("Authorization"):
+        camera_routes = {
+            ("GET", "/bins/{bin_id}/drops/session/active"),
+            ("GET", "/bins/{bin_id}/drops/hints"),
+            ("POST", "/bins/{bin_id}/drops"),
+            ("POST", "/bins/{bin_id}/drops/session/{session_id}/close"),
+        }
+        device_bin = await require_device(request.headers["X-Device-Token"])
+        if (request.method, route) not in camera_routes or request.path_params.get("bin_id") != device_bin:
+            raise HTTPException(403, "Device token cannot access this resource")
+        return
     from .routers.social import current_user
     uid = await current_user(request) if request.headers.get("Authorization") else None
     if uid is None and not hmac.compare_digest((x_api_key or "").encode(), get_settings().app_api_key.encode()):
@@ -68,14 +80,28 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
         if (protected and uid != target) or (uid and uid != target):
             raise HTTPException(403, "This account or bin belongs to someone else")
     if uid:
-        # Legacy rewards were designed for trusted demo clients (for example,
-        # harvests may be reported repeatedly). Players use validated social
-        # writes; only owned-bin readings and advice cross this boundary.
+        # Owned-account game reads and validated economy actions share the
+        # same ledger as Social. Unvalidated demo writes (notably harvest)
+        # remain blocked; logging and check-in still use Social.
         route = request.scope["route"].path
         readable = {"/bins/{bin_id}/live", "/bins/{bin_id}/trends", "/bins/{bin_id}/stats",
-                    "/bins/{bin_id}/logs", "/bins/{bin_id}/advice"}
+                    "/bins/{bin_id}/logs", "/bins/{bin_id}/inventory", "/bins/{bin_id}/advice",
+                    "/bins/{bin_id}/drops/pending", "/bins/{bin_id}/drops/stream",
+                    "/bins/{bin_id}/drops/sessions/{session_id}", "/bins/{bin_id}/drops/history",
+                    "/drops/{drop_id}", "/drops/{drop_id}/photo",
+                    "/users/{user_id}/game", "/users/{user_id}/rewards",
+                    "/users/{user_id}/collection", "/users/{user_id}/daily-goal",
+                    "/quests/today", "/leagues/current"}
+        writable = {"/bins/{bin_id}/drops/session", "/bins/{bin_id}/drops/photo",
+                    "/bins/{bin_id}/drops/session/{session_id}/close",
+                    "/drops/{drop_id}/confirm", "/drops/{drop_id}/dismiss",
+                    "/bins/{bin_id}/advice/check", "/bins/{bin_id}/chat",
+                    "/users/{user_id}/levels/{level}/claim",
+                    "/quests/{key}/claim", "/users/{user_id}/daily-goal/{index}/claim",
+                    "/users/{user_id}/crates/{crate_id}/open", "/users/{user_id}/gacha/pull",
+                    "/users/{user_id}/equip", "/users/{user_id}/lid-locks/buy"}
         allowed = (request.method == "GET" and route in readable) or (
-            request.method == "POST" and route == "/bins/{bin_id}/advice/check")
+            request.method == "POST" and route in writable)
         if not allowed:
             raise HTTPException(403, "Use the account's /social endpoints to save care and progress")
     if uid and not targets:

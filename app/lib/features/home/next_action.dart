@@ -31,7 +31,11 @@ class NextAction extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text('NEXT BEST ACTION', style: T.caps)),
-            Text('+${Xp.followedSuggestion} XP', style: T.num.copyWith(fontSize: 12, color: C.leaf)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(color: C.pink, borderRadius: BorderRadius.circular(R.pill)),
+              child: Text('+${Xp.followedSuggestion} XP', style: T.num.copyWith(fontSize: 11.5, color: C.ink)),
+            ),
           ],
         ),
         const SizedBox(height: S.x3),

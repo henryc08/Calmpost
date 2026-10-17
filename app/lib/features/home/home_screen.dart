@@ -128,7 +128,7 @@ class _Hud extends ConsumerWidget {
           ),
         ),
         _HudStat(
-          icon: Icon(PhosphorIconsFill.fire, size: 18, color: game.caredToday ? C.amber : C.faint),
+          icon: Icon(PhosphorIconsFill.fire, size: 18, color: game.caredToday ? C.pink : C.faint),
           value: '${game.streak.days}',
           onTap: null,
         ),
@@ -152,7 +152,7 @@ class _Hud extends ConsumerWidget {
                       width: 9,
                       height: 9,
                       decoration: BoxDecoration(
-                        color: C.clay,
+                        color: C.pink,
                         shape: BoxShape.circle,
                         border: Border.all(color: C.paper, width: 1.5),
                       ),

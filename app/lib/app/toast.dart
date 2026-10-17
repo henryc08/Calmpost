@@ -56,7 +56,7 @@ class _ToastLayerState extends ConsumerState<ToastLayer> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (toast.xp > 0) ...[Text('+${toast.xp} XP', style: T.num.copyWith(color: C.sprout)), const SizedBox(width: S.x2)],
+                          if (toast.xp > 0) ...[Text('+${toast.xp} XP', style: T.num.copyWith(color: C.pink)), const SizedBox(width: S.x2)],
                           Flexible(
                             child: Text(toast.message, style: T.small.copyWith(color: Colors.white, fontSize: 13)),
                           ),

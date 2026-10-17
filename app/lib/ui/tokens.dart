@@ -2,20 +2,20 @@ import 'package:flutter/widgets.dart';
 
 import '../domain/models.dart' show Rarity;
 
-/// Colour tokens. Light leaf-green paper, deep forest, a few quiet accents.
+/// Colour tokens. Bright leaf-green paper, deep green text, pink as the reward accent.
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFFE9F1E2);
-  static const surface = Color(0xFFF6FAF2);
-  static const sunk = Color(0xFFDAE6D1);
-  static const line = Color(0xFFCCDBC2);
+  static const paper = Color(0xFF4BBC77);
+  static const surface = Color(0xFF5BC584);
+  static const sunk = Color(0xFF3EA867);
+  static const line = Color(0xFF389F60);
 
   // Text
-  static const ink = Color(0xFF14261C);
-  static const ink2 = Color(0xFF3D5245);
-  static const muted = Color(0xFF738A7B);
-  static const faint = Color(0xFFA8BCAD);
+  static const ink = Color(0xFF0D2416);
+  static const ink2 = Color(0xFF15402A);
+  static const muted = Color(0xFF1E5838);
+  static const faint = Color(0xFF2F7C51);
 
   // Forest: the hero surface and primary actions
   static const forest = Color(0xFF1F3A2E);
@@ -25,15 +25,20 @@ abstract final class C {
 
   // Accents
   static const sprout = Color(0xFFB9DD7B); // positive on dark
-  static const leaf = Color(0xFF3F8A5F); // positive on light
-  static const leafSoft = Color(0xFFE3EEE2);
+  static const leaf = Color(0xFF0E5A32); // positive on the green paper
+  static const leafSoft = Color(0xFF8FD9A8);
   static const amber = Color(0xFFE39B3A); // streak
   static const amberSoft = Color(0xFFF6E6CC);
   static const water = Color(0xFF4F8FC9); // moisture / too wet
   static const waterSoft = Color(0xFFE1ECF6);
   static const clay = Color(0xFFC65A3E); // warnings / avoid
   static const claySoft = Color(0xFFF5E0D9);
-  static const loam = Color(0xFF8A5A3B); // currency
+  static const loam = Color(0xFF6B3F22); // currency
+
+  // Pink: the reward accent (streak, XP, rewards, bloom). Use as a fill with dark text, never as text on green.
+  static const pink = Color(0xFFFF66C4);
+  static const pinkSoft = Color(0xFFF3A6D6);
+  static const pinkDeep = Color(0xFFB8327F);
 }
 
 /// Gacha rarity colours.

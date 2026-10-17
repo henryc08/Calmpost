@@ -90,7 +90,7 @@ class _StreakCalendarState extends State<StreakCalendar> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Icon(PhosphorIconsFill.fire, size: 22, color: caredToday ? C.amber : C.faint),
+            Icon(PhosphorIconsFill.fire, size: 22, color: caredToday ? C.pink : C.faint),
             const SizedBox(width: 6),
             Text('${game.streak.days}', style: T.title.copyWith(fontSize: 30, height: 1)),
             const SizedBox(width: 6),
@@ -154,10 +154,10 @@ class _Day extends StatelessWidget {
   Widget build(BuildContext context) {
     if (state == _DayState.outside) return const SizedBox(height: 32);
     const size = 30.0;
-    const band = C.amberSoft;
+    const band = C.pinkSoft;
     final (fill, text) = switch (state) {
-      _DayState.cared => (C.amber, Colors.white),
-      _DayState.locked => (C.amberSoft, C.amber),
+      _DayState.cared => (C.pink, C.ink),
+      _DayState.locked => (C.pinkSoft, C.pinkDeep),
       _DayState.today => (Colors.transparent, C.ink),
       _DayState.missed => (Colors.transparent, C.muted),
       _ => (Colors.transparent, C.faint),
@@ -173,7 +173,7 @@ class _Day extends StatelessWidget {
         border: isToday && state != _DayState.cared ? Border.all(color: C.ink, width: 1.2) : null,
       ),
       child: state == _DayState.locked
-          ? const Icon(PhosphorIconsFill.shieldCheck, size: 13, color: C.amber)
+          ? const Icon(PhosphorIconsFill.shieldCheck, size: 13, color: C.pinkDeep)
           : Text(
               '${date.day}',
               style: T.num.copyWith(fontSize: 12, color: text, fontWeight: state == _DayState.cared || isToday ? FontWeight.w800 : FontWeight.w600),

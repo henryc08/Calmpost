@@ -152,9 +152,9 @@ class _WorldPainter extends CustomPainter {
     final end = -math.pi / 2 + sweep;
     final m = c + Offset(math.cos(end), math.sin(end)) * (ringR + 9);
     final pulse = (t % 2) / 2;
-    canvas.drawCircle(m, 6 + pulse * 8, Paint()..color = C.sprout.withValues(alpha: 0.5 * (1 - pulse) * intro));
+    canvas.drawCircle(m, 6 + pulse * 8, Paint()..color = C.pink.withValues(alpha: 0.55 * (1 - pulse) * intro));
     canvas.drawCircle(m, 6, Paint()..color = C.forest);
-    canvas.drawCircle(m, 3, Paint()..color = C.sprout);
+    canvas.drawCircle(m, 3, Paint()..color = C.pink);
   }
 
   // ── Sky ─────────────────────────────────────────────────────────────────
@@ -350,12 +350,12 @@ class _WorldPainter extends CustomPainter {
     // A bloom when the bin is thriving.
     if (score >= 85 && wilt == 0) {
       final bloom = (intro - 0.6).clamp(0.0, 0.4) / 0.4;
-      final petal = Paint()..color = night ? const Color(0xFFF2E3D2) : const Color(0xFFF4EFE4);
+      final petal = Paint()..color = C.pink;
       for (var i = 0; i < 5; i++) {
         final a = i * math.pi * 2 / 5 + t * 0.15;
         canvas.drawCircle(top + Offset(math.cos(a), math.sin(a)) * 5.5 * bloom, 4.2 * bloom, petal);
       }
-      canvas.drawCircle(top, 3.2 * bloom, Paint()..color = const Color(0xFFE9B35A));
+      canvas.drawCircle(top, 3.2 * bloom, Paint()..color = const Color(0xFFFFE08A));
     } else {
       canvas.drawCircle(top, 3, Paint()..color = leafB);
     }

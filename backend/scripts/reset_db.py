@@ -1,4 +1,4 @@
-"""Drop the pre-CLAUDE.md schema, then apply the current one.
+"""Drop the pre-spec schema, then apply the current one.
 
 DESTRUCTIVE. Only for the old two-layer tables, whose shape cannot be
 migrated into the wide one-row-per-POST readings table. Requires --yes.

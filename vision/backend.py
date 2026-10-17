@@ -1,4 +1,4 @@
-"""Client for the backend's /drops endpoints (CLAUDE.md section 4).
+"""Client for the backend's /drops endpoints (AGENT.md section 4).
 
 Until the real backend has them, run `python mock_backend.py` and point
 BACKEND_URL at it (the default).

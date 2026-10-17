@@ -3,7 +3,7 @@
 Hack the Valley 2026 — a sensor-equipped compost bin and a gamified app that
 tells you what to add, what to avoid, and when your compost is ready.
 
-See [CLAUDE.md](CLAUDE.md) for the design, tech stack and game rules.
+See [AGENT.md](AGENT.md) for the design, tech stack and game rules.
 
 ```
 Arduino ──USB serial──▶ backend/scripts/serial_bridge.py ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
@@ -18,7 +18,7 @@ Everything lives on `main`.
 
 | Part | Where | Docs |
 | ---- | ----- | ---- |
-| Flutter app (Android-first; runs on mock data) | `app/` | [CLAUDE.md §7](CLAUDE.md) |
+| Flutter app (Android-first; runs on mock data) | `app/` | [AGENT.md §7](AGENT.md) |
 | Backend: FastAPI + Tiger Data + Gemini, game and economy | `backend/` | [backend/README.md](backend/README.md), [backend/TESTING.md](backend/TESTING.md) |
 | Camera drop-in: OpenCV + Gemini vision | `vision/` | [vision/README.md](vision/README.md) |
 | Arduino sketch: one probe + air sensor, JSON over USB | `firmware/sensor_output/` | |

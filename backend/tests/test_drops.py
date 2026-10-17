@@ -1,4 +1,4 @@
-"""End-to-end tests for the camera drop-in router (CLAUDE.md 2.4).
+"""End-to-end tests for the camera drop-in router (AGENT.md 2.4).
 
 Uses the shared fixture in conftest.py: a fresh database per test with the
 real schema. See conftest.py for how the database is provided.

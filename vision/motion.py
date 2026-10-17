@@ -1,6 +1,6 @@
 """Motion trigger inside the bin-opening ROI.
 
-Tuning from CLAUDE.md section 6: motion must cover > 2% of the ROI for at least
+Tuning from AGENT.md section 6: motion must cover > 2% of the ROI for at least
 150 ms to start a drop, and the drop ends after 0.8 s of stillness. The
 first 0.5 s after arming is ignored (the user's hand leaving the button).
 

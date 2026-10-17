@@ -280,7 +280,7 @@ vision/
 
 ```
 calmpost/
-  CLAUDE.md
+  AGENT.md
   app/                      # Flutter app
     lib/
       main.dart             # theme, web phone frame

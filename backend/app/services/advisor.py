@@ -156,7 +156,7 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
         answer["stage_bottom"] = "started"
         answer["bottom_ready"] = False
 
-    # Rules decide, Gemini words it (CLAUDE.md key idea 5). For an item the
+    # Rules decide, Gemini words it (AGENT.md key idea 5). For an item the
     # rules know, their verdict stands. If the model disagrees, show the rules'
     # answer whole, so the headline and reason match the verdict. Items outside
     # the catalogue are the model's call.

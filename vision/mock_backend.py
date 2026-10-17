@@ -2,7 +2,7 @@
 
     python mock_backend.py            # http://localhost:8090
 
-In memory only. Routes match CLAUDE.md section 4, so the real backend (and
+In memory only. Routes match AGENT.md section 4, so the real backend (and
 the app's ApiRepository) can copy this contract. Open http://localhost:8090
 for a small page that plays the app's part: arm the camera, see the
 "Something was added" pop-up data, confirm or dismiss.

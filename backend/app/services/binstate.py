@@ -9,7 +9,7 @@ to be careful about:
   - co2_slope_per_day is % per day (the app's co2SlopePerDay), not ppm/hour
   - greens_7d / browns_7d are rough CUPS of volume, not item counts
 
-Uses the hyperfunctions CLAUDE.md calls for: regr_slope (CO2 trend ->
+Uses the hyperfunctions AGENT.md calls for: regr_slope (CO2 trend ->
 stage), time_weight (time-weighted moisture), state_agg/duration_in (hours
 actually inside the healthy band).
 """

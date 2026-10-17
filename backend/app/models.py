@@ -189,7 +189,7 @@ class AdviceCheck(BaseModel):
 
 
 class AdviceResponse(BaseModel):
-    """Shape fixed by CLAUDE.md: verdict, reason, suggest_add, suggest_avoid,
+    """Shape fixed by AGENT.md: verdict, reason, suggest_add, suggest_avoid,
     balance, stage_top, stage_bottom, bottom_ready, tip."""
 
     advice_id: int

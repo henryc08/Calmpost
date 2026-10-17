@@ -1,4 +1,4 @@
-"""Camera drop-in (CLAUDE.md 2.4): the app arms the camera, vision/ reports
+"""Camera drop-in (AGENT.md 2.4): the app arms the camera, vision/ reports
 what it saw, the user confirms or dismisses.
 
     App ── POST /bins/{id}/drops/session ──▶ armed for 60 s

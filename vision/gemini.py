@@ -1,7 +1,7 @@
 """Identify what was dropped in, from a BEFORE and an AFTER frame.
 
 One Gemini Flash call per drop, JSON schema output, catalog ids as an enum.
-Hard budget of 4 s (CLAUDE.md): on timeout or any error we return no items
+Hard budget of 4 s (AGENT.md): on timeout or any error we return no items
 and the app shows the photo with empty fields for manual entry.
 """
 

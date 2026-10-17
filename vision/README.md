@@ -1,6 +1,6 @@
 # Calmpost vision service
 
-The camera half of **camera drop-in** (CLAUDE.md 2.4 and section 6). A small Python process on the
+The camera half of **camera drop-in** (AGENT.md 2.4 and section 6). A small Python process on the
 laptop next to the bin:
 
 1. Polls the backend for a session the app has armed ("Drop something in", 60 s).
@@ -60,13 +60,13 @@ python main.py --save-frames                      # also write before/after JPEG
 ## Guarantees
 
 - **Hard-avoid items can't slip through.** Gemini only picks a `catalog_id` from the enum. The category (green / brown / avoid) is looked up from the catalog, both here and again in the mock backend. Unknown ids become `unknown` with no category, and the user picks one.
-- **Gemini failure never blocks the flow.** With no key, a bad key, a timeout over 4 s, or bad JSON, the drop is still reported with `gemini_ok: false` and no items. The app then shows the photo with empty fields, as in CLAUDE.md.
+- **Gemini failure never blocks the flow.** With no key, a bad key, a timeout over 4 s, or bad JSON, the drop is still reported with `gemini_ok: false` and no items. The app then shows the photo with empty fields, as in AGENT.md.
 - **Hands and utensils are ignored.** A hand-only detection is not a drop.
 - **Privacy.** Frames are only processed while a session is armed. Nothing goes to disk unless `--save-frames` is set. The backend gets a 320 px thumbnail.
 
 ## Endpoints the backend needs
 
-Implemented by `mock_backend.py`. The routes are from CLAUDE.md section 4, plus three small additions marked *new*.
+Implemented by `mock_backend.py`. The routes are from AGENT.md section 4, plus three small additions marked *new*.
 
 | Method | Path | Called by | Body → response |
 |---|---|---|---|

@@ -280,3 +280,21 @@ def test_rearming_replaces_old_session(api):
     a = api.post("/bins/bin-001/drops/session").json()["session_id"]
     b = api.post("/bins/bin-001/drops/session").json()["session_id"]
     assert Backend(bin_id="bin-001", client=api).active_session().id == b != a
+
+
+@pytest.mark.parametrize('proposed,expected', [(2,2),(None,None),(0,None),(-1,None),(1000,None),(1.5,None),(True,None),('2',None)])
+def test_inventory_piece_count_is_optional_and_validated(proposed, expected):
+    item = gemini.parse({'items':[{'label':'banana peel','catalog_id':'banana_peel',
+        'confidence':.9,'est_grams':90,'piece_count':proposed}]})[0]
+    assert item.piece_count == expected
+    assert item.est_grams == 90  # count never multiplies the model's total mass
+    assert item.to_dict()['piece_count'] == expected
+
+
+def test_player_bin_vision_uses_device_credential():
+    be = Backend(api_key='demo-key',device_token='bin-device-token')
+    try:
+        assert be.http.headers['X-Device-Token'] == 'bin-device-token'
+        assert 'X-API-Key' not in be.http.headers
+    finally:
+        be.http.close()

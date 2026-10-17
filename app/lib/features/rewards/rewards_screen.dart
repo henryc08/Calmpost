@@ -69,7 +69,7 @@ class RewardsScreen extends ConsumerWidget {
                       label: 'Open',
                       dense: true,
                       onTap: () async {
-                        final o = ref.read(gameProvider.notifier).openCrate(i);
+                        final o = await ref.read(gameProvider.notifier).openCrateAsync(i);
                         if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
                       },
                     ),

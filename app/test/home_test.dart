@@ -1,4 +1,5 @@
 import 'package:calmpost/data/calmpost_repository.dart';
+import 'package:calmpost/data/collectibles.dart';
 import 'package:calmpost/data/food_catalog.dart';
 import 'package:calmpost/data/mock_repository.dart';
 import 'package:calmpost/domain/models.dart';
@@ -17,6 +18,11 @@ class _OneShotRepo extends MockRepository {
 
   @override
   Stream<BinSnapshot> watchBin() => Stream.fromFuture(super.watchBin().first);
+}
+
+class _AllCollectiblesGame extends GameController {
+  @override
+  GameState build() => super.build().copyWith(owned: {for (final item in collectibles) item.id: 1});
 }
 
 ProviderContainer _container() =>
@@ -55,7 +61,6 @@ void main() {
     await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
     await _settle(tester);
     expect(find.text('TOP'), findsOneWidget);
-
 
     // Opening Layers checks on the bin: streak extends, quest completes.
     await tester.tap(find.bySemanticsLabel('Layers'));
@@ -140,7 +145,9 @@ void main() {
     tester.platformDispatcher.textScaleFactorTestValue = 1.3;
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final container = _container();
+    final container = ProviderContainer(
+      overrides: [repositoryProvider.overrideWith((ref) => _OneShotRepo(ref.watch(scenarioProvider))), gameProvider.overrideWith(_AllCollectiblesGame.new)],
+    );
     addTearDown(container.dispose);
 
     await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
@@ -177,7 +184,7 @@ void main() {
     game.checkIn();
     final advice = Advice(item: foodById['cardboard']!, verdict: Verdict.great, headline: '', reason: '');
     game.recordLog(advice, added: true, suggestedIds: const ['cardboard']);
-    expect(c.read(gameProvider).xpToday, 20);
+    expect(c.read(gameProvider).xpToday, 22); // 40 g volume + care + check-in
     final loam = c.read(gameProvider).loam;
     expect(game.claimDaily(0)?.loam, 15);
     expect(c.read(gameProvider).loam, loam + 15);

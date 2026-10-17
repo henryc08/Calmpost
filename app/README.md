@@ -37,7 +37,11 @@ What comes from the backend:
 - the add log
 - the league table
 
-Suggestions and the catalog use the app's own rules. The game economy (XP, Loam, quests, crates, Seed Packets) still runs on the phone for now.
+Suggestions and the catalog use the app's own rules. Live XP, Loam, quests, crates, Seed Packets, equipment and Lid Locks now use the server economy. Demo progression is separately persisted on-device. Confirmed compostable volume earns 1 XP per 20 g (rounded cumulatively per day), plus care bonuses, within the shared 60 XP daily action cap.
+
+The camera button arms the **bin camera**, not the phone camera. There is no in-app live preview yet. Existing pending drops are recovered, and users correct the item/type/amount before saving. Logging failures remain visible; identical retries do not duplicate saved additions.
+
+These are demo APKs: LAN HTTP, debug release signing and a shared API key are not production security. Validate on a physical Android device before distribution.
 
 Honest about the hardware:
 - **One probe.** The bin has one probe, in the top layer, so the bottom shows **not measured** (never a number) and the health score leaves it out.
@@ -53,3 +57,15 @@ Long-press the Bin World on Home to open the demo picker:
 - The mock scenarios: healthy, too wet, too dry, curing and ready. Use them if the venue network drops.
 
 Web preview links (also `?source=mock|live`) are listed in the agent doc, section 9.
+
+### Compost inventory
+
+Open **Compost inventory** in Log or Profile for grouped item counts, estimated
+weight, green/brown totals and weekly/all-time history. Camera/photo review and
+manual logging include editable pieces/portions and **total** weight; a count
+change does not multiply grams. Only confirmed compostable additions count.
+Older logs without counts remain labelled as such.
+
+Live inventory and group rankings show the server's amount XP + care/reward XP
+breakdown. The sensor-based health score stays separate. Demo inventory works
+without a backend and lasts for the mock repository session.

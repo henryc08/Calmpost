@@ -11,6 +11,15 @@ Advice adviseFor(FoodItem item, BinSnapshot s, Map<String, FoodItem> catalog) {
     return Advice(item: item, verdict: Verdict.avoid, headline: 'Keep it out', reason: '${item.note} Bin it, or freeze it for your city\'s green bin.');
   }
 
+  if (!s.topMeasured || s.readingsStale) {
+    return Advice(
+      item: item,
+      verdict: Verdict.careful,
+      headline: 'Check the bin first',
+      reason: 'Current moisture is unavailable. Check the bin by hand before adding more; this item is compostable, but its suitability right now is unknown.',
+    );
+  }
+
   final balance = balanceOf(s);
   final wet = s.topMoisture > 64;
   final dry = s.topMoisture < 36;
@@ -69,21 +78,43 @@ Advice adviseFor(FoodItem item, BinSnapshot s, Map<String, FoodItem> catalog) {
   return Advice(item: item, verdict: Verdict.great, headline: 'Good add', reason: '${item.note} Keeps your greens and browns in balance.');
 }
 
+BinNeed needFor(BinSnapshot s) {
+  if (!s.topMeasured || s.readingsStale) return BinNeed.nothing;
+  if (s.bottomMeasured && (s.bottomStage == Stage.curing || s.bottomStage == Stage.ready)) return BinNeed.nothing;
+  final ratio = s.greens7d > 0 ? s.browns7d / s.greens7d : (s.browns7d > 0 ? 4.0 : 2.5);
+  final delta = s.topTemperatureMeasured && s.ambientMeasured ? s.topTemp - s.ambientTemp : null;
+  if (s.topMoisture > 60 || ratio < 2 || (s.airMeasured && s.co2 > 6000 && delta != null && delta < 5)) return BinNeed.browns;
+  if (s.topMoisture < 40) return ratio > 3 ? BinNeed.greens : BinNeed.water;
+  if (s.airMeasured && s.co2SlopePerDay > 2 && delta != null && delta < 5) return BinNeed.mix;
+  return BinNeed.nothing;
+}
+
 Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
   List<FoodItem> pick(List<String> ids) => ids.map((id) => catalog[id]).whereType<FoodItem>().toList();
   final avoid = pick(['meat', 'cheese', 'oily_food']);
 
-  if (s.bottomStage == Stage.ready) {
+  final need = needFor(s);
+  if (need == BinNeed.nothing || need == BinNeed.water || need == BinNeed.mix) {
     return Suggestion(
+      need: need,
       balance: Balance.balanced,
-      line: 'The bottom layer has finished curing and is ready to harvest.',
-      add: pick(['veg_peels', 'cardboard']),
+      line: !s.topMeasured || s.readingsStale
+          ? 'Current readings are unavailable. Check the bin by hand before adding more.'
+          : need == BinNeed.water
+          ? 'The top layer is dry, but the mix is balanced. Add a little water; no food is needed.'
+          : need == BinNeed.mix
+          ? 'CO₂ is rising without much warmth. Stir the top layer to let air in.'
+          : s.bottomMeasured && s.bottomStage.index >= Stage.curing.index
+          ? 'Let the bottom layer finish curing. Readiness is a guide; check its texture and smell.'
+          : 'Moisture and balance are on target. Nothing needs adding right now.',
+      add: const [],
       avoid: avoid,
     );
   }
-  switch (balanceOf(s)) {
+  switch (need == BinNeed.browns ? Balance.needsBrowns : Balance.needsGreens) {
     case Balance.needsBrowns:
       return Suggestion(
+        need: BinNeed.browns,
         balance: Balance.needsBrowns,
         line: s.topMoisture > 64
             ? 'The top layer is ${s.topMoisture.round()}% wet. Dry browns will soak it up and let air back in.'
@@ -96,6 +127,7 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
       );
     case Balance.needsGreens:
       return Suggestion(
+        need: BinNeed.greens,
         balance: Balance.needsGreens,
         line: s.topMoisture < 36
             ? 'The top layer is down to ${s.topMoisture.round()}% moisture. Wet greens will get it going again.'

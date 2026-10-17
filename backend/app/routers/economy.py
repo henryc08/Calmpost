@@ -8,11 +8,16 @@ ever shows what the backend actually paid.
 from fastapi import APIRouter, Depends
 
 from ..models import EquipRequest, PullRequest
-from ..rules import game, gacha
+from ..rules import game, gacha, progression
 from ..security import require_app_key
 from ..services import economy
 
 router = APIRouter(tags=["economy"], dependencies=[Depends(require_app_key)])
+
+
+@router.post("/users/{user_id}/levels/{level}/claim")
+async def claim_level(user_id: str, level: int) -> dict:
+    return await economy.claim_level(user_id, level)
 
 
 # --- rewards inbox & crates ------------------------------------------------
@@ -62,7 +67,7 @@ async def pull(user_id: str, body: PullRequest) -> dict:
 
 @router.post("/users/{user_id}/equip")
 async def equip(user_id: str, body: EquipRequest) -> dict:
-    """Equip an owned finish (recolours the Home ring) or title."""
+    """Equip an owned seed buff, finish (Home ring), or title."""
     return await economy.equip(user_id, body.collectible_id)
 
 
@@ -89,4 +94,6 @@ async def rules() -> dict:
         "streak_milestones": game.STREAK_MILESTONES,
         "league_finish_loam": game.LEAGUE_FINISH_LOAM,
         "max_lid_locks": game.MAX_LID_LOCKS,
+        "level_rewards": [{"level": n, "xp": game.xp_for_level(n), **progression.level_reward(n)} for n in range(1, progression.MAX_LEVEL + 1)],
+        "seed_buffs": progression.SEED_BUFFS,
     }

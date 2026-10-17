@@ -326,7 +326,7 @@ Future<void> showInvite(
         const SizedBox(height: S.x3),
         Text(
           group
-              ? 'Share this code with your group. Joining shares care XP on the private leaderboard.'
+              ? 'Share this code with your group. Joining shares compost XP and estimated amounts on the private leaderboard.'
               : 'Share this code with a friend. Using it lets you both follow each other and see private progress.',
           style: T.body,
         ),

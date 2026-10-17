@@ -21,6 +21,7 @@ class Settings:
     camera_source: int | str = _source(os.environ.get("CAMERA_SOURCE", "0"))
     bin_id: str = os.environ.get("BIN_ID", "bin-001")
     backend_url: str = os.environ.get("BACKEND_URL", "http://localhost:8090").rstrip("/")
+    device_token: str = os.environ.get("DEVICE_TOKEN", "")
     api_key: str = os.environ.get("APP_API_KEY", "")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
     gemini_vision_model: str = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")

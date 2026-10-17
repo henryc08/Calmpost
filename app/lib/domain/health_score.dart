@@ -8,19 +8,34 @@ import 'models.dart';
 ///
 /// Moisture is weighted highest because it's our most reliable sensor.
 class HealthBreakdown {
-  const HealthBreakdown({required this.moisture, required this.temperature, required this.co2, required this.balance});
+  const HealthBreakdown({
+    required this.moisture,
+    required this.temperature,
+    required this.co2,
+    required this.balance,
+    this.hasMoisture = true,
+    this.hasTemperature = true,
+    this.hasCo2 = true,
+  });
 
   final double moisture;
   final double temperature;
   final double co2;
   final double balance;
+  final bool hasMoisture, hasTemperature, hasCo2;
 
   static const wMoisture = 0.45;
   static const wTemperature = 0.20;
   static const wCo2 = 0.15;
   static const wBalance = 0.20;
 
-  int get total => (moisture * wMoisture + temperature * wTemperature + co2 * wCo2 + balance * wBalance).round().clamp(0, 100);
+  int get total {
+    final weight = (hasMoisture ? wMoisture : 0) + (hasTemperature ? wTemperature : 0) + (hasCo2 ? wCo2 : 0) + wBalance;
+    return (((hasMoisture ? moisture * wMoisture : 0) + (hasTemperature ? temperature * wTemperature : 0) + (hasCo2 ? co2 * wCo2 : 0) + balance * wBalance) /
+            weight)
+        .round()
+        .clamp(0, 100);
+  }
 }
 
 /// 100 inside [lo, hi], falling linearly to 0 at [falloff] outside the band.
@@ -36,14 +51,19 @@ const moistureHi = 60.0;
 HealthBreakdown computeHealth(BinSnapshot s) {
   // An unmeasured layer is left out rather than scored.
   final topM = bandScore(s.topMoisture, moistureLo, moistureHi, 25);
-  final moisture = s.bottomMeasured ? (topM + bandScore(s.bottomMoisture, moistureLo, moistureHi, 25)) / 2 : topM;
+  final moistureScores = [if (s.topMeasured) topM, if (s.bottomMeasured) bandScore(s.bottomMoisture, moistureLo, moistureHi, 25)];
+  final moisture = moistureScores.isEmpty ? 0.0 : moistureScores.reduce((a, b) => a + b) / moistureScores.length;
 
   final topDelta = s.topTemp - s.ambientTemp;
   final bottomDelta = s.bottomTemp - s.ambientTemp;
   final topT = bandScore(topDelta, 5, 25, 10);
   final bottomCuring = s.bottomStage.index >= Stage.curing.index;
   final bottomT = bottomCuring ? bandScore(bottomDelta, -2, 8, 10) : bandScore(bottomDelta, 3, 25, 10);
-  final temperature = s.bottomMeasured ? (topT + bottomT) / 2 : topT;
+  final temperatureScores = [
+    if (s.topTemperatureMeasured && s.ambientMeasured) topT,
+    if (s.bottomMeasured && s.bottomTemperatureMeasured && s.ambientMeasured) bottomT,
+  ];
+  final temperature = temperatureScores.isEmpty ? 0.0 : temperatureScores.reduce((a, b) => a + b) / temperatureScores.length;
 
   final active = s.topStage == Stage.active || s.topStage == Stage.hot;
   final activityScore = active ? bandScore(s.co2, 900, 6000, 900) : 100.0;
@@ -53,19 +73,27 @@ HealthBreakdown computeHealth(BinSnapshot s) {
   final ratio = s.greens7d <= 0 ? 4.0 : s.browns7d / s.greens7d;
   final balance = bandScore(ratio, 1.6, 3.4, 1.4);
 
-  return HealthBreakdown(moisture: moisture, temperature: temperature, co2: co2, balance: balance);
+  return HealthBreakdown(
+    moisture: moisture,
+    temperature: temperature,
+    co2: co2,
+    balance: balance,
+    hasMoisture: moistureScores.isNotEmpty,
+    hasTemperature: temperatureScores.isNotEmpty,
+    hasCo2: s.airMeasured,
+  );
 }
 
 Balance balanceOf(BinSnapshot s) {
   final ratio = s.greens7d <= 0 ? 4.0 : s.browns7d / s.greens7d;
-  if (s.topMoisture > 64 || ratio < 1.2) return Balance.needsBrowns;
-  if (s.topMoisture < 36 || ratio > 4) return Balance.needsGreens;
+  if ((s.topMeasured && s.topMoisture > 64) || ratio < 1.2) return Balance.needsBrowns;
+  if ((s.topMeasured && s.topMoisture < 36) || ratio > 4) return Balance.needsGreens;
   return Balance.balanced;
 }
 
 BinMood moodFor(BinSnapshot s, int health) {
-  if (s.topMoisture > 66) return BinMood.wet;
-  if (s.topMoisture < 33) return BinMood.dry;
+  if (s.topMeasured && s.topMoisture > 66) return BinMood.wet;
+  if (s.topMeasured && s.topMoisture < 33) return BinMood.dry;
   if (health >= 85) return BinMood.thriving;
   if (health >= 70) return BinMood.healthy;
   if (health >= 50) return BinMood.fair;
@@ -86,6 +114,7 @@ String moodLabel(BinMood m) => switch (m) {
 enum ZoneState { good, wet, dry, cold, hot, unknown }
 
 ZoneState zoneState(BinSnapshot s, Zone z) {
+  if ((z == Zone.top && !s.topMeasured) || (z == Zone.air && !s.airMeasured)) return ZoneState.unknown;
   if (z == Zone.air) return s.co2 > 7000 ? ZoneState.hot : ZoneState.good;
   if (z == Zone.bottom && !s.bottomMeasured) return ZoneState.unknown;
   final m = s.moisture(z);

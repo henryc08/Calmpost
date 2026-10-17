@@ -41,13 +41,17 @@ def test_balance_and_stage():
     assert compost.balance_of(25, 2, 9) == "needs_greens"
     assert compost.balance_of(52, 3, 7) == "balanced"
     assert compost.stage(45, 21, 3000, 50) == "hot"
-    assert compost.stage(21.5, 21, 600, 45, slope_pct_per_day=-10) == "ready"
+    assert compost.stage(21.5, 21, 600, 45, slope_pct_per_day=-10) == "curing"
+    assert compost.stage(21.5, 21, 600, 45, slope_pct_per_day=-10, has_mature_history=True) == "ready"
+    assert compost.stage(21.5, 21, 600, 15, has_mature_history=True) == "started"
 
 
 # --- game -----------------------------------------------------------------
 
-def test_logging_a_scrap_earns_nothing():
-    assert game.XP["log"] == 0
+def test_volume_rewards_are_cumulative():
+    assert game.volume_xp(110) == 5
+    assert game.volume_xp(10, 110) == 1
+    assert game.volume_xp(110) + game.volume_xp(10, 110) == game.volume_xp(120)
 
 
 def test_daily_action_cap():
@@ -58,7 +62,7 @@ def test_daily_action_cap():
 
 def test_levels_and_titles_match_the_app():
     assert game.level_for_xp(0) == 1
-    assert game.level_for_xp(2340) == 9
+    assert game.level_for_xp(2340) == 20  # lifetime XP retained, flat 120 XP per step
     assert game.title_for_level(9) == "Soil Whisperer"
 
 
@@ -127,4 +131,6 @@ def test_statement_splitter_handles_quotes_and_do_blocks():
 def test_schema_files_apply_in_order():
     names = [p.name for p in db.schema_files()]
     assert names == sorted(names)
-    assert names[0].startswith("000_") and names[-1].startswith("090_")
+    assert names[0].startswith("000_") and names[-1] == "097_progression.sql"
+    assert "096_compost_inventory.sql" in names
+    assert len({name.split('_')[0] for name in names}) == len(names)

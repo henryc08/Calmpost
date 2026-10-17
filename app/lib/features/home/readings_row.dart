@@ -20,7 +20,7 @@ class ReadingsRow extends StatelessWidget {
         ZoneState.wet => (C.water, 'wet'),
         ZoneState.dry => (C.amber, 'dry'),
         ZoneState.hot => (C.clay, 'high'),
-        ZoneState.unknown => (C.faint, 'no probe yet'),
+        ZoneState.unknown => (C.faint, 'not measured'),
         _ => (C.leaf, 'good'),
       };
       return Expanded(
@@ -69,13 +69,29 @@ class ReadingsRow extends StatelessWidget {
     return IntrinsicHeight(
       child: Row(
         children: [
-          col(Zone.top, 'TOP', '${s.topMoisture.round()}', '%', '${s.topTemp.round()}°'),
+          col(
+            Zone.top,
+            'TOP',
+            s.topMeasured ? '${s.topMoisture.round()}' : '—',
+            s.topMeasured ? '%' : '',
+            s.topTemperatureMeasured ? '${s.topTemp.round()}°' : '',
+          ),
           const Hairline(vertical: true),
           s.bottomMeasured
               ? col(Zone.bottom, 'BOTTOM', '${s.bottomMoisture.round()}', '%', '${s.bottomTemp.round()}°')
               : col(Zone.bottom, 'BOTTOM', '—', '', ''),
           const Hairline(vertical: true),
-          col(Zone.air, 'AIR', co2k ? (s.co2 / 1000).toStringAsFixed(1) : '${s.co2.round()}', co2k ? 'k' : '', 'CO₂'),
+          col(
+            Zone.air,
+            'AIR',
+            !s.airMeasured
+                ? '—'
+                : co2k
+                ? (s.co2 / 1000).toStringAsFixed(1)
+                : '${s.co2.round()}',
+            s.airMeasured && co2k ? 'k' : '',
+            'CO₂',
+          ),
         ],
       ),
     );

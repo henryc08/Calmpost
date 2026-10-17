@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/toast.dart';
 import '../../domain/models.dart';
+import '../../domain/drop.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
 import '../../state/social.dart';
@@ -17,6 +18,7 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import '../../ui/info_dot.dart';
+import '../../ui/piece_counter.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -43,9 +45,14 @@ class _VerdictSheet extends ConsumerStatefulWidget {
 class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
   late FoodItem _item = widget.item;
   Advice? _advice;
-  bool _saving = false;
   String? _error;
-  final _requestId = '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+  bool _saving = false;
+  late Amount _amount = amountFor(widget.item.grams);
+  int _pieceCount = 1;
+  double? _weight;
+  String _requestId = _newRequestId();
+  static String _newRequestId() => 'manual-${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+  ({Advice advice, bool added, double grams, int pieces, bool advised})? _submission;
 
   @override
   void initState() {
@@ -54,52 +61,91 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
   }
 
   Future<void> _check(FoodItem item) async {
+    if (_saving || _submission != null) return;
     setState(() {
       _item = item;
       _advice = null;
+      _error = null;
+      _amount = amountFor(item.grams);
+      _pieceCount = 1;
+      _weight = null;
+      _requestId = _newRequestId();
     });
-    final advice = await ref.read(repositoryProvider).checkItem(item);
-    if (!mounted || _item != item) return;
-    advice.verdict == Verdict.great ? HapticFeedback.mediumImpact() : HapticFeedback.lightImpact();
-    setState(() => _advice = advice);
+    try {
+      final advice = await ref.read(repositoryProvider).checkItem(item);
+      if (!mounted || _item != item) return;
+      advice.verdict == Verdict.great ? HapticFeedback.mediumImpact() : HapticFeedback.lightImpact();
+      setState(() => _advice = advice);
+    } catch (_) {
+      if (mounted && _item == item) {
+        setState(() => _error = 'Could not check the bin. Nothing has been logged.');
+      }
+    }
   }
 
   Future<void> _commit({required bool added}) async {
     if (_saving) return;
-    setState(() { _saving = true; _error = null; });
-    final account = ref.read(socialSessionProvider).valueOrNull;
-    if (account != null) {
-      try {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final advice = _advice!;
+    final tips = ref.read(suggestionProvider)?.add.map((f) => f.id) ?? const <String>[];
+    final submission = _submission ??= (advice: advice, added: added, grams: _weight ?? amountGrams[_amount]!, pieces: _pieceCount, advised: tips.contains(advice.item.id));
+    final repo = ref.read(repositoryProvider);
+    final game = ref.read(gameProvider.notifier);
+    try {
+      // Restoring secure storage is asynchronous. Do not mistake a loading
+      // account for a signed-out demo and silently save to the wrong place.
+      final account = await ref.read(socialSessionProvider.future);
+      if (account != null) {
         if (account.binId == null || ref.read(dataSourceProvider) != DataSource.live) {
           throw const SocialFailure('Connect your bin in Social to save real care. Demo actions stay on this device.');
         }
-        final result = await socialWrite(ref, 'POST', '/care-log', {'catalog_id': _advice!.item.id, 'action': added ? 'added' : 'skipped', 'request_id': _requestId}) as Json;
+        final result =
+            await socialWrite(ref, 'POST', '/care-log', {
+                  'catalog_id': submission.advice.item.id,
+                  'action': submission.added ? 'added' : 'skipped',
+                  'quantity_g': submission.added ? submission.grams.round() : 0,
+                  'piece_count': submission.pieces,
+                  'request_id': _requestId,
+                })
+                as Json;
+        ref.invalidate(inventoryProvider);
+        await game.refreshLive();
         if (!mounted) return;
         showToast(ref, 'Care saved to your profile', xp: result['xp_awarded'] as int);
         Navigator.of(context).pop();
-      } catch (e) {
-        if (mounted) setState(() { _saving = false; _error = e is SocialFailure ? e.message : 'Could not save your care. Please try again'; });
+        return;
       }
-      return;
+      final paid = await repo.logItem(
+        submission.advice.item,
+        added: submission.added,
+        quantityG: submission.grams,
+        pieceCount: submission.pieces,
+        requestId: _requestId,
+        wasAdvised: submission.advised,
+      );
+      final xp = repo.serverGame ? paid ?? 0 : game.recordLog(advice, added: added, suggestedIds: tips, quantityG: submission.grams).xp;
+      ref.invalidate(inventoryProvider);
+      if (repo.serverGame) await game.refreshLive();
+      if (!mounted) return;
+      showToast(ref, added ? '${advice.item.name} logged' : 'Kept ${advice.item.name.toLowerCase()} out', xp: xp);
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is SocialFailure ? error.message : 'Save was not confirmed. Retry the same entry to avoid duplicates.';
+        });
+      }
     }
-    final advice = _advice!;
-    final tips = ref.read(suggestionProvider)?.add.map((f) => f.id) ?? const <String>[];
-    final out = ref.read(gameProvider.notifier).recordLog(advice, added: added, suggestedIds: tips);
-    if (added) ref.read(repositoryProvider).logItem(advice.item);
-    if (out.followed) {
-      showToast(ref, 'Followed the next best action', xp: out.xp);
-    } else if (!added) {
-      showToast(ref, 'Kept ${advice.item.name.toLowerCase()} out', xp: out.xp);
-    } else {
-      showToast(ref, '${advice.item.name} logged');
-    }
-    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     final a = _advice;
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(S.gutter, S.x3, S.gutter, S.x5 + MediaQuery.paddingOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -113,7 +159,12 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
             ),
           ),
           const SizedBox(height: S.x5),
-          AnimatedSize(duration: M.base, curve: M.ease, alignment: Alignment.topCenter, child: a == null ? _loading() : _result(a)),
+          if (_error != null) ...[
+            Text(_error!, style: T.body.copyWith(color: C.clay)),
+            if (a == null) PillButton(label: 'Try again', onTap: () => _check(_item)),
+            const SizedBox(height: S.x3),
+          ],
+          AnimatedSize(duration: M.base, curve: M.ease, alignment: Alignment.topCenter, child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a)),
         ],
       ),
     );
@@ -167,7 +218,12 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [Text(label, style: T.caps.copyWith(color: color)), const InfoDot(InfoTip.verdict)]),
+                  Row(
+                    children: [
+                      Text(label, style: T.caps.copyWith(color: color)),
+                      const InfoDot(InfoTip.verdict),
+                    ],
+                  ),
                   const SizedBox(height: 2),
                   Text(a.item.name, style: T.small.copyWith(color: C.ink2)),
                 ],
@@ -194,19 +250,46 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
         Text(
           avoid
               ? 'Keeping it out earns ${Xp.avoidedBadAdd} XP.'
-              : followsTip
-              ? 'This is the next best action: +${Xp.followedSuggestion} XP.'
-              : 'Adding scraps earns no XP on its own. Following the next best action does.',
+              : 'Compostable additions earn 1 XP per 20 g.${followsTip ? ' Plus 15 XP for following this advice.' : ''} Action rewards are capped at 60 XP a day.',
           style: T.small,
         ),
         const SizedBox(height: S.x5),
-        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: S.x3), child: Text(_error!, style: T.small.copyWith(color: C.clay))),
-        if (_saving) const LinearProgressIndicator(color: C.forest, backgroundColor: C.sunk),
+        if (!avoid) ...[
+          PieceCounter(value: _pieceCount, onChanged: _saving || _submission != null ? null : (count) => setState(() => _pieceCount = count)),
+          const SizedBox(height: S.x3),
+          Text('TOTAL AMOUNT · ESTIMATED', style: T.caps),
+          const SizedBox(height: S.x2),
+          PaperSegments<Amount>(
+            values: Amount.values,
+            selected: _amount,
+            label: (a) => '${a.name} ${amountGrams[a]!.round()} g',
+            onChanged: (a) {
+              if (!_saving && _submission == null) {
+                setState(() {
+                  _amount = a;
+                  _weight = null;
+                });
+              }
+            },
+          ),
+          TextButton(
+            onPressed: _saving || _submission != null
+                ? null
+                : () async {
+                    final grams = await editCompostWeight(context, _weight ?? amountGrams[_amount]!);
+                    if (grams != null && mounted) {
+                      setState(() => _weight = grams);
+                    }
+                  },
+            child: Text('≈ ${(_weight ?? amountGrams[_amount]!).round()} g total · Edit weight', style: T.small),
+          ),
+          const SizedBox(height: S.x4),
+        ],
         SizedBox(
           width: double.infinity,
           child: avoid
-              ? PillButton(label: 'Keep it out', color: C.clay, textColor: Colors.white, onTap: _saving ? null : () => _commit(added: false))
-              : PillButton(label: a.verdict == Verdict.great ? 'Add it' : 'Add it carefully', onTap: _saving ? null : () => _commit(added: true)),
+              ? PillButton(label: _saving ? 'Saving…' : 'Keep it out', color: C.clay, textColor: Colors.white, onTap: _saving ? null : () => _commit(added: false))
+              : PillButton(label: _saving ? 'Saving…' : (a.verdict == Verdict.great ? 'Add it' : 'Add it carefully'), onTap: _saving ? null : () => _commit(added: true)),
         ),
         const SizedBox(height: S.x2),
         Center(

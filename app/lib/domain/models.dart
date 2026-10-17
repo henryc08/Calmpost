@@ -1,3 +1,5 @@
+import 'dart:typed_data' show Uint8List;
+
 import 'package:flutter/widgets.dart' show IconData;
 
 /// Where a sensor sits in the bin.
@@ -13,6 +15,8 @@ enum FoodCategory { green, brown, avoid }
 enum Verdict { great, careful, avoid }
 
 enum Balance { needsGreens, needsBrowns, balanced }
+
+enum BinNeed { browns, greens, water, mix, nothing }
 
 /// The bin's overall state, driven by the health score and moisture.
 enum BinMood { thriving, healthy, fair, dry, wet, struggling }
@@ -35,6 +39,12 @@ class BinSnapshot {
     required this.healthyHoursToday,
     this.bottomMeasured = true,
     this.stale = false,
+    this.topMeasured = true,
+    this.topTemperatureMeasured = true,
+    this.bottomTemperatureMeasured = true,
+    this.airMeasured = true,
+    this.ambientMeasured = true,
+    this.moistureCalibrated = true,
   });
 
   final DateTime time;
@@ -69,6 +79,10 @@ class BinSnapshot {
 
   /// The bin hasn't reported for a while (live data only).
   final bool stale;
+  final bool topMeasured, topTemperatureMeasured, bottomTemperatureMeasured;
+  final bool airMeasured, ambientMeasured, moistureCalibrated;
+
+  bool get readingsStale => stale || DateTime.now().difference(time) > const Duration(minutes: 2);
 
   /// How old the reading is, e.g. "12 min ago" (shown when [stale]).
   String ageLabel(DateTime now) {
@@ -107,21 +121,23 @@ class FoodItem {
 }
 
 class Advice {
-  const Advice({required this.item, required this.verdict, required this.headline, required this.reason, this.pairWith = const []});
+  const Advice({required this.item, required this.verdict, required this.headline, required this.reason, this.pairWith = const [], this.xpAwarded});
   final FoodItem item;
   final Verdict verdict;
   final String headline;
   final String reason;
   final List<FoodItem> pairWith;
+  final int? xpAwarded;
 }
 
 /// What the bin needs right now.
 class Suggestion {
-  const Suggestion({required this.balance, required this.line, required this.add, required this.avoid});
+  const Suggestion({required this.balance, required this.line, required this.add, required this.avoid, this.need = BinNeed.nothing});
   final Balance balance;
   final String line;
   final List<FoodItem> add;
   final List<FoodItem> avoid;
+  final BinNeed need;
 }
 
 class Quest {
@@ -219,7 +235,7 @@ class Achievement {
 }
 
 class LogEntry {
-  const LogEntry({required this.item, required this.verdict, required this.time, required this.xp, required this.added});
+  const LogEntry({required this.item, required this.verdict, required this.time, required this.xp, required this.added, this.quantityG});
   final FoodItem item;
   final Verdict verdict;
   final DateTime time;
@@ -227,6 +243,7 @@ class LogEntry {
 
   /// False when the user checked an item and kept it out.
   final bool added;
+  final double? quantityG;
 }
 
 /// Reward crates, earned from achievements and milestones.
@@ -251,3 +268,229 @@ class RewardEvent {
 
 /// Gacha rarities for Seed Packet pulls.
 enum Rarity { common, uncommon, rare, epic, legendary }
+
+// --- camera drop-in (AGENTS.md 2.4) -----------------------------------------
+//
+// The app arms the camera, vision/ reports what it saw, the user confirms or
+// corrects it. Nothing here talks to Gemini: the vision service calls it and
+// the backend decides categories by the rules, so a label the rules call
+// avoid stays avoid whatever the model said.
+
+/// A camera session the app armed. The bin watches for about a minute.
+class DropSession {
+  const DropSession({required this.id, required this.expiresAt});
+
+  final String id;
+  final DateTime expiresAt;
+
+  bool get open => DateTime.now().isBefore(expiresAt);
+
+  /// Zero once it has expired, so a countdown never goes negative.
+  Duration get remaining {
+    final left = expiresAt.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
+}
+
+enum DropStatus { pending, confirmed, dismissed }
+
+/// One thing the camera thought it saw.
+class DropGuess {
+  const DropGuess({
+    required this.label,
+    required this.catalogId,
+    required this.confidence,
+    this.item,
+    this.category,
+    this.amount,
+    this.estGrams,
+    this.pieceCount,
+    this.box,
+  });
+
+  /// What the model called it, e.g. "banana peel".
+  final String label;
+
+  /// Catalog id the backend mapped it to, or 'unknown'.
+  final String catalogId;
+
+  final double confidence;
+
+  /// The catalog entry this resolved to, when the app recognises it. Null for
+  /// an unknown item, which the user has to name themselves.
+  final FoodItem? item;
+
+  /// Null when the backend could not categorise it.
+  final FoodCategory? category;
+
+  /// 'small', 'handful' or 'large'.
+  final String? amount;
+
+  final double? estGrams;
+  final int? pieceCount;
+
+  /// [ymin, xmin, ymax, xmax] on a 0-1000 grid, as Gemini returns boxes.
+  /// Scale by the displayed image size to draw it.
+  final List<int>? box;
+}
+
+/// A detection waiting for the user to confirm or dismiss.
+class CameraDrop {
+  const CameraDrop({
+    required this.id,
+    required this.binId,
+    required this.sessionId,
+    required this.time,
+    required this.status,
+    required this.guesses,
+    required this.geminiOk,
+    required this.latencyMs,
+    this.source = 'camera',
+    this.model = '',
+    this.error,
+    this.thumbnailJpeg,
+  });
+
+  final int id;
+  final String binId;
+  final String sessionId;
+  final DateTime time;
+  final DropStatus status;
+
+  /// 'camera' when the bin noticed it, 'photo' when the user submitted one.
+  /// The same sheet handles both, but a photo the user framed deserves
+  /// different wording from something the bin spotted on its own.
+  final String source;
+
+  bool get fromPhoto => source == 'photo';
+
+  /// Empty when the camera saw something move but could not name it, or when
+  /// identification failed on a submitted photo. Either way the user names it.
+  final List<DropGuess> guesses;
+
+  /// False when Gemini was unavailable and the rules-based fallback answered.
+  /// Worth surfacing: the guess is cruder, so the user is likelier to correct it.
+  final bool geminiOk;
+
+  final int latencyMs;
+  final String model;
+  final String? error;
+
+  /// Decoded JPEG ready for Image.memory, or null when none was sent.
+  final Uint8List? thumbnailJpeg;
+}
+
+/// What the user says was actually added, after editing the camera's guess.
+class DropConfirmation {
+  const DropConfirmation({
+    required this.label,
+    this.catalogId = 'unknown',
+    this.pieceCount,
+    this.quantityG,
+    this.category,
+    this.amount,
+    this.removed = false,
+    this.wasAdvised = false,
+    this.adviceId,
+  });
+
+  final String label;
+  final String catalogId;
+  final int? pieceCount;
+  final double? quantityG;
+  final FoodCategory? category;
+  final String? amount;
+
+  /// The user took a keep-out item back out again: logged as a skip, which
+  /// earns the usual +5 rather than nothing.
+  final bool removed;
+
+  /// It was the suggested next action: +15 by the usual rule.
+  final bool wasAdvised;
+  final int? adviceId;
+}
+
+/// What came back from confirming a drop.
+class DropResult {
+  const DropResult({
+    required this.dropId,
+    required this.corrected,
+    required this.verdicts,
+    required this.xpAwarded,
+  });
+
+  final int dropId;
+
+  /// True when the user changed what the camera guessed. The backend keeps
+  /// this for the accuracy stat.
+  final bool corrected;
+
+  /// One per confirmed item the backend could judge; a removed item has none.
+  final List<Advice> verdicts;
+
+  final int xpAwarded;
+}
+
+// --- Trunc, the compost assistant -------------------------------------------
+//
+// Free-text questions, answered by the backend's POST /bins/{id}/chat. The app
+// never calls Gemini and never holds its key; the backend assembles the sensor
+// readings, what was recently added and the last camera photos, and holds the
+// answer to the app's own compost rules.
+//
+// Stateless on the server: the app owns the conversation and passes it back
+// each turn, so keep the turns in state and send them with the next question.
+
+enum TruncRole { user, assistant }
+
+class TruncTurn {
+  const TruncTurn({required this.role, required this.text});
+
+  final TruncRole role;
+  final String text;
+
+  bool get isUser => role == TruncRole.user;
+}
+
+/// What Trunc actually had to work with. Worth showing quietly rather than
+/// decoratively: when [readingsAt] is null the bin has never reported, so the
+/// answer came from general rules and not from this bin.
+class TruncContext {
+  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0});
+
+  final DateTime? readingsAt;
+  final int recentAdds;
+  final int photos;
+}
+
+class TruncReply {
+  const TruncReply({
+    required this.reply,
+    required this.model,
+    required this.onTopic,
+    required this.usedReadings,
+    required this.context,
+  });
+
+  /// Always something sayable, including when [onTopic] is false or the model
+  /// was unreachable. Render it as a normal message either way.
+  final String reply;
+
+  /// 'gemini-2.5-flash' when the model answered, 'rules-fallback' when it was
+  /// unreachable and the sensors answered instead, 'rules-override' when the
+  /// rules replaced an answer that suggested a keep-out item.
+  final String model;
+
+  /// False when the question was not about compost. The backend already
+  /// supplies the polite redirect, so there is no refusal UI to build.
+  final bool onTopic;
+
+  /// True when the answer leaned on the sensor data.
+  final bool usedReadings;
+
+  final TruncContext context;
+
+  /// Gemini was unavailable and this came from the rules. A normal reply, not
+  /// an error: do not show a failure state for it.
+  bool get isFallback => model == 'rules-fallback';
+}

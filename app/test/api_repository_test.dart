@@ -40,8 +40,11 @@ Map<String, dynamic> live({double topMoisture = 75.8, bool bottomMeasured = fals
   'notes': ['Only one probe is fitted, so the bottom layer is unmeasured.'],
 };
 
-ApiRepository repo(Future<http.Response> Function(http.Request r) handler) =>
-    ApiRepository(const ApiConfig(baseUrl: 'http://bin.test', apiKey: 'k'), client: MockClient(handler), pollEvery: const Duration(milliseconds: 10));
+ApiRepository repo(Future<http.Response> Function(http.Request r) handler) => ApiRepository(
+  const ApiConfig(baseUrl: 'http://bin.test', apiKey: 'k'),
+  client: MockClient(handler),
+  pollEvery: const Duration(milliseconds: 10),
+);
 
 http.Response json(Object body, [int status = 200]) => http.Response(jsonEncode(body), status, headers: {'content-type': 'application/json'});
 
@@ -144,7 +147,7 @@ void main() {
     expect(await repo((req) async => json({'detail': 'not in a league'}, 404)).leagueCohort(), isEmpty);
   });
 
-  test('a failed log does not throw into the UI', () async {
-    await repo((req) async => http.Response('nope', 500)).logItem(foodById['banana_peel']!);
+  test('a failed log is surfaced so the UI cannot claim success', () async {
+    await expectLater(repo((req) async => http.Response('nope', 500)).logItem(foodById['banana_peel']!), throwsA(isA<ApiException>()));
   });
 }

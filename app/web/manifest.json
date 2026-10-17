@@ -1,0 +1,35 @@
+{
+    "name": "Calmpost",
+    "short_name": "Calmpost",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FBF7EF",
+    "theme_color": "#58B85C",
+    "description": "The compost bin that tells you what it needs.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

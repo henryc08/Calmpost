@@ -22,12 +22,12 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 | Layer | Tech | Notes |
 |---|---|---|
 | **Mobile app** | **Flutter (Dart)**, Android-first | min SDK 24, edge-to-edge, predictive back |
-| State | `flutter_riverpod` | providers only, no `setState` for shared state |
-| Routing | `go_router` | |
-| Models | `freezed` + `json_serializable` | run build_runner after editing models |
-| UI | `google_fonts` (Nunito), `phosphor_flutter`, `flutter_animate`, `rive`, `fl_chart`, `confetti`, `shimmer` | |
-| Feedback | `audioplayers` (sfx), `HapticFeedback` | |
-| Device | `image_picker`, `flutter_local_notifications` | |
+| State | `flutter_riverpod` 2.x (`Notifier`, `StreamProvider`) | providers only, no `setState` for shared state |
+| Navigation | plain `Navigator` + custom routes in `app/routes.dart` | no router package needed yet |
+| Models | plain immutable Dart classes in `domain/models.dart` | no codegen, nothing to build |
+| UI | Nunito (bundled in `assets/fonts`), `phosphor_flutter`, `flutter_animate`, `fl_chart` | all art is hand-drawn `CustomPainter` (Wren, plants, bin, badges) |
+| Feedback | `audioplayers` (sfx in `assets/sfx`, synthesised by us), `HapticFeedback` | |
+| Device | `flutter_local_notifications` (compost ready), `shared_preferences` (onboarding seen) | |
 | **Backend** (phase 2) | **Python 3.12 + FastAPI + asyncpg** | thin API: keeps DB + Gemini keys off the phone |
 | **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions |
 | AI | **Gemini API** (`google-genai`), JSON-schema structured output | rule-based fallback always on |
@@ -48,22 +48,23 @@ ESP32 ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
 ```
 calmpost/
   CLAUDE.md
-  app/                      # Flutter app (frontend — current focus)
+  app/                      # Flutter app (frontend, built)
     lib/
-      main.dart, app.dart   # router + theme
-      ui/                   # DESIGN SYSTEM: tokens.dart, theme.dart, components/, motion.dart, sfx.dart
-      domain/               # pure Dart: models, health_score.dart, stage.dart, xp_rules.dart
-      data/                 # calmpost_repository.dart (abstract), mock_repository.dart, api_repository.dart
-      features/             # home/ layer_detail/ log/ journey/ leagues/ profile/ garden/ onboarding/ celebrations/
-      debug/                # scenario switcher (long-press Wren) — also our live-demo control
-    assets/                 # rive/, svg/, sfx/
-    test/
+      main.dart             # theme, onboarding gate, web phone frame
+      app/                  # shell (tabs + game event loop), routes, stats bar, toasts, notifications, dev hooks
+      ui/                   # DESIGN SYSTEM: tokens, type, theme, sfx, components/, art/ (Wren, plants, bin, badges)
+      domain/               # pure Dart: models, health_score, xp_rules, advice_rules
+      data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), food_catalog
+      state/                # Riverpod: providers (bin, health, standings), game (XP/streak/quests/shop), celebrations
+      features/             # home/ layer/ log/ journey/ leagues/ profile/ streak/ shop/ celebrations/ onboarding/ debug/
+    assets/                 # fonts/, sfx/
+    test/                   # domain_test (rules), flow_test (full user flow + 360dp large-text overflow check)
   backend/                  # FastAPI + SQL migrations (phase 2)
   firmware/                 # ESP32 sketch (phase 2)
 ```
 
 **Rules:**
-- Features never import each other. Shared things go in `ui/` or `domain/`.
+- Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Cross-feature navigation goes through `app/routes.dart`.
 - Screens never call HTTP or mocks directly; they go through `repositoryProvider`.
 - Game and health logic lives in `domain/` as **pure, unit-tested functions**. No logic in widgets.
 
@@ -87,9 +88,10 @@ Everything visual comes from `lib/ui/`. **Never use raw Material widgets with de
 | `sun` | `#FFC83D` | XP |
 | `flame` | `#FF8A1F` | streak |
 | `coral` | `#FF6B5E` | warnings / avoid |
-| `league` | `#8E6CF0` | leagues |
+| `moss` | `#2FAE9B` | leagues, CO₂ |
 
-Each accent also has a ~12% `tint` for chip and card fills.
+Each accent is a `Tone` trio in `ui/tokens.dart`: `face`, `lip` (the darker 3D edge) and `tint` (~12% for chip and card fills). **No purple, no gradients, no glass/blur.**
+League tiers: Seedling `#A7D88A` · Sprout leaf · Fern moss · Sapling sun · Oak flame · Sequoia `#E0533D`.
 
 - **Type:** Nunito, weights 600/800/900 only. Scale is 34 / 28 / 22 / 17 / 15 / 13. Numbers use tabular figures.
 - **Spacing:** 4/8 grid. **Radii:** 12 chips · 16 buttons · 24 cards · 32 sheets.
@@ -97,9 +99,11 @@ Each accent also has a ~12% `tint` for chip and card fills.
 - **Icons:** Phosphor (fill/duotone) only. **No emoji as icons.** Emoji in copy is OK, sparingly.
 - **Motion:** `flutter_animate`, 250 ms ease-out entrances with a 40 ms stagger, count-up numbers, springy tap scale. Every reward gets sfx + haptic.
 
-**Core components:** `ChunkyButton` (press → shifts down 4px, lip collapses, light haptic), `CalmCard`, `StatPill`, `ProgressRing`, `SegmentedBar`, `SectionHeader`, `BottomSheetScaffold`, `TabBarCalm`, `CelebrationOverlay`.
+**Core components** (`ui/components/`): `ChunkyButton` / `ChunkyCircle` (press → face drops into the lip, haptic + tap sound), `Pressable` (squish on tap), `Slab` (the card), `Tag`, `IconBlob`, `ProgressBar` (with highlight stripe), `ProgressRing`, `CountUp`, `TabBarCalm`, `showCalmSheet`, `LeafBurst` (leaf/petal confetti).
 
-**Mascot: Wren the worm.** Built in Rive, with 5 moods driven by the health score: thriving / happy / okay / thirsty-or-soggy / sick. Wren also voices all advice and notifications.
+**Art** (`ui/art/`, all `CustomPainter`, no image assets): `Wren`, `Plant` (8 species, sway + wilt + grow-in), `BinScene` (cutaway bin with live zones, probe, ESP32), `Flame`, `LeagueBadge`, `Chest`, `AcornIcon`.
+
+**Mascot: Wren the worm.** Six moods driven by the health score (thriving / happy / okay / thirsty / soggy / sick), blinks, sways, wears hats bought with acorns. Wren voices all advice and notifications. The launcher icon and splash are Wren too.
 
 **Before you open a PR, check:**
 - [ ] Only tokens and `ui/` components (no hard-coded colours or sizes)
@@ -113,7 +117,7 @@ Each accent also has a ~12% `tint` for chip and card fills.
 ## App structure
 
 **Bottom nav (custom `TabBarCalm`):** Home · Journey · **[ + Log ]** (raised centre button) · Leagues · Profile.
-**Top bar on main screens:** streak · Seeds · health score, as `StatPill`s.
+**Top bar on main screens** (`app/stats_bar.dart`): health score · streak flame (grey until you care for the bin today) · acorns. Each opens a sheet.
 
 | Screen | What's on it |
 |---|---|
@@ -124,7 +128,8 @@ Each accent also has a ~12% `tint` for chip and card fills.
 | Leagues | tier banner, reset countdown, ranked list with promotion/demotion zones, Weekly / Friends tabs |
 | Profile | level, Garden, achievements, impact stats, friends |
 | Celebrations | streak milestone, quest complete, league result, compost ready, level up |
-| Onboarding | meet Wren → how points work → pair bin |
+| Onboarding | meet Wren → "care earns XP, volume never does" → garden → pair bin (first launch only) |
+| Sheets | health breakdown, streak calendar + Lid Locks, shop (Lid Locks + Wren hats), demo controls |
 
 ---
 
@@ -138,31 +143,35 @@ health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
 - `balance`: 7-day greens:browns ≈ 1:2–1:3.
 - It lives in `domain/health_score.dart`, and the breakdown sheet explains the score ("why is my score 72?").
 
-**Core loop:** open → see Wren + health → do today's quests → earn XP / Seeds → streak ticks → garden grows → league rank moves.
+**Core loop:** open → see Wren + health → do today's quests → earn XP / acorns → streak ticks → garden grows → league rank moves.
 
 | Mechanic | Rule |
 |---|---|
 | Streak | consecutive days with ≥1 care action (check-in / followed suggestion / balance fix). Milestones at 3/7/14/30/100 |
-| Lid Lock | streak freeze; hold max 2; bought with Seeds or earned from a perfect week |
-| XP | followed suggestion +15 · healthy layer-day +10 per layer · avoided bad add +5 · daily quest +10–20 · weekly balance +30 · harvest +100 · **log = 0** |
-| Seeds | soft currency from quests/milestones → Lid Locks, garden pots, rare plants, Wren cosmetics. **Never real money** |
+| Lid Lock | streak freeze; hold max 2; 60 acorns |
+| XP | followed suggestion +15 · check-in +5 · healthy layer-day +10 per layer · avoided bad add +5 · daily quest +10–20 · weekly balance +30 · harvest +100 · **log = 0**. Action XP capped at 60/day |
+| Acorns | soft currency from quests/harvests → Lid Locks, Wren hats. **Never real money** |
 | Daily Quests | 3 per day, always care-based ("Follow 1 of Wren's suggestions"), never "add N scraps" |
 | Batch Journey | Duolingo-style path: Started → Active → Hot → Curing → Ready → Harvested, driven by sensors, not taps |
 | Garden | health ≥ 70 for a day → a plant grows. Harvest → rare species. Neglect → plants **wilt**, then recover |
 | Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia. Top 7 up, bottom 5 down, Sunday reset |
 | Friends | friends leaderboard, co-op Friend Quests, nudges |
 | Levels | lifetime XP → Lvl 1–50 with titles (Scrap Saver → Soil Whisperer → Humus Hero) |
-| Achievements | tiered badges: First Harvest, Perfect Week, Moisture Master, kg diverted 1/5/10/25 |
+| Achievements | 9 badges with bronze/silver/gold tiers (Wildfire, Landfill Dodger, Harvester, Moisture Master, Green Thumb, Quest Seeker, Perfect Balance, Rare Collector, Climber). Level-ups toast |
 | Impact | kg diverted from landfill, CO₂e avoided, $ fertilizer saved, as a shareable card |
 | Notifications | in Wren's voice, state-triggered, **max 2/day** |
 
-**Hackathon priority:** streak + streak-at-risk notification → leagues → garden → daily quests → friend quests.
+All of the above is built on mock data. Still to do: streak-at-risk notification (needs scheduled notifications), weekly recap, real friends.
 
 ---
 
 ## Mock data & demo scenarios
 
-`MockRepository` supports these scenarios: `healthy`, `too_wet`, `too_dry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users. Switch scenarios from the hidden debug panel (long-press Wren).
+`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following a tip visibly raises the health score. Switch scenarios from the hidden demo panel (**long-press Wren**).
+
+Verdicts in the app are `great` / `careful` / `avoid`; `careful` covers the backend's `add_with_browns` and `add_with_greens` (the `pairWith` list says which). The rule engine lives in `domain/advice_rules.dart`.
+
+**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-3`, `?scenario=tooWet`, `?open=log&item=banana_peel`, `?open=layer&zone=top|bottom|air`, `?open=health|streak|shop|debug`, `?celebrate=streak|quest|level|ready|harvest|promo`, `?onboarding=1`, `?checkin=1`. On a wide window the app renders in a phone-sized frame.
 
 **Demo script:** log "banana peel" in `too_dry` → add. Switch to `too_wet` → "add browns first". Switch to `ready` → notification + celebration. Then show the streak, league rank and garden.
 
@@ -176,10 +185,70 @@ Endpoint shapes mirror `CalmpostRepository` methods, so `ApiRepository` is a mec
 - **Continuous aggregates:** `readings_15m`, `readings_1d` (charts), `xp_weekly` (powers Leagues)
 - **Hyperfunctions:** `state_agg`/`duration_in` (time in healthy band), `time_weight`, `regr_slope` (CO₂ trend → stage), `time_bucket_gapfill` + `locf`
 - **Policies:** columnstore after 7 days, retention on raw readings
-- **Endpoints:** `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends` · `POST /bins/{id}/logs` · `POST /bins/{id}/advice/check` · `GET /users/{id}/game` · `GET /leagues/current` · `GET /quests/today` · `POST /bins/{id}/harvest`
-- **Gemini:** JSON-schema output `{verdict, reason, suggest_add[], suggest_avoid[], balance, stage_top, stage_bottom, bottom_ready, tip}`. Meat, dairy and oil are **always** `avoid` via rules, and rules also answer if Gemini fails.
+- **Endpoints:** `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends` · `POST /bins/{id}/logs` · `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice/next` · `GET /bins/{id}/summary` · `GET /users/{id}/game` · `GET /leagues/current` · `GET /quests/today` · `POST /bins/{id}/harvest`
+- **Gemini:** JSON-schema output `{verdict, reason, suggest_add[], suggest_avoid[], balance, stage_top, stage_bottom, bottom_ready, tip}`. Meat, dairy and oil are **always** `avoid` via rules, and rules also answer if Gemini fails. Full feature list in *Gemini features*.
 - **Optional:** a Tiger fork as a "demo" database seeded with scenarios.
 - **Secrets:** go in `backend/.env` only, which is git-ignored. **Never put keys in the Flutter app.**
+
+---
+
+## Gemini features
+
+Gemini is Wren's voice, not Wren's judgement. **Rules decide, Gemini explains.** The deterministic logic in `domain/` (mirrored in the backend) works out *what the bin needs*; Gemini turns that into friendly, specific advice and summaries. If Gemini is slow, fails, or returns something that disagrees with the rules, the rule-based answer is shown instead and nobody notices.
+
+**Every call gets the same context snapshot:**
+```
+{ live: {moisture_top, moisture_bottom, temp_top, temp_bottom, co2_ppm, co2_slope_24h},
+  balance_7d: {greens_kg, browns_kg, ratio},
+  stage: {top, bottom, bottom_ready},
+  health: {score, breakdown},
+  recent_logs: [last 10 adds],
+  need: <computed by rules, see below> }
+```
+The snapshot is stored with the response in `advice` so we can always show *why* Wren said something.
+
+### 1. Scrap check ("Can I add this?") — demo moment
+- Input: scrap name (typed) **or** a photo from the Log camera (Gemini vision identifies it, the user confirms).
+- Output: `{verdict: add | add_with_browns | add_with_greens | avoid, reason, suggest_add[], suggest_avoid[], tip}`.
+- The verdict depends on the current snapshot, so the same banana peel gets a different answer in `too_dry` vs `too_wet`.
+- Hard rules win: meat, dairy, oil, pet waste, glossy/plastic-coated paper → always `avoid`.
+
+### 2. "What should I add?" (balance advisor)
+Proposes what the bin needs next, including **whether it needs more browns or more greens**.
+- Rules compute `need`, one of:
+
+  | `need` | When (any of) | Example advice |
+  |---|---|---|
+  | `browns` | moisture > 60%, ratio greener than 1:2, CO₂ high + temp low (going anaerobic) | "I'm a bit soggy. Tear up some cardboard or add dry leaves." |
+  | `greens` | moisture < 40% *and* ratio browner than 1:3, temp dropping in the Active stage | "I've got plenty of dry stuff. Some veggie peels would wake me up." |
+  | `water` | moisture < 40% with balance already fine | "Just a splash of water, no food needed." |
+  | `mix` | CO₂ rising with flat temp | "Give me a stir to let some air in." |
+  | `nothing` | everything in range, or bottom layer is curing / ready | "I'm happy! Nothing to add today." |
+
+- Gemini output: `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence: low | medium | high}`. `amount` is plain-language ("a handful", "two egg cartons"), never grams.
+- `suggest_add` prefers items the user has logged before, so advice fits their kitchen.
+- **`nothing` is a valid, good answer.** Never suggest food just to have a suggestion (key idea 1).
+- Shown in the "Wren suggests" card on Home. Following it earns the +15 XP.
+
+### 3. Summaries
+All summaries are short (≤ 3 sentences or ≤ 4 bullets), in Wren's voice, and only reference numbers from the snapshot. No invented stats.
+
+| Summary | Where | What it covers |
+|---|---|---|
+| **Daily note** | Home, under Wren | Today's state in one or two lines + the one thing to do |
+| **Score explainer** | Health score breakdown sheet | "Why is my score 72?": the biggest drag on the score and how to fix it |
+| **Layer trend** | Layer detail | What moisture / temp / CO₂ did this week, in plain words |
+| **Weekly recap** | Sunday, alongside the league reset | Health trend, greens:browns balance, care actions, XP, streak; one win and one thing to try next week |
+| **Batch story** | Harvest celebration | How the batch went from Started to Ready: days per stage, kg diverted, best week. Shareable card |
+
+Output: `{title, body, bullets[], mood}`. `mood` must match the rule-computed mood; if it doesn't, fall back.
+
+### Guardrails
+- **Honest:** stage and "ready" are described as guides ("looks ready", "seems to be curing"), never certainties. Low-confidence answers say so.
+- **Validate everything:** responses must match the JSON schema, `verdict`/`need` must match the rules, and hard-avoid items can never be in `suggest_add`. Otherwise use the rule fallback.
+- **Fallback templates** live in `domain/advice_templates.dart` (and the Python mirror), so the app works fully offline and on mock data.
+- **Cost / speed:** cache by `(bin, snapshot hash, feature)`; daily note and recap are generated once per day/week, not per app open. Target < 2 s, show the brand shimmer while waiting.
+- **Endpoints:** `POST /bins/{id}/advice/check` (scrap check) · `GET /bins/{id}/advice/next` (balance advisor) · `GET /bins/{id}/summary?kind=daily|score|layer|weekly|batch`. `CalmpostRepository` gets matching methods so `MockRepository` can return canned responses for each scenario.
 
 ---
 
@@ -189,11 +258,12 @@ Endpoint shapes mirror `CalmpostRepository` methods, so `ApiRepository` is a mec
 # app
 cd app
 flutter pub get
-dart run build_runner build --delete-conflicting-outputs   # after editing freezed models
 flutter analyze                                            # must be clean
-flutter test
+flutter test                                               # rules + full-flow + small-screen overflow tests
 flutter run                     # debug on connected Android phone
 flutter run --profile           # check for jank
+flutter run -d chrome           # quick design review in the browser (see deep links above)
+flutter build apk --release     # APK to sideload for the demo
 
 # backend (phase 2)
 cd backend && uvicorn app.main:app --reload
@@ -204,13 +274,13 @@ python scripts/simulator.py --scenario too_wet
 
 ## Build order
 
-1. **M0 Foundation:** tokens, theme, core components, bottom bar, router, mock repository + scenarios. *(Art owner starts Wren in parallel.)*
-2. **M1 Home + Log:** "same scrap, different answer" working on mocks.
-3. **M2 Game core:** health score, streak + Lid Lock, daily quests, XP, celebrations, sfx/haptics.
-4. **M3 Leagues + Journey.**
-5. **M4 Profile / Garden / Achievements / Impact,** onboarding, notifications.
-6. **M5 Polish:** empty/loading/error states, motion tuning, 360dp check, design checklist.
-7. **Phase 2:** backend + Tiger Data + Gemini + firmware, then swap `MockRepository` → `ApiRepository`.
+1. ~~M0 Foundation~~ done
+2. ~~M1 Home + Log~~ done: "same scrap, different answer" works on mocks
+3. ~~M2 Game core~~ done
+4. ~~M3 Leagues + Journey~~ done
+5. ~~M4 Profile / Garden / Achievements / Impact, onboarding, notifications~~ done
+6. **M5 Polish:** test on a real phone, tune motion and sound, Gemini summaries in the UI (daily note, layer trend).
+7. **Phase 2:** backend + Tiger Data + Gemini + firmware, then write `ApiRepository` and swap it in `state/providers.dart` (one line).
 
 ---
 

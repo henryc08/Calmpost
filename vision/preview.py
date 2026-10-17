@@ -24,31 +24,124 @@ class PreviewState:
         self.fraction = 0.0
         self.threshold = 0.02
         self.last_box: tuple[list[int], str] | None = None
+        #: The finished drop, held on screen after the session ends. Without
+        #: this the result only ever reached the terminal: the watcher stops
+        #: pushing frames the moment it fires, so whatever it saw vanished
+        #: from the preview before anyone could read it.
+        self.result: list[str] = []
+        self.result_until: float = 0.0
 
     def push(self, frame: np.ndarray) -> None:
         out = frame.copy()
         x, y, w, h = self.roi.pixels(out)
         moving = self.fraction > self.threshold
-        cv2.rectangle(out, (x, y), (x + w, y + h), (40, 160, 230) if moving else (200, 200, 200), 2)
+        live = (40, 160, 230)
+        idle = (200, 200, 200)
+        cv2.rectangle(out, (x, y), (x + w, y + h), live if moving else idle, 2)
         if self.last_box:
             out = fr.draw_box(out, *self.last_box)
-        bar = int(min(self.fraction / (self.threshold * 4), 1.0) * 200)
-        cv2.rectangle(out, (12, 12), (212, 26), (60, 60, 60), 1)
-        cv2.rectangle(out, (12, 12), (12 + bar, 26), (40, 160, 230) if moving else (180, 180, 180), -1)
-        cv2.putText(out, self.status, (12, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+
+        # The overlay is drawn before the frame is scaled to 960 wide, so
+        # sizes are relative to the source frame: a 640px webcam and a 1080p
+        # one end up with the same apparent text size in the browser.
+        s = max(out.shape[1] / 960.0, 0.75)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.72 * s
+        thick = max(1, round(2 * s))
+        pad = round(12 * s)
+        line = round(30 * s)
+
+        rows = [
+            self.status,
+            f"motion {self.fraction * 100:5.1f}%   trigger {self.threshold * 100:.1f}%",
+        ]
+        if time.time() < self.result_until:
+            rows.extend(self.result)
+        elif self.last_box:
+            rows.append(f"last: {self.last_box[1]}")
+
+        bar_w, bar_h = round(300 * s), round(16 * s)
+        panel_h = pad + len(rows) * line + bar_h + pad
+        panel_w = max(bar_w, *(cv2.getTextSize(r, font, scale, thick)[0][0] for r in rows)) + pad * 2
+
+        # Dark panel behind the text: white-on-white was unreadable against a
+        # bright desk, which is exactly the background the camera looks at.
+        panel = out[0:panel_h, 0:panel_w]
+        if panel.size:
+            out[0:panel_h, 0:panel_w] = cv2.addWeighted(
+                panel, 0.35, np.zeros_like(panel), 0.65, 0
+            )
+
+        yy = pad + round(line * 0.75)
+        for row in rows:
+            cv2.putText(out, row, (pad, yy), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+            yy += line
+
+        # Motion bar, with the trigger threshold marked so you can see how
+        # close you are rather than guessing from a bare bar.
+        bx, by = pad, yy - round(line * 0.55)
+        full = min(self.fraction / (self.threshold * 4), 1.0)
+        cv2.rectangle(out, (bx, by), (bx + bar_w, by + bar_h), (90, 90, 90), -1)
+        cv2.rectangle(out, (bx, by), (bx + int(bar_w * full), by + bar_h),
+                      live if moving else (180, 180, 180), -1)
+        tick = bx + bar_w // 4           # the threshold sits at a quarter of full scale
+        cv2.line(out, (tick, by - round(3 * s)), (tick, by + bar_h + round(3 * s)),
+                 (255, 255, 255), max(1, round(s)), cv2.LINE_AA)
+
         ok, buf = cv2.imencode(".jpg", fr.resize_max(out, 960), [cv2.IMWRITE_JPEG_QUALITY, 70])
         if ok:
             with self._lock:
                 self._jpeg = buf.tobytes()
+
+    def show_result(self, frame, items, model: str, ok: bool, latency_ms: int,
+                    hold_s: float = 12.0) -> None:
+        """Hold the finished drop on screen so it can actually be read.
+
+        The watcher stops pushing frames as soon as it fires, so this pushes
+        the 'after' frame once more with the result drawn on it. `hold_s` is
+        how long the lines stay before the preview goes back to live motion.
+        """
+        if items:
+            top = items[0]
+            box = getattr(top, "box_2d", None)
+            label = getattr(top, "label", "?")
+            conf = getattr(top, "confidence", 0.0)
+            if box:
+                self.last_box = (box, f"{label} {conf:.0%}")
+            lines = [f"saw: {label}  ({conf:.0%})"]
+            for extra in items[1:3]:
+                lines.append(f"     + {getattr(extra, 'label', '?')}")
+        else:
+            self.last_box = None
+            lines = ["saw: nothing it could name"]
+
+        # Says plainly when the answer came from the rules rather than the
+        # model, which is otherwise invisible and looks like a bad guess.
+        lines.append(f"{'gemini' if ok else 'RULES FALLBACK'}  {model}  {latency_ms} ms")
+
+        self.status = "result"
+        self.result = lines
+        self.result_until = time.time() + hold_s
+        if frame is not None:
+            self.push(frame)
 
     def jpeg(self) -> bytes | None:
         with self._lock:
             return self._jpeg
 
     def clear(self) -> None:
+        """Back to idle between sessions.
+
+        Called the moment a watch returns, which used to blank the frame
+        before a result could be read. A result being held on screen wins
+        until its hold expires.
+        """
+        if time.time() < self.result_until:
+            return
         with self._lock:
             self._jpeg = None
         self.last_box = None
+        self.result = []
         self.status = 'idle: not armed'
 
 

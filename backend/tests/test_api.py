@@ -419,7 +419,9 @@ def test_each_probe_calibrates_separately(c):
 def test_a_resend_of_the_same_timestamp_fills_the_second_probe_in(c):
     """ON CONFLICT must cover the new columns, or a bridge retry would drop
     whichever probe arrived second."""
-    ts = "2026-10-17T20:00:00+00:00"
+    # Relative, not a wall-clock literal: binstate.STALE_AFTER is two minutes,
+    # so a fixed timestamp makes this test rot.
+    ts = datetime.now(timezone.utc).isoformat()
     first = {k: v for k, v in NEW_FORMAT.items() if not k.endswith("_2")}
     assert post_reading(c, {**first, "time": ts}).status_code == 200
     assert post_reading(c, {**NEW_FORMAT, "time": ts}).status_code == 200

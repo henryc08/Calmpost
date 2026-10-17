@@ -24,6 +24,12 @@ class PreviewState:
         self.fraction = 0.0
         self.threshold = 0.02
         self.last_box: tuple[list[int], str] | None = None
+        #: The finished drop, held on screen after the session ends. Without
+        #: this the result only ever reached the terminal: the watcher stops
+        #: pushing frames the moment it fires, so whatever it saw vanished
+        #: from the preview before anyone could read it.
+        self.result: list[str] = []
+        self.result_until: float = 0.0
 
     def push(self, frame: np.ndarray) -> None:
         out = frame.copy()
@@ -49,7 +55,9 @@ class PreviewState:
             self.status,
             f"motion {self.fraction * 100:5.1f}%   trigger {self.threshold * 100:.1f}%",
         ]
-        if self.last_box:
+        if time.time() < self.result_until:
+            rows.extend(self.result)
+        elif self.last_box:
             rows.append(f"last: {self.last_box[1]}")
 
         bar_w, bar_h = round(300 * s), round(16 * s)
@@ -85,14 +93,55 @@ class PreviewState:
             with self._lock:
                 self._jpeg = buf.tobytes()
 
+    def show_result(self, frame, items, model: str, ok: bool, latency_ms: int,
+                    hold_s: float = 12.0) -> None:
+        """Hold the finished drop on screen so it can actually be read.
+
+        The watcher stops pushing frames as soon as it fires, so this pushes
+        the 'after' frame once more with the result drawn on it. `hold_s` is
+        how long the lines stay before the preview goes back to live motion.
+        """
+        if items:
+            top = items[0]
+            box = getattr(top, "box_2d", None)
+            label = getattr(top, "label", "?")
+            conf = getattr(top, "confidence", 0.0)
+            if box:
+                self.last_box = (box, f"{label} {conf:.0%}")
+            lines = [f"saw: {label}  ({conf:.0%})"]
+            for extra in items[1:3]:
+                lines.append(f"     + {getattr(extra, 'label', '?')}")
+        else:
+            self.last_box = None
+            lines = ["saw: nothing it could name"]
+
+        # Says plainly when the answer came from the rules rather than the
+        # model, which is otherwise invisible and looks like a bad guess.
+        lines.append(f"{'gemini' if ok else 'RULES FALLBACK'}  {model}  {latency_ms} ms")
+
+        self.status = "result"
+        self.result = lines
+        self.result_until = time.time() + hold_s
+        if frame is not None:
+            self.push(frame)
+
     def jpeg(self) -> bytes | None:
         with self._lock:
             return self._jpeg
 
     def clear(self) -> None:
+        """Back to idle between sessions.
+
+        Called the moment a watch returns, which used to blank the frame
+        before a result could be read. A result being held on screen wins
+        until its hold expires.
+        """
+        if time.time() < self.result_until:
+            return
         with self._lock:
             self._jpeg = None
         self.last_box = None
+        self.result = []
         self.status = 'idle: not armed'
 
 

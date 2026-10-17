@@ -6,6 +6,7 @@ import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
+import '../domain/drop_history.dart';
 import '../domain/xp_rules.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -43,6 +44,34 @@ const _bases = {
 };
 
 class MockRepository implements CalmpostRepository {
+  final _history = <int, PastDrop>{};
+  final _photos = <int, Uint8List>{};
+  @override
+  Future<DropHistoryPage> dropHistory({String? before, int limit = 20}) async {
+    final cursor = before == null ? null : DateTime.parse(before);
+    final rows = _history.values.where((d) => cursor == null || d.time.isBefore(cursor)).toList()..sort((a, b) => b.time.compareTo(a.time));
+    final page = rows.take(limit).toList();
+    return DropHistoryPage(drops: page, nextBefore: rows.length > limit ? page.last.time.toUtc().toIso8601String() : null);
+  }
+
+  @override
+  Future<Uint8List?> dropPhoto(int id) async => _photos[id];
+
+  void _archive(Drop drop, List<PastDropItem> items, {bool dismissed = false, bool changed = false}) {
+    if (_history.containsKey(drop.id)) return;
+    if (drop.thumbnail != null) _photos[drop.id] = drop.thumbnail!;
+    _history[drop.id] = PastDrop(
+      id: drop.id,
+      time: DateTime.now(),
+      status: dismissed ? DropStatus.dismissed : DropStatus.confirmed,
+      source: drop.source,
+      guesses: drop.items.map((d) => d.label).toList(),
+      items: items,
+      corrected: changed || dismissed,
+      hasPhoto: drop.thumbnail != null,
+    );
+  }
+
   @override
   bool get serverGame => false;
   @override
@@ -257,12 +286,18 @@ class MockRepository implements CalmpostRepository {
       _recordItem(l.item, quantityG: l.grams, pieceCount: l.pieceCount, requestId: 'drop:${drop.id}:${out.length}', source: drop.source);
     }
     _pending.removeWhere((d) => d.id == drop.id);
+    _archive(drop, [
+      for (final l in lines) PastDropItem(label: l.item.name, category: l.item.category.name, grams: l.grams, pieces: l.pieceCount, removed: l.removed),
+    ], changed: corrected(drop, lines));
     _reviewed[drop.id] = out;
     return out;
   }
 
   @override
-  Future<void> dismissReviewedDrop(Drop drop) => dismissDrop(drop.id);
+  Future<void> dismissReviewedDrop(Drop drop) async {
+    await dismissDrop(drop.id);
+    _archive(drop, [], dismissed: true);
+  }
   // --- camera drop-in ---------------------------------------------------------
   //
   // No camera and no backend here: arming queues a detection a beat later, so
@@ -365,12 +400,20 @@ class MockRepository implements CalmpostRepository {
 
     final guessed = drop?.guesses.map((g) => (g.catalogId, g.label.toLowerCase())).toSet() ?? const {};
     final confirmed = items.map((i) => (i.catalogId, i.label.toLowerCase())).toSet();
+    if (drop != null) {
+      _archive(Drop.fromCamera(drop), [
+        for (final i in items)
+          PastDropItem(label: i.label, category: i.category?.name ?? 'unknown', grams: i.quantityG, pieces: i.pieceCount, removed: i.removed),
+      ], changed: guessed.isNotEmpty && !_setEquals(guessed, confirmed));
+    }
     return _confirmed[dropId] = DropResult(dropId: dropId, corrected: guessed.isNotEmpty && !_setEquals(guessed, confirmed), verdicts: verdicts, xpAwarded: xp);
   }
 
   @override
   Future<void> dismissDrop(int dropId) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
+    final drop = _pending.where((d) => d.id == dropId).firstOrNull;
+    if (drop != null) _archive(Drop.fromCamera(drop), [], dismissed: true);
     _pending.removeWhere((d) => d.id == dropId);
   }
 

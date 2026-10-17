@@ -8,6 +8,7 @@ import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
+import '../domain/drop_history.dart';
 import 'api_config.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -30,6 +31,20 @@ class ApiRepository implements CalmpostRepository {
       CompostInventory.fromJson(await _get('/bins/${config.binId}/inventory', {'period': period}) as Map<String, dynamic>);
 
   final ApiConfig config;
+  @override
+  Future<DropHistoryPage> dropHistory({String? before, int limit = 20}) async => DropHistoryPage.fromJson(
+        await _get('/bins/${config.binId}/drops/history', {'limit': '$limit', 'before': ?before}) as Map<String, dynamic>,
+  );
+
+  @override
+  Future<Uint8List?> dropPhoto(int id) async {
+    final path = '/drops/$id/photo';
+    final res = await _http.get(_uri(path), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) throw ApiException('GET $path', res.statusCode, 'Photo unavailable');
+    return res.bodyBytes;
+  }
+
   final Duration pollEvery;
 
   /// How often the drop sheet asks whether the camera saw something.

@@ -87,6 +87,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),
         const SizedBox(height: S.x3),
         PillButton(label: 'Take or choose a photo', icon: PhosphorIconsRegular.image, onTap: () => Routes.photo(context)),
+        const SizedBox(height: S.x3),
+        PillButton(label: 'Past drops & photos', icon: PhosphorIconsRegular.clockCounterClockwise, onTap: () => Routes.dropHistory(context)),
         const SectionBreak(),
         if (_query.isEmpty && suggestion != null && suggestion.add.isNotEmpty) ...[
           const SectionLabel('RECOMMENDED NOW', trailing: PinkPill('+15 XP each')),

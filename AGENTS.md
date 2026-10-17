@@ -211,6 +211,8 @@ Photo identification sends the Gemini key in a request header, never the URL.
 Provider failures return a fixed, safe manual-identification message; raw
 exceptions and tracebacks must not enter drop history, responses, or logs.
 
+**Past drops & photos** is reachable from Log. `dropHistory(before, limit)` pages the existing API; the UI shows resolved records with source, original guesses, confirmed items, corrections and removed items. `dropPhoto(id)` fetches JPEGs with the same authenticated repository headers (never credentials in image URLs). Loading, empty, retry, missing/expired photos and account changes are handled. Mock confirmations/dismissals populate the same history contract. Reading history never awards XP or repeats an add.
+
 ---
 
 ### 2.8 Trunc: the compost assistant ✅ *backend + app data layer + chat UI*

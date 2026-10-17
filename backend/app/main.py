@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
-from .routers import advice, bins, game, ingest
+from .routers import advice, bins, drops, game, ingest
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     # schema.sql is idempotent, so applying it on boot keeps every teammate's
     # database in step without a migration tool.
     await db.apply_schema()
+    await drops.apply_schema()
     yield
     await db.disconnect()
 
@@ -48,6 +49,7 @@ app.include_router(ingest.router)
 app.include_router(bins.router)
 app.include_router(advice.router)
 app.include_router(game.router)
+app.include_router(drops.router)
 
 
 @app.get("/health", tags=["meta"])

@@ -155,7 +155,7 @@ class LogCreate(BaseModel):
     # "skipped" records trusting an avoid verdict, which is what earns XP.
     action: Literal["added", "skipped"] = "added"
     quantity_g: int | None = Field(default=None, ge=0)
-    source: Literal["manual", "photo", "seed"] = "manual"
+    source: Literal["manual", "photo", "seed", "camera"] = "manual"
     was_advised: bool = False
     advice_id: int | None = None
     notes: str | None = None

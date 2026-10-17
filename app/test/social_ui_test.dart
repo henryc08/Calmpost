@@ -326,7 +326,7 @@ void main() {
       final image = await boundary.toImage(pixelRatio: 2);
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       await File(
-        '/private/tmp/calmpost-multiplayer-leaderboard.png',
+        '${Directory.systemTemp.path}/calmpost-multiplayer-leaderboard.png',
       ).writeAsBytes(bytes!.buffer.asUint8List());
       image.dispose();
     });

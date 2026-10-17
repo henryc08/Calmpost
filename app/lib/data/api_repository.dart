@@ -34,9 +34,8 @@ class ApiRepository implements CalmpostRepository {
   List<int> _crateIds = [];
 
   @override
-  // Registered players use the scoped Social economy. Legacy demo accounts
-  // retain the full server game; never call those reward routes as a player.
-  bool get serverGame => config.token == null;
+  // Both player sessions and legacy demo accounts use server-owned progress.
+  bool get serverGame => true;
 
   @override
   Future<Map<String, dynamic>> loadGame() async {
@@ -47,7 +46,7 @@ class ApiRepository implements CalmpostRepository {
       _get('$user/rewards'),
       _get('$user/collection'),
       _get('/quests/today', {'user_id': config.userId}),
-      _get('/bins/${config.binId}/logs'),
+      config.binId.isEmpty ? Future<dynamic>.value(<dynamic>[]) : _get('/bins/${config.binId}/logs'),
     ]);
     Map<String, dynamic>? league;
     try {
@@ -63,7 +62,7 @@ class ApiRepository implements CalmpostRepository {
   Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args) async {
     final user = '/users/${config.userId}';
     final path = switch (action) {
-      'check-in' => '$user/check-in',
+      'check-in' => config.token == null ? '$user/check-in' : '/social/check-in',
       'quest' => '/quests/${args['id']}/claim',
       'daily' => '$user/daily-goal/${args['index']}/claim',
       'crate' => '$user/crates/${_crateIds[args['index'] as int]}/open',
@@ -116,6 +115,9 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Stream<BinSnapshot> watchBin() async* {
+    if (config.binId.isEmpty) {
+      throw StateError('Connect your bin in Social to see live readings.');
+    }
     while (true) {
       try {
         yield _last = snapshotFromJson(await _get('/bins/${config.binId}/live') as Map<String, dynamic>);

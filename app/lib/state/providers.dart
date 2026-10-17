@@ -22,14 +22,14 @@ enum DataSource { live, mock }
 
 final dataSourceProvider = StateProvider<DataSource>((ref) {
   final account = ref.watch(socialSessionProvider).valueOrNull;
-  return account != null ? (account.binId != null ? DataSource.live : DataSource.mock) : (ApiConfig.configured ? DataSource.live : DataSource.mock);
+  return account != null || ApiConfig.configured ? DataSource.live : DataSource.mock;
 });
 
 final repositoryProvider = Provider<CalmpostRepository>((ref) {
   final account = ref.watch(socialSessionProvider).valueOrNull;
   final source = ref.watch(dataSourceProvider);
-  if (source == DataSource.live && account?.binId != null) {
-    final repo = ApiRepository(ApiConfig(baseUrl: account!.server, apiKey: '', binId: account.binId!, userId: account.userId, token: account.token));
+  if (source == DataSource.live && account != null) {
+    final repo = ApiRepository(ApiConfig(baseUrl: account.server, apiKey: '', binId: account.binId ?? '', userId: account.userId, token: account.token));
     ref.onDispose(repo.close);
     return repo;
   }

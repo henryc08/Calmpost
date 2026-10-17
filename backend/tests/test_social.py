@@ -156,8 +156,8 @@ def test_care_requires_fresh_sensor_data_and_demo_routes_cannot_award_player_xp(
     ingest_series(c, moisture_raw=380, probe_temp=30, co2=900)
     assert c.post('/bins/bin-001/logs', headers=a, json={'item':'cardboard','category':'brown','was_advised':True}).status_code == 403
     assert c.post('/bins/bin-001/harvest', headers=a, json={'layer': 'top', 'yield_g': 1000}).status_code == 403
-    assert c.get(f'/users/{alice}/game', headers=a).status_code == 403
-    assert c.post('/quests/check_layers/claim', headers=a, params={'user_id': alice}).status_code == 403
+    assert c.get(f'/users/{alice}/game').status_code == 403  # shared key cannot read players
+    assert c.post('/quests/checkin/claim', headers=a, params={'user_id': alice}).status_code == 409
     c.portal.call(run_sql, "UPDATE readings SET time=time-interval '1 day'")
     assert c.post('/social/care-log', headers=a, json=payload).status_code == 409
     assert c.get('/social/me', headers=a).json()['progress']['total_xp'] == 0

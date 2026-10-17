@@ -13,6 +13,7 @@ import '../../domain/health_score.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
@@ -40,6 +41,20 @@ class HomeScreen extends ConsumerWidget {
     void goTo(AppTab tab) => ref.read(tabProvider.notifier).state = tab;
 
     if (health == null) {
+      final account = ref.watch(socialSessionProvider).valueOrNull;
+      if (account != null && account.binId == null && ref.watch(dataSourceProvider) == DataSource.live) {
+        return SafeArea(child: Padding(padding: const EdgeInsets.all(S.gutter), child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Connect your bin', style: T.title),
+            const SizedBox(height: S.x3),
+            Text('Your account rewards are saved. Pair the bin in Social to see readings and log compost.', style: T.body),
+            const SizedBox(height: S.x5),
+            PillButton(label: 'Open Social', onTap: () => goTo(AppTab.social)),
+          ],
+        )));
+      }
       final bin = ref.watch(binProvider);
       if (bin.hasError) return _Offline(onUseDemo: () => ref.read(dataSourceProvider.notifier).state = DataSource.mock);
       return const Center(
@@ -112,7 +127,10 @@ class HomeScreen extends ConsumerWidget {
                 if (game.crates.isNotEmpty || game.packets > 0) ...[const RewardsShelf(), const SectionBreak()],
                 const TodayQuests(),
                 const SectionBreak(),
-                LeagueRace(onOpen: () => goTo(AppTab.social)),
+                if (ref.watch(socialSessionProvider).valueOrNull == null)
+                  LeagueRace(onOpen: () => goTo(AppTab.social))
+                else
+                  PillButton(label: 'Your private leaderboards', onTap: () => goTo(AppTab.social)),
                 const SectionBreak(),
                 StreakCalendar(game: game),
                 const SectionBreak(),

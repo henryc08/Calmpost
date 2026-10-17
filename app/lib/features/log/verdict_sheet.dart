@@ -103,6 +103,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
                   'request_id': _requestId,
                 })
                 as Json;
+        await game.refreshLive();
         if (!mounted) return;
         showToast(ref, 'Care saved to your profile', xp: result['xp_awarded'] as int);
         Navigator.of(context).pop();

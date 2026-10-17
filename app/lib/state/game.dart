@@ -15,6 +15,7 @@ import '../domain/xp_rules.dart';
 import 'celebrations.dart';
 import 'providers.dart';
 import 'game_codec.dart';
+import 'social.dart';
 
 final gameStorageProvider = Provider<SharedPreferences?>((ref) => null);
 
@@ -405,6 +406,7 @@ class GameController extends Notifier<GameState> {
     try {
       final result = await ref.read(repositoryProvider).gameAction(action, args);
       await refreshLive();
+      if (_alive) ref.invalidate(socialDataProvider);
       return result;
     } catch (_) {
       await refreshLive();

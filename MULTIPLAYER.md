@@ -99,9 +99,10 @@ Camera capture currently supports demo bins only: the vision service still uses
 the shared demo key, which cannot access player-owned bins. Use manual Log for a
 paired player bin until device-scoped vision authorization is implemented.
 
-Social progress uses the saved server ledger. The existing local Home/Greenhouse reward
-economy remains separate: local demo XP, Loam and crate rolls do not change multiplayer
-rankings. Profile has a **My shared progress** link and labels those local demo rewards.
+Social, Home, Profile and Greenhouse use the same saved server ledger in live account
+mode. Layers reads actual saved additions. Account-scoped reward claims and spending
+are allowed; demo harvest writes remain blocked. Explicit mock mode keeps a separate
+local garden whose rewards never enter multiplayer rankings.
 
 ## Privacy and ownership
 

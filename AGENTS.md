@@ -298,7 +298,7 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 
 ## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks and logs. Legacy API-key demo accounts also use the server game/economy: check-ins, quest/daily claims, crates, pulls, equipment and Lid Locks use server responses, refreshed after actions and every minute. Registered players instead use scoped Social check-ins and care logs; their Home/Greenhouse economy remains a separately labelled local demo, never uploaded as multiplayer scores. Build with `--dart-define=API_URL=…` or pair a bin in Social. Demo progression is persisted separately using SharedPreferences.
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks and logs. Both registered players and legacy API-key demo accounts use server game/economy: quest/daily claims, crates, pulls, equipment and Lid Locks use server responses, refreshed after actions and every minute. Players retain scoped Social check-ins and care logs, but Home, Layers history, Profile and Greenhouse now read the same server ledger and saved additions. Unpaired accounts see a connection prompt, not seeded progress. Explicit mock mode remains separate and never uploads demo rewards. Build with `--dart-define=API_URL=…` or pair a bin in Social. Demo progression is persisted separately using SharedPreferences.
 
 **The app owns the rules; the server enforces them.**
 - The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
@@ -645,12 +645,13 @@ not used for multiplayer.
   Requests use transaction receipts: identical retries return original XP; changed bodies
   conflict. New social logs still require fresh readings; existing receipts remain retryable after readings age.
 - Legacy API-key routes cannot read or mutate registered players' private state or bins.
-  Player sessions can read their owned bin and request advice or Trunc chat; legacy reward writes are
-  demo-only, so repeatable demo harvests cannot inflate multiplayer scores.
+  Player sessions can read their owned bin and game, request advice or Trunc chat, and
+  claim earned rewards or spend server balances. Demo harvest/log writes stay blocked;
+  player care logs and check-ins still go through Social.
   Demo clients keep access to demo users and bins. Arduino ingestion is unchanged.
-- The local Home/Greenhouse game economy remains a demo. Its XP, crate rolls and Loam are
-  **not submitted to social rankings**. Profile links to the account's actual shared progress
-  and labels the older local rewards. Do not imply these economies are synchronized.
+- In live account mode, Home/Greenhouse, Profile and Social share server-owned progression.
+  Layers displays that bin's saved additions, not seeded demo logs. Only explicit mock
+  mode uses the local demo garden; those rewards never enter social rankings.
 - UI uses `socialRepositoryProvider` and `socialDataProvider` as the social counterpart of
   `repositoryProvider`: no HTTP in screens. Visible social data refreshes every 20 seconds,
   after successful writes, and with manual refresh. Errors are shown with retry; no fake successes.

@@ -148,3 +148,9 @@ async def count(user_id: str, kind: str) -> int:
 
 async def ensure_user(conn: asyncpg.Connection, user_id: str) -> None:
     await conn.execute("INSERT INTO user_state (user_id) VALUES ($1) ON CONFLICT DO NOTHING", user_id)
+    # Everyone owns the starter finish, so they can always switch back to it.
+    await conn.execute(
+        "INSERT INTO collection (user_id, collectible_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        user_id,
+        game.STARTER_FINISH,
+    )

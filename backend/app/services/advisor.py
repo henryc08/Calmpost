@@ -136,15 +136,8 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
         },
     }
 
-    url = ENDPOINT.format(model=settings.gemini_model)
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                url, params={"key": settings.gemini_api_key}, json=body
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        answer = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
+        answer = await _ask_gemini(body)
     except Exception:
         # A judge should see advice, not a stack trace.
         log.exception("gemini call failed; using rules fallback")
@@ -162,7 +155,29 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
     if not snapshot["layers"]["bottom"]["measured"]:
         answer["stage_bottom"] = "started"
         answer["bottom_ready"] = False
+
+    # Rules decide, Gemini words it (CLAUDE.md key idea 5). For an item the
+    # rules know, their verdict stands. If the model disagrees, show the rules'
+    # answer whole, so the headline and reason match the verdict. Items outside
+    # the catalogue are the model's call.
+    if item and compost.categorise(item) != "unknown":
+        ruled = fallback(snapshot, item)
+        if answer.get("verdict") != ruled["verdict"]:
+            log.info("gemini said %s for %r, rules say %s; using rules",
+                     answer.get("verdict"), item, ruled["verdict"])
+            return ruled, "rules-override"
     return answer, settings.gemini_model
+
+
+async def _ask_gemini(body: dict) -> dict:
+    """One structured-output call. Raises on any failure (the caller falls back)."""
+    settings = get_settings()
+    url = ENDPOINT.format(model=settings.gemini_model)
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(url, params={"key": settings.gemini_api_key}, json=body)
+        resp.raise_for_status()
+        data = resp.json()
+    return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
 
 
 def _for_model(snapshot: dict) -> dict:

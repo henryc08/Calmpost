@@ -49,6 +49,7 @@ LOAM = {"harvest": 50}
 
 LID_LOCK_PRICE = 60
 MAX_LID_LOCKS = 2
+STARTER_FINISH = "finish_classic"  # owned by everyone from the start (the app seeds it too)
 
 # --- levels ----------------------------------------------------------------
 

@@ -184,8 +184,8 @@ def test_pulls_spend_correctly_and_grow_the_collection(c):
 
     col = c.get(f"/users/{USER}/collection").json()
     assert col["loam"] == 1000 - 900 + res["refund_loam"]
-    assert sum(i["copies"] for i in col["items"]) == 10
-    assert col["collected"] == len({r["item"]["id"] for r in res["results"]})
+    assert sum(i["copies"] for i in col["items"]) == 10 + 1  # + the starter finish
+    assert col["collected"] == len({r["item"]["id"] for r in res["results"]} | {game.STARTER_FINISH})
     assert col["pity"]["epic_within"] == res["pity"]["epic_within"]
 
 
@@ -240,3 +240,36 @@ def test_league_table_and_last_weeks_finish(c):
 def test_economy_rules_endpoint(c):
     r = c.get("/economy/rules").json()
     assert r["prices"]["packet"] == 100 and r["pity"]["legendary"] == 80
+
+
+# --- found in the live run against Tiger ---------------------------------------------
+
+def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
+    """Gemini once called a banana peel 'avoid' because the layer was curing.
+    For a catalogue item the rules' verdict stands (CLAUDE.md key idea 5)."""
+    from app.config import get_settings
+    from app.services import advisor
+
+    async def gemini_says_avoid(body):
+        return {"verdict": "avoid", "headline": "Hold off", "reason": "The top layer is curing.",
+                "pair_with": [], "suggest_add": [], "suggest_avoid": [], "balance": "balanced",
+                "stage_top": "curing", "stage_bottom": "started", "bottom_ready": False, "tip": ""}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr(advisor, "_ask_gemini", gemini_says_avoid)
+    ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=10)
+    r = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"}).json()
+    assert r["verdict"] == "great" and r["model"] == "rules-override"
+
+    # Outside the catalogue, the model's answer is used.
+    r = c.post("/bins/bin-001/advice/check", json={"item": "durian rind"}, params={"refresh": "true"}).json()
+    assert r["verdict"] == "avoid" and r["model"] != "rules-override"
+
+
+def test_starter_finish_can_always_be_re_equipped(c):
+    c.post(f"/users/{USER}/check-in")  # creates the player
+    sql(c, "INSERT INTO collection (user_id, collectible_id) VALUES ($1, 'finish_gold')", USER)
+    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_gold"}).status_code == 200
+    assert c.post(f"/users/{USER}/equip", json={"collectible_id": "finish_classic"}).status_code == 200
+    assert profile(c)["equipped_finish"] == "finish_classic"

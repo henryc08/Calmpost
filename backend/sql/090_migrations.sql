@@ -48,3 +48,8 @@ ALTER TABLE user_state ADD COLUMN IF NOT EXISTS equipped_title text;
 
 -- --- point_events: a lookup index added with the economy -------------------
 CREATE INDEX IF NOT EXISTS point_events_user_kind_idx ON point_events (user_id, kind, time DESC);
+
+-- --- collection: everyone owns the starter finish (rules/game.py STARTER_FINISH)
+INSERT INTO collection (user_id, collectible_id)
+SELECT user_id, 'finish_classic' FROM user_state
+ON CONFLICT DO NOTHING;

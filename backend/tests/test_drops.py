@@ -189,3 +189,101 @@ def test_a_mix_mentioning_meat_is_never_green(c):
     """Rules over the camera: a 'mixed' label naming a keep-out food is avoid."""
     report(c, arm(c), items=[{"label": "mixed scraps with chicken", "catalog_id": "mixed_scraps", "category": "green", "confidence": 0.5}])
     assert c.get("/bins/bin-001/drops/pending").json()[0]["items"][0]["category"] == "avoid"
+# --- history and photos ---------------------------------------------------------
+#
+# /drops/pending shows only what is still waiting, and only from the last hour.
+# Before these routes a resolved drop and its photo were unreachable: the bytes
+# sat in Tiger for the 30-day retention window with nothing able to read them.
+
+def test_a_resolved_drop_is_still_reachable(c):
+    drop_id = report(c, arm(c)).json()["drop_id"]
+    assert c.post(f"/drops/{drop_id}/dismiss").status_code == 200
+
+    # Gone from pending, which is correct and was the whole problem.
+    assert c.get("/bins/bin-001/drops/pending").json() == []
+
+    hist = c.get("/bins/bin-001/drops/history").json()
+    assert [d["id"] for d in hist["drops"]] == [drop_id]
+    assert hist["drops"][0]["status"] == "dismissed"
+    assert hist["drops"][0]["has_photo"] is True
+    assert hist["drops"][0]["resolved_at"] is not None
+
+
+def test_history_carries_both_the_guess_and_what_the_user_settled_on(c):
+    drop_id = report(c, arm(c)).json()["drop_id"]
+    c.post(f"/drops/{drop_id}/confirm",
+           json={"items": [{"label": "apple core", "catalog_id": "apple_core", "category": "green"}]})
+
+    d = c.get("/bins/bin-001/drops/history").json()["drops"][0]
+    assert d["items"][0]["label"] == "banana peel", "what the camera guessed"
+    assert d["final_items"][0]["label"] == "apple core", "what the user said it was"
+    assert d["corrected"] is True
+
+
+def test_history_does_not_inline_photos(c):
+    """Twenty base64 thumbnails is megabytes on a hotspot."""
+    report(c, arm(c))
+    d = c.get("/bins/bin-001/drops/history").json()["drops"][0]
+    assert "thumbnail_jpeg_b64" not in d
+    assert d["has_photo"] is True
+
+
+def test_the_photo_comes_back_as_a_real_jpeg(c):
+    drop_id = report(c, arm(c)).json()["drop_id"]
+    r = c.get(f"/drops/{drop_id}/photo")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.content == base64.b64decode(JPEG)
+    assert "immutable" in r.headers.get("cache-control", "")
+
+
+def test_a_drop_with_no_photo_says_so_rather_than_serving_empty_bytes(c):
+    drop_id = report(c, arm(c), thumbnail_jpeg_b64="").json()["drop_id"]
+    assert c.get("/bins/bin-001/drops/history").json()["drops"][0]["has_photo"] is False
+    assert c.get(f"/drops/{drop_id}/photo").status_code == 404
+
+
+def test_one_drop_inlines_its_thumbnail_whatever_its_status(c):
+    drop_id = report(c, arm(c)).json()["drop_id"]
+    c.post(f"/drops/{drop_id}/dismiss")
+    d = c.get(f"/drops/{drop_id}").json()
+    assert d["id"] == drop_id and d["status"] == "dismissed"
+    assert d["thumbnail_jpeg_b64"] == JPEG
+
+
+def test_history_pages_newest_first(c):
+    ids = [report(c, arm(c)).json()["drop_id"] for _ in range(3)]
+
+    first = c.get("/bins/bin-001/drops/history", params={"limit": 2}).json()
+    assert [d["id"] for d in first["drops"]] == [ids[2], ids[1]], "newest first"
+    assert first["next_before"] is not None
+
+    rest = c.get("/bins/bin-001/drops/history",
+                 params={"limit": 2, "before": first["next_before"]}).json()
+    assert [d["id"] for d in rest["drops"]] == [ids[0]]
+    assert rest["next_before"] is None, "nothing older left"
+
+
+def test_history_can_be_filtered_by_status(c):
+    kept = report(c, arm(c)).json()["drop_id"]
+    tossed = report(c, arm(c)).json()["drop_id"]
+    c.post(f"/drops/{tossed}/dismiss")
+
+    pend = c.get("/bins/bin-001/drops/history", params={"status": "pending"}).json()
+    assert [d["id"] for d in pend["drops"]] == [kept]
+    gone = c.get("/bins/bin-001/drops/history", params={"status": "dismissed"}).json()
+    assert [d["id"] for d in gone["drops"]] == [tossed]
+
+
+def test_history_and_photo_need_the_api_key(c):
+    drop_id = report(c, arm(c)).json()["drop_id"]
+    bad = {"X-API-Key": "wrong"}
+    assert c.get("/bins/bin-001/drops/history", headers=bad).status_code == 401
+    assert c.get(f"/drops/{drop_id}/photo", headers=bad).status_code == 401
+    assert c.get(f"/drops/{drop_id}", headers=bad).status_code == 401
+
+
+def test_unknown_drop_and_bin_are_404(c):
+    assert c.get("/drops/999999").status_code == 404
+    assert c.get("/drops/999999/photo").status_code == 404
+    assert c.get("/bins/nope/drops/history").status_code == 404

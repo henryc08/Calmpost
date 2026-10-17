@@ -9,12 +9,13 @@
 /// The app never holds the database URL or the Gemini key; only the backend
 /// does.
 class ApiConfig {
-  const ApiConfig({required this.baseUrl, required this.apiKey, this.binId = 'bin-001', this.userId = 'demo-user'});
+  const ApiConfig({required this.baseUrl, required this.apiKey, this.binId = 'bin-001', this.userId = 'demo-user', this.token});
 
   final String baseUrl;
   final String apiKey;
   final String binId;
   final String userId;
+  final String? token;
 
   static const _url = String.fromEnvironment('API_URL');
   static const _key = String.fromEnvironment('API_KEY');

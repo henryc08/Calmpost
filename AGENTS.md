@@ -43,6 +43,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
+| 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + app data layer · ⏳ chat UI · ⏳ needs Gemini billing |
 
 ### 2.1 Live sensing & Bin Health Score
 - **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
@@ -63,7 +64,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 ### 2.4 Camera drop-in: identify and track what goes in ✅ *built*
 
-When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked.
+When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked. This flow currently supports mock and legacy demo bins. Player-owned bins use manual logging in Social until the vision service has scoped device authorization; the UI explains this restriction instead of bypassing ownership checks.
 
 **What the user does**
 1. On Home, tap **Drop something in** (forest pill under the score). This first resumes an existing pending drop, or arms the **bin camera** for 60 s and opens a "Watching the bin…" sheet with a countdown. This is not the phone camera. An in-app live preview is **not implemented**; the laptop preview is separate. Closing the waiting sheet cancels the session.
@@ -132,6 +133,61 @@ Plain, state-triggered, **max 2 a day**, persisted across restarts: compost look
 
 ---
 
+### 2.8 Trunc: the compost assistant ✅ *backend + app data layer; chat UI open*
+
+Trunc answers free-text composting questions. Everything else in the app takes
+an item name and returns a fixed verdict shape, so there was nowhere to ask
+"why does my bin smell?".
+
+**What the UI has to work with** — `CalmpostRepository.askTrunc` (`app/lib/data/calmpost_repository.dart`):
+
+```dart
+Future<TruncReply> askTrunc(String message, {List<TruncTurn> history, bool includePhotos});
+```
+
+`TruncReply` and `TruncTurn` are in `app/lib/domain/models.dart`. Backed by
+`ApiRepository` (POST `/bins/{id}/chat`) and by `MockRepository`, which answers
+from a script, so **the chat screen can be built with no backend, no API key
+and no Gemini quota**.
+
+Four things to know before building the screen:
+
+- **Stateless.** The server keeps no conversation. Hold the turns in app state
+  and pass them in `history` (oldest first, excluding the question being
+  asked). Nothing to fetch on resume.
+- **There is no refusal UI to build.** An off-topic question returns
+  `onTopic: false` with the redirect text already written. Render it as a
+  normal message.
+- **`isFallback` is not an error.** `model == 'rules-fallback'` means Gemini was
+  unreachable and the sensors answered instead. Still a real reply; no error
+  state.
+- **`context` is for honesty, not decoration.** `{readingsAt, recentAdds,
+  photos}` says what Trunc was actually given. A null `readingsAt` means the
+  bin has never reported, so the answer came from general rules rather than
+  this bin — worth saying quietly.
+
+Mock shortcuts for building the states: ask anything off topic for the refusal,
+and **"test fallback"** for the fallback. `Scenario.tooWet` vs
+`Scenario.healthy` change the answer to "why does my bin smell?", so both
+branches are reachable. Replies are keyword-matched, not random, so a given
+question always gives the same answer.
+
+**Context Trunc gets on the backend** (it does not need asking for): the live
+sensor snapshot, the last 48 h of `add_log` (`recent_adds`, newest first, with
+`hours_ago`), and the newest two camera photos as real image parts. It is told
+to be aware of all of it but to raise it only when it bears on the question.
+
+**Scope and safety.** Compost only, enforced twice: the model classifies each
+question, and the backend substitutes its own line when it says off topic. The
+rules in the prompt are generated from `app/rules/compost.py` rather than
+retyped, so Trunc cannot drift from the verdict sheet and the camera. A reply
+that suggests a keep-out item is replaced by the rules' line
+(`model == 'rules-override'`).
+
+The app never calls Gemini and never holds its key.
+
+---
+
 ## 3. Gemini: what it does and how
 
 **Gemini is the bin's eyes and voice, not its judgement.** Rules in `domain/` (mirrored in the backend) decide; Gemini identifies and explains. If Gemini is slow, fails, or disagrees with the rules, the rule-based answer is shown and nobody notices.
@@ -139,8 +195,9 @@ Plain, state-triggered, **max 2 a day**, persisted across restarts: compost look
 | Job | Feature | Input | Output (JSON schema) | Model |
 |---|---|---|---|---|
 | **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
-| **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: add \| add_with_browns \| add_with_greens \| avoid, reason, suggest_add[], suggest_avoid[], tip}` | Flash |
+| **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: great \| careful \| avoid, headline, reason, balance, suggest_add[], suggest_avoid[], pair_with[], tip}` | Flash |
 | **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
+| **Trunc chat** | 2.8 | snapshot + `recent_adds` + newest 2 drop photos + the question and prior turns | `{on_topic, reply, used_readings}`; off topic ⇒ the backend's own line | Flash |
 | **Summaries** | 2.5 | snapshot (+ week stats) | `{title, body, bullets[], mood}` | Flash or Flash-Lite |
 
 **Every text call gets the same context snapshot:**
@@ -149,9 +206,11 @@ Plain, state-triggered, **max 2 a day**, persisted across restarts: compost look
   balance_7d: {greens_kg, browns_kg, ratio},
   stage: {top, bottom, bottom_ready},
   health: {score, breakdown},
-  recent_logs: [last 10 adds],
+  recent_adds: [last 48 h of add_log, newest first, with hours_ago and action],
   need: <computed by rules> }
 ```
+Trunc (2.8) gets the same snapshot plus the newest two camera photos as
+image parts.
 The snapshot is stored with each response (`advice` table), so we can always show *why* the app said something.
 
 **Rule-computed `need` (next best action)**
@@ -200,7 +259,7 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 
 ## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks, logs, leagues and the game economy. Live check-ins, quest/daily claims, crate opens, pulls, equipment and Lid Locks use server responses, not local grants. Game state refreshes after actions and every minute while the app is mounted. It is picked with `--dart-define=API_URL=…`; the demo picker switches between **Live bin** and mocks. Demo progression is separately persisted on-device using SharedPreferences; it is never uploaded as live rewards.
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks and logs. Legacy API-key demo accounts also use the server game/economy: check-ins, quest/daily claims, crates, pulls, equipment and Lid Locks use server responses, refreshed after actions and every minute. Registered players instead use scoped Social check-ins and care logs; their Home/Greenhouse economy remains a separately labelled local demo, never uploaded as multiplayer scores. Build with `--dart-define=API_URL=…` or pair a bin in Social. Demo progression is persisted separately using SharedPreferences.
 
 **The app owns the rules; the server enforces them.**
 - The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
@@ -241,11 +300,12 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 | Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
 | Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
-| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` |
+| **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, context}`. Stateless: the app owns the conversation. |
+| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` · `GET /bins/{id}/drops/history` (resolved drops, paged; `has_photo` rather than inline base64) · `GET /drops/{id}` · `GET /drops/{id}/photo` (real `image/jpeg`) |
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
 | Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
 
-**Auth:** the app and vision send a **shared demo** `X-API-Key`, not per-user authentication. This does not isolate users/bins and is not safe for a public multi-user deployment. The board/bridge sends `X-Device-Token` (only its hash is stored). Re-registering an existing bin returns 409 instead of replacing its owner/token. Database TLS verifies certificates and hostnames; set `DATABASE_CA_FILE` to the provider's CA PEM if it is not in the system trust store.
+**Auth:** registered players use scoped bearer sessions (see Multiplayer below). Shared demo `X-API-Key` access cannot read or mutate their bins or private state. Legacy demo users/bins still share that key. Vision currently uses the demo key and is not yet authorized for player-owned cameras. The board/bridge sends `X-Device-Token` (only its hash is stored). Re-registering an existing demo bin returns 409 instead of replacing its owner/token. Database TLS verifies certificates and hostnames; set `DATABASE_CA_FILE` to the provider's CA PEM if needed.
 
 **Environment** (`backend/.env` and `vision/.env`, both git-ignored, **never commit them**):
 - `backend/.env`: `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_API_KEY`, `DEVICE_TOKEN`
@@ -314,7 +374,7 @@ calmpost/
 - Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Switch tabs with `ref.read(tabProvider.notifier).state = AppTab.x`.
 - Screens never call HTTP or mocks directly; they go through `repositoryProvider`.
 - Game and health logic lives in `domain/` as **pure, unit-tested functions**.
-- For 2.4, `CalmpostRepository` has `startDropSession()`, `watchDrop(session)` (one `DropSeen` or `DropNothing`), `confirmDrop(drop, lines)` → a verdict per row, `dismissDrop(drop)`. Open the sheet with `Routes.drop(context)`.
+- For 2.4, the upstream data API remains `startDropSession()`, `watchDrops()`, `confirmDrop(id, confirmations)` and `dismissDrop(id)`. The editable sheet uses `watchDrop(session)`, `confirmReviewedDrop(drop, lines)` and `dismissReviewedDrop(drop)` to retain per-row review states. Both share `DropSession` in `models.dart` and the same backend transaction/receipts. Open the sheet with `Routes.drop(context)`.
 
 ### Screens
 
@@ -501,7 +561,7 @@ cd vision && python main.py
 - A quiet new/dry bin is not ready. The readiness guide additionally requires recorded active/hot history at least 14 days old after the last harvest. This is a conservative product heuristic, **not a validation of compost maturity**.
 - Serial samples receive a timestamp before queueing so retrying preserves capture time. Vision opens the camera only for armed sessions, polls cancellation during watching, and clears its preview after the session.
 - A recommendation is **not permission to log**: any catalog green/brown can be logged, including a `careful` verdict, earning volume XP without an unearned advice bonus. Manual verdict sheets scroll so the add button remains reachable with Android large-text accessibility settings. Hard keep-out materials remain a separate safety case.
-- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Production signing, per-user authorization, background notifications, real friends, summary generation, rewards history, and a phone-camera/live-preview workflow remain unfinished. Do not describe these as production-ready.
+- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Scoped multiplayer accounts, friends and groups are implemented; production signing/deployment, background notifications, summary generation, rewards history, a Trunc chat screen, and a phone-camera/live-preview workflow remain unfinished. Player-owned camera capture also needs device-scoped vision authorization. Do not describe these as production-ready.
 - Visual review: `cd app && flutter test test/visual_correction_test.dart --dart-define=CAPTURE_REVIEW=true` writes actual phone-sized Flutter renders to `artifacts/review/`. Detections are simulated and the missing photo is labelled; this is not a real Gemini/hardware accuracy test.
 
 ### Working together
@@ -511,3 +571,48 @@ cd vision && python main.py
 - If you change a token, rule, endpoint or mechanic, **update this file in the same commit**.
 
 **Owners** (fill in names): Design system & app — ___ · Backend & Tiger — ___ · Vision & Gemini — ___ · Firmware & hardware — ___
+
+
+## Multiplayer (integrated from `main`)
+
+Social is now a persistent, authenticated feature, backed by `005_social.sql` and
+`app/routers/social.py`. The former social league screen is an explicitly labelled
+**demo league**, accessible from signed-out Social. The old friends/nudge demo is
+not used for multiplayer.
+
+- A person registers a unique username and password, then signs in on any device.
+  Passwords use salted PBKDF2-SHA256 (600,000 rounds); session tokens are random,
+  hashed in the database, expire after 30 days, and are kept in secure device storage.
+  Authentication attempts are throttled in Postgres. Social does not use the shared app key.
+- Profiles default to **private**. Names and usernames are searchable; activity,
+  XP, levels, streaks, and care calendar require an accepted follow. Public profiles
+  are optional. Follow requests can be accepted/declined, followers removed, and follows cancelled.
+- Friend invite codes establish mutual approved follows. Group codes grant membership
+  only, never access to private profile history. Codes expire in 7 days; issuing a new
+  code rotates the old one. Codes are copied for the user to share; no messages are sent automatically.
+- Private groups support up to 50 people, weekly/all-time leaderboards, shared ranks
+  for tied XP, and a team XP total. Weekly boundaries are Sunday 00:00 UTC. Only owners
+  create group invites, remove others, or delete the group. Members can leave; removals
+  revoke existing invites. Each user can own up to 20 groups.
+- Feed and profiles read actual `point_events`. Cheers are idempotent and award no XP.
+  Scores are never uploaded by the phone. A check-in earns 5 XP once per UTC day,
+  serialized to prevent duplicate concurrent rewards.
+- Pairing a bin requires its device token; an existing player-owned bin cannot be claimed
+  by another account. The app then reads that bin with its user session. Checking Layers
+  saves a check-in, and Log saves via `/social/care-log`: server rules determine advised
+  additions/avoids, and selected compostable amounts earn 1 XP per 20 g under the same
+  cumulative rounding and 60 XP action cap. Non-recommended compostables remain loggable.
+  Requests use transaction receipts: identical retries return original XP; changed bodies
+  conflict. New social logs still require fresh readings; existing receipts remain retryable after readings age.
+- Legacy API-key routes cannot read or mutate registered players' private state or bins.
+  Player sessions can read their owned bin and request advice or Trunc chat; legacy reward writes are
+  demo-only, so repeatable demo harvests cannot inflate multiplayer scores.
+  Demo clients keep access to demo users and bins. Arduino ingestion is unchanged.
+- The local Home/Greenhouse game economy remains a demo. Its XP, crate rolls and Loam are
+  **not submitted to social rankings**. Profile links to the account's actual shared progress
+  and labels the older local rewards. Do not imply these economies are synchronized.
+- UI uses `socialRepositoryProvider` and `socialDataProvider` as the social counterpart of
+  `repositoryProvider`: no HTTP in screens. Visible social data refreshes every 20 seconds,
+  after successful writes, and with manual refresh. Errors are shown with retry; no fake successes.
+- Supported/tested Flutter SDK: **3.41.9** (Dart 3.11). See `MULTIPLAYER.md` for setup and checks.
+- Account recovery, email invitations, push notifications and deployment are not implemented.

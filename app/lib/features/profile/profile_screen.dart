@@ -9,10 +9,12 @@ import '../../data/collectibles.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 String crateName(CrateTier t) => switch (t) {
   CrateTier.sprout => 'Sprout crate',
@@ -73,6 +75,12 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
       children: [
+        if (ref.watch(socialSessionProvider).valueOrNull case final account?) ...[
+          PillButton(label: 'My shared progress', onTap: () => Routes.socialProfile(context, account.userId)),
+          const SizedBox(height: S.x3),
+          Text('Care progress and private leaderboards live in Social. The rewards below are your local demo garden.', style: T.small),
+          const SectionBreak(),
+        ],
         _Rewards(g: g),
         const SectionBreak(),
         _Impact(g: g),
@@ -195,7 +203,7 @@ class _Impact extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionLabel('YOUR IMPACT'),
+        const SectionLabel('YOUR IMPACT', info: InfoTip.impact),
         const SizedBox(height: S.x3),
         IntrinsicHeight(
           child: Row(

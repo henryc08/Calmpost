@@ -66,6 +66,30 @@ def test_confirmation_rolls_back_every_item_on_failure(c, monkeypatch):
     assert c.get('/bins/bin-001/drops/pending').json()[0]['id'] == drop_id
 
 
+def test_social_nonrecommended_volume_is_scoped_and_retryable(c):
+    from tests.test_social import account, run_sql
+    from tests.conftest import ingest_series
+    uid, headers = account(c, 'volume_user')
+    assert c.post('/social/bin', headers=headers, json={'device_token': c.device_token}).status_code == 200
+    ingest_series(c, moisture_raw=380, probe_temp=30, co2=900)
+    body = {'catalog_id': 'banana_peel', 'action': 'added', 'quantity_g': 250, 'request_id': 'volume-retry-001'}
+    saved = c.post('/social/care-log', headers=headers, json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['xp_awarded'] == 12  # not recommended in this wet bin
+    replay = c.post('/social/care-log', headers=headers, json=body).json()
+    assert replay == {'xp_awarded': 12, 'duplicate': True}
+    assert c.post('/social/care-log', headers=headers, json={**body, 'quantity_g': 110}).status_code == 409
+    assert c.get('/social/me', headers=headers).json()['progress']['total_xp'] == 12
+    logs = c.get('/bins/bin-001/logs', headers=headers).json()
+    assert len(logs) == 1 and logs[0]['quantity_g'] == 250
+    c.portal.call(run_sql, "UPDATE readings SET time=time-interval '1 day'")
+    assert c.post('/social/care-log', headers=headers, json=body).json() == replay
+    assert c.post('/social/care-log', headers=headers, json={**body, 'request_id': 'new-stale-log-001'}).status_code == 409
+    assert c.get(f'/users/{uid}/game', headers=headers).status_code == 403
+    assert c.post('/bins/bin-001/chat', headers=headers, json={'message': 'How is my compost?', 'include_photos': False}).status_code == 200
+    assert c.post('/bins/bin-001/chat', json={'message': 'How is my compost?'}).status_code == 403
+
+
 def test_existing_bin_cannot_be_reassigned(c):
     assert c.post('/bins', json={'bin_id': 'bin-001', 'owner_id': 'different-user'}).status_code == 409
     assert c.get('/bins').json()[0]['owner_id'] == 'demo-user'

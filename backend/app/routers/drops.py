@@ -7,6 +7,12 @@ what it saw, the user confirms or dismisses.
     App ── POST /drops/{id}/confirm  → add_log rows (source='camera') + verdict + XP
          └ POST /drops/{id}/dismiss  → "Nothing was added"
 
+Afterwards: GET .../drops/history lists resolved drops (guess beside what the
+user settled on), GET /drops/{id} is one of them with its thumbnail inlined,
+and GET /drops/{id}/photo serves the stored frame as a real JPEG. /drops/pending
+is deliberately narrow -- still waiting, last hour only -- so these are the way
+back to a drop once it has been answered.
+
 Rules, not the camera, decide categories: a label the rules call avoid is
 avoid, whatever the model said. Confirmed items go through the normal log
 endpoint, so XP follows the usual rules (1 per 20 g compostable, +15 if it was the
@@ -21,7 +27,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -281,6 +287,91 @@ async def accuracy(bin_id: str, days: int = 30) -> dict:
         "avg_confidence": round(r["conf"], 2) if r["conf"] is not None else None,
         "avg_latency_ms": round(r["latency"]) if r["latency"] is not None else None,
     }
+
+
+@router.get("/bins/{bin_id}/drops/history")
+async def history(
+    bin_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    before: datetime | None = Query(None, description="only drops older than this"),
+    status: Literal["pending", "confirmed", "dismissed"] | None = None,
+) -> dict:
+    """Resolved drops, newest first.
+
+    /drops/pending deliberately shows only what is still waiting and only from
+    the last hour, so once a drop was confirmed or dismissed its row and its
+    photo became unreachable: the bytes sat in Tiger for the 30-day retention
+    window with nothing able to read them. This is the way back to them, for
+    a history screen and for Trunc's context.
+
+    Thumbnails are not inlined. Twenty base64 photos is several megabytes on a
+    phone hotspot, and most callers want the list. `has_photo` says which rows
+    have one; GET /drops/{id}/photo fetches it as a real image.
+    """
+    await _bin_or_404(bin_id)
+    rows = await db.fetch(
+        """SELECT id, time, session_id, status, guess, final_items, corrected,
+                  gemini_ok, model, error, latency_ms, top_confidence, resolved_at,
+                  thumbnail_jpeg IS NOT NULL AS has_photo
+           FROM drop_events
+           WHERE bin_id = $1
+             AND ($2::timestamptz IS NULL OR time < $2)
+             AND ($3::text IS NULL OR status = $3)
+           ORDER BY time DESC
+           LIMIT $4""",
+        bin_id, before, status, limit)
+    drops = [
+        {
+            "id": r["id"],
+            "bin_id": bin_id,
+            "session_id": r["session_id"],
+            "time": r["time"].isoformat(),
+            "status": r["status"],
+            "items": r["guess"],
+            # What the user settled on, null while still pending. Worth having
+            # beside `items`: together they show where the camera was wrong.
+            "final_items": r["final_items"],
+            "corrected": r["corrected"],
+            "gemini_ok": r["gemini_ok"],
+            "model": r["model"],
+            "error": r["error"],
+            "latency_ms": r["latency_ms"],
+            "top_confidence": r["top_confidence"],
+            "resolved_at": r["resolved_at"].isoformat() if r["resolved_at"] else None,
+            "has_photo": r["has_photo"],
+        }
+        for r in rows
+    ]
+    return {
+        "bin_id": bin_id,
+        "drops": drops,
+        # Pass back as `before` for the next page; null when the list is short
+        # of the limit, meaning there is nothing older.
+        "next_before": drops[-1]["time"] if len(drops) == limit else None,
+    }
+
+
+@router.get("/drops/{drop_id}")
+async def one(drop_id: int) -> dict:
+    """A single drop, thumbnail inlined, whatever its status."""
+    return _public(await _drop_or_404(drop_id))
+
+
+@router.get("/drops/{drop_id}/photo")
+async def photo(drop_id: int) -> Response:
+    """The stored frame as a real JPEG, so it can be shown without base64.
+
+    Immutable once written, so it is safe to cache hard; the retention policy
+    deletes the row at 30 days rather than changing it.
+    """
+    row = await _drop_or_404(drop_id)
+    if row["thumbnail_jpeg"] is None:
+        raise HTTPException(status_code=404, detail="no photo for this drop")
+    return Response(
+        content=bytes(row["thumbnail_jpeg"]),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
 
 
 # --- vision service ---------------------------------------------------------------

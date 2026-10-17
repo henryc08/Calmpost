@@ -165,6 +165,41 @@ async def balance_cups(bin_id: str, days: int = 7) -> tuple[float, float]:
     )
 
 
+async def recent_adds(bin_id: str, hours: int = 48, limit: int = 12) -> list[dict]:
+    """What actually went into the bin lately, newest first.
+
+    balance_cups answers "how much green vs brown", which is all the advice
+    prompt used to get: two volume numbers. The prompt claims the model is
+    given "a log of what was recently added", so without this it was being
+    told about evidence it never received and could not name anything that
+    went in. Skips are included -- deciding to keep something out is part of
+    the history, and action says which happened.
+    """
+    rows = await db.fetch(
+        """
+        SELECT item, category, action, quantity_g,
+               extract(epoch FROM now() - time) / 3600.0 AS hours_ago
+        FROM add_log
+        WHERE bin_id = $1 AND time >= now() - ($2 || ' hours')::interval
+        ORDER BY time DESC
+        LIMIT $3
+        """,
+        bin_id,
+        str(hours),
+        limit,
+    )
+    return [
+        {
+            "item": r["item"],
+            "category": r["category"],
+            "action": r["action"],
+            "quantity_g": r["quantity_g"],
+            "hours_ago": round(float(r["hours_ago"]), 1),
+        }
+        for r in rows
+    ]
+
+
 async def snapshot(bin_id: str) -> dict | None:
     """Everything the live view and the model need, in one shape.
 

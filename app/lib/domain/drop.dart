@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'models.dart';
+export 'models.dart' show DropSession;
 
 /// Camera drop-in (AGENTS.md 2.4): what the camera saw, and the rules for the
 /// "Is this right?" pop-up. The camera never logs anything by itself: every
@@ -20,13 +21,6 @@ Amount amountFor(double grams) => grams < 60 ? Amount.small : (grams < 180 ? Amo
 const lowConfidence = 0.6;
 
 const mixedScrapsId = 'mixed_scraps';
-
-/// An armed camera window.
-class DropSession {
-  const DropSession(this.id, this.expiresAt);
-  final String id;
-  final DateTime expiresAt;
-}
 
 /// One thing the camera reported.
 class Detection {

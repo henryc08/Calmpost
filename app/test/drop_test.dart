@@ -56,7 +56,7 @@ void main() {
       dropPollEvery: const Duration(milliseconds: 5),
     );
     http.Response json(Object body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json'});
-    final session = DropSession('s1', DateTime(2100));
+    final session = DropSession(id: 's1', expiresAt: DateTime(2100));
 
     test('watchDrop polls until this session\'s drop is pending', () async {
       var polls = 0;
@@ -74,7 +74,14 @@ void main() {
                       'gemini_ok': true,
                       'thumbnail_jpeg_b64': base64Encode([1, 2, 3]),
                       'items': [
-                        {'label': 'banana peel', 'catalog_id': 'banana_peel', 'category': 'green', 'amount': 'handful', 'confidence': 0.86, 'box_2d': [1, 2, 3, 4]},
+                        {
+                          'label': 'banana peel',
+                          'catalog_id': 'banana_peel',
+                          'category': 'green',
+                          'amount': 'handful',
+                          'confidence': 0.86,
+                          'box_2d': [1, 2, 3, 4],
+                        },
                         {'label': 'mystery', 'catalog_id': 'unknown', 'confidence': 0.3},
                       ],
                     },
@@ -103,16 +110,16 @@ void main() {
         sent = jsonDecode(req.body) as Map<String, dynamic>;
         return json({
           'items': [
-            {'log': {}, 'verdict': {'verdict': 'great', 'headline': 'Great add!', 'reason': 'Dry bin.', 'pair_with': []}},
+            {
+              'log': {},
+              'verdict': {'verdict': 'great', 'headline': 'Great add!', 'reason': 'Dry bin.', 'pair_with': []},
+            },
             {'log': {}, 'verdict': null},
           ],
         });
       });
-      final lines = [
-        DropLine(item: foodById['mixed_scraps']!, amount: Amount.large),
-        DropLine(item: foodById['meat']!, amount: Amount.small, removed: true),
-      ];
-      final v = await r.confirmDrop(const Drop(id: 7, items: []), lines, advisedIds: {'mixed_scraps'});
+      final lines = [DropLine(item: foodById['mixed_scraps']!, amount: Amount.large), DropLine(item: foodById['meat']!, amount: Amount.small, removed: true)];
+      final v = await r.confirmReviewedDrop(const Drop(id: 7, items: []), lines, advisedIds: {'mixed_scraps'});
       expect(sent['items'], [
         {'label': 'Mixed food scraps', 'catalog_id': 'mixed_scraps', 'category': 'green', 'amount': 'large', 'removed': false, 'was_advised': true},
         {'label': 'Meat scraps', 'catalog_id': 'meat', 'category': 'avoid', 'amount': 'small', 'removed': true, 'was_advised': false},
@@ -120,10 +127,11 @@ void main() {
       expect(v.map((a) => a.verdict), [Verdict.great, Verdict.avoid]);
 
       // A custom item goes up as 'unknown' with its own label and type.
-      await r.confirmDrop(const Drop(id: 7, items: []), [DropLine(item: customFood('dragonfruit skin', FoodCategory.green, Amount.small), amount: Amount.small)]);
+      await r.confirmReviewedDrop(const Drop(id: 7, items: []), [
+        DropLine(item: customFood('dragonfruit skin', FoodCategory.green, Amount.small), amount: Amount.small),
+      ]);
       expect((sent['items'] as List).single, containsPair('catalog_id', 'unknown'));
       expect((sent['items'] as List).single, containsPair('label', 'Dragonfruit skin'));
     });
   });
 }
-

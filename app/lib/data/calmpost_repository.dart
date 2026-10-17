@@ -36,12 +36,49 @@ abstract class CalmpostRepository {
   /// GET /leagues/current (everyone except you).
   Future<List<LeagueMember>> leagueCohort();
 
+  // --- camera drop-in (AGENTS.md 2.4) ---------------------------------------
+  //
+  // The app never calls Gemini itself and never holds its key: vision/ runs
+  // the camera and the model, the backend stores the detection and applies
+  // the category rules. The app arms a session, watches for detections, then
+  // sends back what the user says was really added.
+
+  /// POST /bins/{id}/drops/session: 'drop something in', arming the camera for
+  /// about a minute. Arming again replaces an open session.
+  Future<DropSession> startDropSession();
+
+  /// Detections waiting on the user, oldest first. Emits the current list on
+  /// every tick, including an empty one, so a UI can tell 'nothing yet' from
+  /// 'no longer pending'. Runs until the subscription is cancelled.
+  Stream<List<CameraDrop>> watchDrops();
+
+  /// POST /drops/{id}/confirm: the user submitted the sheet. Each item becomes
+  /// a log row and gets a verdict, so XP follows the usual rules.
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items);
+
+  /// POST /drops/{id}/dismiss: nothing was added, the trigger was false. Kept
+  /// for the accuracy stat.
+  Future<void> dismissDrop(int dropId);
+
+  // --- Trunc, the compost assistant -----------------------------------------
+
+  /// POST /bins/{id}/chat: ask Trunc a question.
+  ///
+  /// Stateless on the server, so pass the conversation so far in [history],
+  /// oldest first, excluding the question being asked. The backend adds the
+  /// sensor readings, what was recently added and the last camera photos.
+  ///
+  /// Set [includePhotos] false for a cheaper, faster turn when the question
+  /// plainly does not need them.
+  ///
+  /// Always returns something sayable: an off-topic question comes back with
+  /// `onTopic` false and a ready-made redirect, and an unreachable model comes
+  /// back as `isFallback` with a sensor summary. Neither is an error state.
+  Future<TruncReply> askTrunc(String message, {List<TruncTurn> history, bool includePhotos});
+
   FoodItem? food(String id);
 
   // --- camera drop-in (AGENTS.md 2.4) ---------------------------------------
-
-  /// POST /bins/{id}/drops/session: arm the camera for 60 s.
-  Future<DropSession> startDropSession();
 
   /// What the camera reports for [session]: one [DropSeen], or [DropNothing]
   /// when the window closes empty; then the stream ends. Cancel to stop.
@@ -50,8 +87,8 @@ abstract class CalmpostRepository {
   /// POST /drops/{id}/confirm with the rows the user accepted or edited.
   /// Returns a verdict for every row, in order. [advisedIds] are today's
   /// suggestions, so following one earns its XP.
-  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}});
+  Future<List<Advice>> confirmReviewedDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}});
 
   /// POST /drops/{id}/dismiss: "Nothing was added".
-  Future<void> dismissDrop(Drop drop);
+  Future<void> dismissReviewedDrop(Drop drop);
 }

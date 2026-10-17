@@ -49,6 +49,10 @@ state a number or a stage for it.
 - Temperature matters as a RISE ABOVE the ambient air temperature, not as an \
 absolute number: 25C in a 24C room is a cold pile.
 - If moisture_calibrated is false, treat the percentage as approximate.
+- recent_adds is what went in lately, newest first, with hours_ago. action is \
+"added" or "skipped", so a skip means they decided to keep it out. Use it to \
+avoid repeating a suggestion they just acted on. When it is empty, say nothing \
+about recent additions rather than guessing from the cup totals.
 - Recommend specific household items, never general composting theory.
 - headline is 2-4 words, like "Great add!" or "Add browns first".
 - Warm, encouraging, plain language. reason under 30 words, tip under 15.
@@ -86,7 +90,7 @@ RESPONSE_SCHEMA = {
 }
 
 
-async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
+async def advise(snapshot: dict, item: str | None, recent: list[dict] | None = None) -> tuple[dict, str]:
     """Return (advice dict, model name).
 
     `item` is the thing being checked, or None for whole-bin advice.
@@ -123,7 +127,7 @@ async def advise(snapshot: dict, item: str | None) -> tuple[dict, str]:
                 "parts": [
                     {
                         "text": "Bin state as JSON:\n"
-                        + json.dumps(_for_model(snapshot), indent=2, default=str)
+                        + json.dumps(_for_model(snapshot, recent), indent=2, default=str)
                         + f"\n\n{question}"
                     }
                 ],
@@ -180,9 +184,12 @@ async def _ask_gemini(body: dict) -> dict:
     return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
 
 
-def _for_model(snapshot: dict) -> dict:
+def _for_model(snapshot: dict, recent: list[dict] | None = None) -> dict:
     """Trim the snapshot to what actually informs an answer."""
     return {
+        # Newest first, with hours_ago. Empty when nothing was logged lately,
+        # which is itself worth knowing: the cup totals could be stale.
+        "recent_adds": recent or [],
         "layers": snapshot["layers"],
         "stages": snapshot["stages"],
         "air": snapshot["air"],

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
+import '../domain/xp_rules.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
 
@@ -47,7 +48,11 @@ class MockRepository implements CalmpostRepository {
   @override
   Future<Map<String, dynamic>> gameAction(String action, Map<String, dynamic> args) async => {};
   @override
-  Future<void> cancelDropSession(DropSession session) async {}
+  Future<void> cancelDropSession(DropSession session) async {
+    _cancelledSessions.add(session.id);
+    _pending.removeWhere((drop) => drop.sessionId == session.id);
+  }
+
   @override
   Future<Drop?> pendingDrop() async => null;
   MockRepository(this.scenario);
@@ -173,10 +178,6 @@ class MockRepository implements CalmpostRepository {
 
   MockDrop nextDrop = MockDrop.banana;
   Duration dropDelay = const Duration(milliseconds: 2500);
-  var _dropIds = 0;
-
-  @override
-  Future<DropSession> startDropSession() async => DropSession('mock-${++_dropIds}', DateTime.now().add(const Duration(seconds: 60)));
 
   @override
   Stream<DropEvent> watchDrop(DropSession session) async* {
@@ -185,24 +186,24 @@ class MockRepository implements CalmpostRepository {
     Detection d(String label, String? id, FoodCategory c, Amount a, double conf) =>
         Detection(label: label, catalogId: id, category: c, amount: a, confidence: conf, box: box);
     yield switch (nextDrop) {
-      MockDrop.banana => DropSeen(Drop(id: _dropIds, items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.86)])),
+      MockDrop.banana => DropSeen(Drop(id: _dropId, items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.86)])),
       MockDrop.check => DropSeen(
         Drop(
-          id: _dropIds,
+          id: _dropId,
           items: [
             d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91),
             d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44),
           ],
         ),
       ),
-      MockDrop.mixed => DropSeen(Drop(id: _dropIds, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
-      MockDrop.unclear => DropSeen(Drop(id: _dropIds, items: const [], geminiOk: false)),
+      MockDrop.mixed => DropSeen(Drop(id: _dropId, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
+      MockDrop.unclear => DropSeen(Drop(id: _dropId, items: const [], geminiOk: false)),
       MockDrop.nothing => const DropNothing(),
     };
   }
 
   @override
-  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
+  Future<List<Advice>> confirmReviewedDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     final snap = _last ?? _snapshot(0);
     final out = <Advice>[];
@@ -214,12 +215,230 @@ class MockRepository implements CalmpostRepository {
       out.add(adviseFor(l.item, snap, foodById));
       await logItem(l.item, quantityG: amountGrams[l.amount]);
     }
+    _pending.removeWhere((d) => d.id == drop.id);
     return out;
   }
 
   @override
-  Future<void> dismissDrop(Drop drop) async {}
+  Future<void> dismissReviewedDrop(Drop drop) => dismissDrop(drop.id);
+  // --- camera drop-in ---------------------------------------------------------
+  //
+  // No camera and no backend here: arming queues a detection a beat later, so
+  // the sheet can be built and demoed on a laptop with nothing plugged in.
+  // Walk through the scripted guesses with [Scenario] unchanged; each arm
+  // serves the next one and then wraps around.
+
+  int _dropId = 0, _nextGuess = 0;
+  final List<CameraDrop> _pending = [];
+  final Set<String> _cancelledSessions = {};
+  double _confirmedGrams = 0;
+  int _confirmedActionXp = 0;
+  DateTime _confirmationDay = dayOf(DateTime.now());
+
+  /// What the camera "sees", in order: a clean green, a pair, an unknown item
+  /// the user has to name, and a keep-out item. Covers the cases a sheet has
+  /// to handle without needing hardware to produce them.
+  static const _scripted = <List<(String, String, double)>>[
+    [('banana peel', 'banana_peel', 0.95)],
+    [('coffee grounds', 'coffee_grounds', 0.88), ('eggshells', 'eggshells', 0.71)],
+    [('something leafy', 'unknown', 0.41)],
+    [('cheese rind', 'cheese', 0.83)],
+  ];
+
+  @override
+  Future<DropSession> startDropSession() async {
+    final session = DropSession(id: 'mock-${++_dropId}', expiresAt: DateTime.now().add(const Duration(seconds: 60)));
+    final guesses = _scripted[_nextGuess++ % _scripted.length];
+    final dropId = _dropId;
+    // Roughly what a real drop costs end to end, so a spinner gets exercised.
+    Future<void>.delayed(const Duration(milliseconds: 2000), () {
+      if (_cancelledSessions.contains(session.id)) return;
+      _pending.add(
+        CameraDrop(
+          id: dropId,
+          binId: 'bin-001',
+          sessionId: session.id,
+          time: DateTime.now(),
+          status: DropStatus.pending,
+          geminiOk: true,
+          latencyMs: 1400,
+          model: 'mock',
+          guesses: [
+            for (final (label, id, confidence) in guesses)
+              DropGuess(label: label, catalogId: id, confidence: confidence, item: foodById[id], category: foodById[id]?.category, amount: 'handful'),
+          ],
+        ),
+      );
+    });
+    return session;
+  }
+
+  @override
+  Stream<List<CameraDrop>> watchDrops() async* {
+    while (true) {
+      yield List.unmodifiable(_pending);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  @override
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items) async {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final drop = _pending.where((d) => d.id == dropId).firstOrNull;
+    _pending.removeWhere((d) => d.id == dropId);
+
+    final verdicts = <Advice>[];
+    var xp = 0;
+    final today = dayOf(DateTime.now());
+    if (today != _confirmationDay) {
+      _confirmationDay = today;
+      _confirmedGrams = 0;
+      _confirmedActionXp = 0;
+    }
+    final snap = _last ?? _snapshot(0);
+    for (final i in items) {
+      final amount = Amount.values.where((a) => a.name == i.amount).firstOrNull ?? Amount.handful;
+      final item = foodById[i.catalogId] ?? customFood(i.label, i.category ?? FoodCategory.green, amount);
+      final advice = adviseFor(item, snap, foodById);
+      var reward = 0;
+      if (!i.removed) {
+        final grams = amountGrams[amount]!;
+        if (item.category != FoodCategory.avoid) {
+          reward = volumeXp(grams, alreadyLogged: _confirmedGrams);
+          _confirmedGrams += grams;
+          if (i.wasAdvised && suggestions(snap).add.any((f) => f.id == item.id)) reward += Xp.followedSuggestion;
+        }
+        await logItem(item, quantityG: grams);
+        verdicts.add(advice);
+      } else if (item.category == FoodCategory.avoid) {
+        reward = Xp.avoidedBadAdd;
+      }
+      final paid = xpForAction(base: reward, earnedToday: _confirmedActionXp);
+      _confirmedActionXp += paid;
+      xp += paid;
+    }
+
+    final guessed = drop?.guesses.map((g) => (g.catalogId, g.label.toLowerCase())).toSet() ?? const {};
+    final confirmed = items.map((i) => (i.catalogId, i.label.toLowerCase())).toSet();
+    return DropResult(dropId: dropId, corrected: guessed.isNotEmpty && !_setEquals(guessed, confirmed), verdicts: verdicts, xpAwarded: xp);
+  }
+
+  @override
+  Future<void> dismissDrop(int dropId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    _pending.removeWhere((d) => d.id == dropId);
+  }
+
+  // --- Trunc ------------------------------------------------------------------
+  //
+  // Scripted so the chat UI can be built with no backend, no API key and no
+  // Gemini quota. Keyword-matched rather than random, so a given question
+  // always gives the same answer and a screenshot is reproducible.
+  //
+  // The four replies below are the four states a chat screen has to handle:
+  // a normal answer, one that leaned on the readings, an off-topic refusal,
+  // and a rules-fallback when the model is unreachable. Ask "test fallback"
+  // or something off topic to see those two without touching the backend.
+
+  @override
+  Future<TruncReply> askTrunc(String message, {List<TruncTurn> history = const [], bool includePhotos = true}) async {
+    // Long enough that a typing indicator is worth building, and close to what
+    // a real call costs with photos attached.
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+
+    final q = message.toLowerCase();
+    final snap = _last ?? _snapshot(0);
+    final context = TruncContext(readingsAt: snap.time, recentAdds: (_greens + _browns).round(), photos: includePhotos ? 1 : 0);
+
+    if (q.contains('fallback') || q.contains('test error')) {
+      return TruncReply(
+        reply:
+            "I can't reach my brain right now, so here's what the sensors say "
+            'instead. Right now the top layer is ${snap.topMoisture.round()}% moisture.',
+        model: 'rules-fallback',
+        onTopic: true,
+        usedReadings: true,
+        context: context,
+      );
+    }
+
+    if (!_soundsLikeCompost(q)) {
+      return TruncReply(
+        reply:
+            "I only know about composting, so I'll stay out of that one. "
+            'Ask me about your bin, what to add, or why something smells off.',
+        model: 'mock',
+        onTopic: false,
+        usedReadings: false,
+        context: context,
+      );
+    }
+
+    // Leans on the readings when the question is about this bin's behaviour.
+    final aboutThisBin = ['smell', 'wet', 'dry', 'hot', 'slow', 'why', 'my bin'].any(q.contains);
+    if (aboutThisBin) {
+      final wet = snap.topMoisture > 64;
+      return TruncReply(
+        reply: wet
+            ? 'The top layer is at ${snap.topMoisture.round()}%, which is soggy, and that '
+                  'sour smell is what a wet pile does when air cannot get through. Add a '
+                  'few handfuls of shredded cardboard and give it a stir.'
+            : 'Nothing looks off: the top layer is ${snap.topMoisture.round()}% moisture and '
+                  'running ${(snap.topTemp - snap.ambientTemp).toStringAsFixed(1)}C above the '
+                  'room, which is healthy. Keep adding scraps as you have been.',
+        model: 'mock',
+        onTopic: true,
+        usedReadings: true,
+        context: context,
+      );
+    }
+
+    // A general question, answered without reciting the sensors -- the
+    // behaviour the real prompt asks for.
+    return TruncReply(
+      reply:
+          'Yes, those are fine to compost. Break them up a little first so they '
+          'rot faster, and tuck them under the top layer rather than leaving them '
+          'sitting on it.',
+      model: 'mock',
+      onTopic: true,
+      usedReadings: false,
+      context: context,
+    );
+  }
+
+  static bool _soundsLikeCompost(String q) => const [
+    'compost',
+    'bin',
+    'smell',
+    'moist',
+    'wet',
+    'dry',
+    'brown',
+    'green',
+    'worm',
+    'heat',
+    'hot',
+    'layer',
+    'harvest',
+    'peel',
+    'scrap',
+    'cardboard',
+    'coffee',
+    'egg',
+    'fruit',
+    'veg',
+    'pest',
+    'fly',
+    'mould',
+    'mold',
+    'rot',
+    'add',
+    'put',
+  ].any(q.contains);
 }
+
+bool _setEquals(Set<(String, String)> a, Set<(String, String)> b) => a.length == b.length && a.every(b.contains);
 
 const _names = [
   ('Priya S.', 342, true, 41),

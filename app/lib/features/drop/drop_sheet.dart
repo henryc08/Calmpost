@@ -14,6 +14,7 @@ import '../../domain/drop.dart';
 import '../../domain/models.dart';
 import '../../state/game.dart';
 import '../../state/providers.dart';
+import '../../state/social.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
@@ -52,6 +53,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   List<Advice> _verdicts = const [];
   int _xp = 0;
   bool _saving = false;
+  bool _accountCameraUnavailable = false;
   StreamSubscription<DropEvent>? _sub;
   Timer? _tick;
   late CalmpostRepository _repo;
@@ -78,6 +80,13 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     _sub?.cancel();
     _tick?.cancel();
     setState(() => _phase = _Phase.arming);
+    if (ref.read(socialSessionProvider).valueOrNull != null && ref.read(dataSourceProvider) == DataSource.live) {
+      setState(() {
+        _accountCameraUnavailable = true;
+        _phase = _Phase.failed;
+      });
+      return;
+    }
     final repo = ref.read(repositoryProvider);
     try {
       final pending = await repo.pendingDrop();
@@ -133,7 +142,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     final tips = ref.read(suggestionProvider)?.add.map((f) => f.id).toSet() ?? const <String>{};
     try {
       final game = ref.read(gameProvider.notifier);
-      final verdicts = await _repo.confirmDrop(drop, _lines, advisedIds: tips);
+      final verdicts = await _repo.confirmReviewedDrop(drop, _lines, advisedIds: tips);
       if (!mounted) return;
       final xp = _repo.serverGame
           ? verdicts.fold<int>(0, (sum, a) => sum + (a.xpAwarded ?? 0))
@@ -165,7 +174,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     final drop = _drop;
     setState(() => _saving = true);
     try {
-      if (drop != null) await _repo.dismissDrop(drop);
+      if (drop != null) await _repo.dismissReviewedDrop(drop);
       if (!mounted) return;
       showToast(ref, 'Got it. Nothing logged.');
       Navigator.of(context).pop();
@@ -224,8 +233,10 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     ),
     _Phase.failed => _message(
       icon: PhosphorIconsRegular.cameraSlash,
-      title: 'Couldn\'t reach the camera',
-      body: 'The camera service on the laptop isn\'t answering. You can still log this by hand.',
+      title: _accountCameraUnavailable ? 'Use the Log tab for this bin' : 'Couldn\'t reach the camera',
+      body: _accountCameraUnavailable
+          ? 'Camera capture for player-owned bins is not connected yet. Manual additions still save to your Social profile.'
+          : 'The camera service on the laptop isn\'t answering. You can still log this by hand.',
       primary: ('Log it by hand', _logByHand),
       secondary: ('Try again', _arm),
     ),

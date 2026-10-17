@@ -9,6 +9,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Today's XP fills a track toward three reward nodes you tap to claim.
 class DailyTrack extends ConsumerWidget {
@@ -40,6 +41,7 @@ class DailyTrack extends ConsumerWidget {
       children: [
         SectionLabel(
           'DAILY GOAL',
+          info: InfoTip.xp,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

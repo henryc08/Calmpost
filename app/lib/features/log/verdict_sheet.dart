@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9,11 +10,14 @@ import '../../domain/models.dart';
 import '../../domain/drop.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
+import '../../state/social.dart';
+import '../../data/social_repository.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/info_dot.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -43,7 +47,8 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
   String? _error;
   bool _saving = false;
   late Amount _amount = amountFor(widget.item.grams);
-  String _requestId = 'manual-${DateTime.now().microsecondsSinceEpoch}';
+  String _requestId = _newRequestId();
+  static String _newRequestId() => 'manual-${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
   ({Advice advice, bool added, double grams, bool advised})? _submission;
 
   @override
@@ -59,7 +64,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
       _advice = null;
       _error = null;
       _amount = amountFor(item.grams);
-      _requestId = 'manual-${DateTime.now().microsecondsSinceEpoch}';
+      _requestId = _newRequestId();
     });
     try {
       final advice = await ref.read(repositoryProvider).checkItem(item);
@@ -83,6 +88,26 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
     final repo = ref.read(repositoryProvider);
     final game = ref.read(gameProvider.notifier);
     try {
+      // Restoring secure storage is asynchronous. Do not mistake a loading
+      // account for a signed-out demo and silently save to the wrong place.
+      final account = await ref.read(socialSessionProvider.future);
+      if (account != null) {
+        if (account.binId == null || ref.read(dataSourceProvider) != DataSource.live) {
+          throw const SocialFailure('Connect your bin in Social to save real care. Demo actions stay on this device.');
+        }
+        final result =
+            await socialWrite(ref, 'POST', '/care-log', {
+                  'catalog_id': submission.advice.item.id,
+                  'action': submission.added ? 'added' : 'skipped',
+                  'quantity_g': submission.added ? submission.grams.round() : 0,
+                  'request_id': _requestId,
+                })
+                as Json;
+        if (!mounted) return;
+        showToast(ref, 'Care saved to your profile', xp: result['xp_awarded'] as int);
+        Navigator.of(context).pop();
+        return;
+      }
       final paid = await repo.logItem(
         submission.advice.item,
         added: submission.added,
@@ -95,11 +120,11 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
       if (!mounted) return;
       showToast(ref, added ? '${advice.item.name} logged' : 'Kept ${advice.item.name.toLowerCase()} out', xp: xp);
       Navigator.of(context).pop();
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _saving = false;
-          _error = 'Save was not confirmed. Retry the same entry to avoid duplicates.';
+          _error = error is SocialFailure ? error.message : 'Save was not confirmed. Retry the same entry to avoid duplicates.';
         });
       }
     }
@@ -186,7 +211,12 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: T.caps.copyWith(color: color)),
+                  Row(
+                    children: [
+                      Text(label, style: T.caps.copyWith(color: color)),
+                      const InfoDot(InfoTip.verdict),
+                    ],
+                  ),
                   const SizedBox(height: 2),
                   Text(a.item.name, style: T.small.copyWith(color: C.ink2)),
                 ],

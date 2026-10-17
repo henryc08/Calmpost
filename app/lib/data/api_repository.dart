@@ -33,7 +33,9 @@ class ApiRepository implements CalmpostRepository {
   List<int> _crateIds = [];
 
   @override
-  bool get serverGame => true;
+  // Registered players use the scoped Social economy. Legacy demo accounts
+  // retain the full server game; never call those reward routes as a player.
+  bool get serverGame => config.token == null;
 
   @override
   Future<Map<String, dynamic>> loadGame() async {
@@ -80,12 +82,16 @@ class ApiRepository implements CalmpostRepository {
   @override
   Future<Drop?> pendingDrop() async {
     final pending = await _get('/bins/${config.binId}/drops/pending') as List;
-    return pending.isEmpty ? null : dropFromJson(pending.first as Map<String, dynamic>);
+    return pending.isEmpty ? null : reviewedDropFromJson(pending.first as Map<String, dynamic>);
   }
 
   void close() => _http.close();
 
-  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json'};
+  Map<String, String> get _headers => {
+    'X-API-Key': config.apiKey,
+    'Content-Type': 'application/json',
+    if (config.token != null) 'Authorization': 'Bearer ${config.token}',
+  };
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('${config.baseUrl}$path').replace(queryParameters: query);
 
@@ -190,19 +196,13 @@ class ApiRepository implements CalmpostRepository {
   // the backend keeps it pending until the user confirms it here.
 
   @override
-  Future<DropSession> startDropSession() async {
-    final j = await _post('/bins/${config.binId}/drops/session', const {}) as Map<String, dynamic>;
-    return DropSession(j['session_id'] as String, DateTime.parse(j['expires_at'] as String).toLocal());
-  }
-
-  @override
   Stream<DropEvent> watchDrop(DropSession session) async* {
     var reportedButMissing = false;
     while (true) {
       final pending = (await _get('/bins/${config.binId}/drops/pending') as List).cast<Map<String, dynamic>>();
       final mine = pending.where((d) => d['session_id'] == session.id).firstOrNull;
       if (mine != null) {
-        yield DropSeen(dropFromJson(mine));
+        yield DropSeen(reviewedDropFromJson(mine));
         return;
       }
       final st = await _get('/bins/${config.binId}/drops/sessions/${session.id}') as Map<String, dynamic>;
@@ -220,7 +220,7 @@ class ApiRepository implements CalmpostRepository {
   }
 
   @override
-  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
+  Future<List<Advice>> confirmReviewedDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
     final j =
         await _post('/drops/${drop.id}/confirm', {
               'items': [
@@ -262,12 +262,13 @@ class ApiRepository implements CalmpostRepository {
   }
 
   @override
-  Future<void> dismissDrop(Drop drop) async => _post('/drops/${drop.id}/dismiss', const {});
+  Future<void> dismissReviewedDrop(Drop drop) => dismissDrop(drop.id);
 
   // --- league ------------------------------------------------------------------------
 
   @override
   Future<List<LeagueMember>> leagueCohort() async {
+    if (config.token != null) return const [];
     try {
       final j = await _get('/leagues/current', {'user_id': config.userId}) as Map<String, dynamic>;
       return [
@@ -286,6 +287,86 @@ class ApiRepository implements CalmpostRepository {
       if (e.statusCode == 404) return const [];
       rethrow;
     }
+  }
+
+  // --- camera drop-in ----------------------------------------------------------------
+
+  @override
+  Future<DropSession> startDropSession() async {
+    final j = await _post('/bins/${config.binId}/drops/session', const <String, dynamic>{}) as Map<String, dynamic>;
+    return DropSession(id: j['session_id'] as String, expiresAt: DateTime.parse(j['expires_at'] as String).toLocal());
+  }
+
+  /// Polls the pending list rather than reading the SSE stream: the stream
+  /// handler re-queries once a second anyway, so this is the same latency
+  /// without holding a long-lived response open, which is the part that
+  /// breaks on a flaky hotspot and behind proxies on web.
+  @override
+  Stream<List<CameraDrop>> watchDrops() async* {
+    while (true) {
+      try {
+        final rows = (await _get('/bins/${config.binId}/drops/pending') as List).cast<Map<String, dynamic>>();
+        yield [for (final r in rows) dropFromJson(r)];
+      } on Exception {
+        // A dropped request must not kill the watch; the next tick retries.
+      }
+      await Future<void>.delayed(dropPollEvery);
+    }
+  }
+
+  @override
+  Future<DropResult> confirmDrop(int dropId, List<DropConfirmation> items) async {
+    final j =
+        await _post('/drops/$dropId/confirm', {
+              'items': [
+                for (final i in items)
+                  {
+                    'label': i.label,
+                    'catalog_id': i.catalogId,
+                    // The backend overrides this by its own rules; sending 'unknown'
+                    // lets it decide rather than asserting a category we guessed.
+                    'category': i.category?.name ?? 'unknown',
+                    if (i.amount != null) 'amount': i.amount,
+                    'removed': i.removed,
+                    'was_advised': i.wasAdvised,
+                    if (i.adviceId != null) 'advice_id': i.adviceId,
+                  },
+              ],
+            })
+            as Map<String, dynamic>;
+
+    final verdicts = <Advice>[];
+    var xp = 0;
+    for (final row in ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+      final log = (row['log'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+      xp += (log['xp_awarded'] as num?)?.toInt() ?? 0;
+      final verdict = row['verdict'] as Map<String, dynamic>?;
+      // No verdict for a removed item, and none when the bin has no readings
+      // yet; the add is still logged, so this is not an error.
+      if (verdict == null) continue;
+      final item = foodForLabel((log['item'] as String?) ?? '', log['catalog_id'] as String?);
+      if (item != null) verdicts.add(adviceFromJson(item, verdict));
+    }
+    return DropResult(dropId: (j['drop_id'] as num?)?.toInt() ?? dropId, corrected: j['corrected'] == true, verdicts: verdicts, xpAwarded: xp);
+  }
+
+  @override
+  Future<void> dismissDrop(int dropId) => _post('/drops/$dropId/dismiss', const <String, dynamic>{});
+
+  // --- Trunc -------------------------------------------------------------------------
+
+  @override
+  Future<TruncReply> askTrunc(String message, {List<TruncTurn> history = const [], bool includePhotos = true}) async {
+    final j =
+        await _post('/bins/${config.binId}/chat', {
+              'message': message,
+              'history': [
+                for (final t in history) {'role': t.role.name, 'text': t.text},
+              ],
+              'include_photos': includePhotos,
+            })
+            as Map<String, dynamic>;
+    return truncReplyFromJson(j);
   }
 }
 
@@ -366,7 +447,7 @@ Advice adviceFromJson(FoodItem item, Map<String, dynamic> j, {int? xpAwarded}) {
 }
 
 /// GET /bins/{id}/drops/pending item -> Drop.
-Drop dropFromJson(Map<String, dynamic> j) {
+Drop reviewedDropFromJson(Map<String, dynamic> j) {
   final thumb = j['thumbnail_jpeg_b64'] as String? ?? '';
   return Drop(
     id: (j['id'] as num).toInt(),
@@ -383,5 +464,74 @@ Drop dropFromJson(Map<String, dynamic> j) {
           box: (i['box_2d'] as List?)?.map((v) => (v as num).toDouble()).toList(),
         ),
     ],
+  );
+}
+
+/// Resolves a backend label to a catalog entry: catalog id first, then an
+/// exact name, then a loose contains-match. Null for something the catalog
+/// has never heard of, which the UI has to let the user name.
+FoodItem? foodForLabel(String label, [String? catalogId]) {
+  if (catalogId != null && catalogId != 'unknown') {
+    final byId = foodById[catalogId];
+    if (byId != null) return byId;
+  }
+  final n = label.toLowerCase().trim();
+  if (n.isEmpty) return null;
+  return foodCatalog.where((f) => f.name.toLowerCase() == n || f.id == n).firstOrNull ??
+      foodCatalog.where((f) => f.name.toLowerCase().contains(n) || n.contains(f.name.toLowerCase())).firstOrNull;
+}
+
+/// GET /bins/{id}/drops/pending (and each `drop` SSE event) -> CameraDrop.
+CameraDrop dropFromJson(Map<String, dynamic> j) {
+  final guesses = <DropGuess>[];
+  for (final g in ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+    final label = (g['label'] as String?) ?? '';
+    final catalogId = (g['catalog_id'] as String?) ?? 'unknown';
+    guesses.add(
+      DropGuess(
+        label: label,
+        catalogId: catalogId,
+        confidence: _d(g['confidence']) ?? 0,
+        item: foodForLabel(label, catalogId),
+        category: FoodCategory.values.where((c) => c.name == g['category']).firstOrNull,
+        amount: g['amount'] as String?,
+        estGrams: _d(g['est_grams']),
+        box: (g['box_2d'] as List?)?.cast<num>().map((n) => n.toInt()).toList(),
+      ),
+    );
+  }
+  final thumb = (j['thumbnail_jpeg_b64'] as String?) ?? '';
+  return CameraDrop(
+    id: (j['id'] as num).toInt(),
+    binId: (j['bin_id'] as String?) ?? '',
+    sessionId: (j['session_id'] as String?) ?? '',
+    time: DateTime.parse(j['time'] as String).toLocal(),
+    status: DropStatus.values.firstWhere((s) => s.name == j['status'], orElse: () => DropStatus.pending),
+    guesses: guesses,
+    geminiOk: j['gemini_ok'] == true,
+    latencyMs: (j['latency_ms'] as num?)?.toInt() ?? 0,
+    model: (j['model'] as String?) ?? '',
+    error: j['error'] as String?,
+    thumbnailJpeg: thumb.isEmpty ? null : base64Decode(thumb),
+  );
+}
+
+/// POST /bins/{id}/chat -> TruncReply.
+TruncReply truncReplyFromJson(Map<String, dynamic> j) {
+  final ctx = (j['context'] as Map<String, dynamic>?) ?? const {};
+  final at = ctx['readings_at'] as String?;
+  return TruncReply(
+    reply: (j['reply'] as String?) ?? '',
+    model: (j['model'] as String?) ?? '',
+    // Absent means on topic: only an off-topic answer sets it false.
+    onTopic: j['on_topic'] != false,
+    usedReadings: j['used_readings'] == true,
+    context: TruncContext(
+      // Null when the bin has never reported, which is not an error: a general
+      // question does not need a reading.
+      readingsAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
+      recentAdds: (ctx['recent_adds'] as num?)?.toInt() ?? 0,
+      photos: (ctx['photos'] as num?)?.toInt() ?? 0,
+    ),
   );
 }

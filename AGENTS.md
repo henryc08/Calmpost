@@ -36,7 +36,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 | # | Feature | Status |
 |---|---|---|
-| 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ⏳ second probe |
+| 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ✅ **second probe (bottom layer live)** · ⏳ bottom-layer trends |
 | 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | ✅ backend + vision + app data layer · ⏳ app sheet (UI) |
@@ -323,7 +323,7 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 
 | Area | Endpoint |
 |---|---|
-| Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
+| Sensors | `POST /ingest` (both probes in one sample: `moisture_raw`/`probe_temp_c` = top, `moisture_raw_2`/`probe_temp_c_2` = bottom) · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` (send `probe: 1` or `2`; each probe has its own dry/wet counts) |
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
 | Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
 | **Photo submission** | `POST /bins/{id}/drops/photo` — `{image_jpeg_b64}` ⇒ a pending drop with `source: 'photo'`. Downscale to ~1024 px; over ~1.5 MB is a 413. Finishes through the normal `/drops/{id}/confirm` and `/dismiss`. |

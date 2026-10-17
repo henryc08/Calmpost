@@ -40,6 +40,7 @@ async def latest_reading(bin_id: str):
     return await db.fetchrow(
         """
         SELECT time, probe_layer, probe_temp_c, moisture_raw, moisture_pct,
+               probe_temp_c_2, moisture_raw_2, moisture_pct_2,
                co2_ppm, air_temp_c, air_humidity_pct, co2_status
         FROM readings
         WHERE bin_id = $1
@@ -227,25 +228,31 @@ async def snapshot(bin_id: str) -> dict | None:
     probe_layer = latest["probe_layer"]
     pct = latest["moisture_pct"]
 
-    layers: dict[str, dict] = {}
-    for layer in ("top", "bottom"):
-        if layer == probe_layer:
-            layers[layer] = {
-                "measured": True,
-                "moisture_pct": pct,
-                "moisture_raw": latest["moisture_raw"],
-                "moisture_state": compost.moisture_state(pct),
-                "temp_c": latest["probe_temp_c"],
-            }
-        else:
-            # No second probe in this build. Say so rather than imply 0.
-            layers[layer] = {
-                "measured": False,
-                "moisture_pct": None,
-                "moisture_raw": None,
-                "moisture_state": "unknown",
-                "temp_c": None,
-            }
+    # Probe 1 sits in probe_layer (top by default); probe 2 is the other one.
+    # A layer counts as measured on moisture alone: probe 2 reports moisture
+    # but not temperature yet, and a layer with a real percentage and no
+    # temperature is still far more useful than "unknown".
+    pct2 = latest["moisture_pct_2"]
+    other = "bottom" if probe_layer == "top" else "top"
+
+    layers: dict[str, dict] = {
+        probe_layer: {
+            "measured": True,
+            "moisture_pct": pct,
+            "moisture_raw": latest["moisture_raw"],
+            "moisture_state": compost.moisture_state(pct),
+            "temp_c": latest["probe_temp_c"],
+        },
+        other: {
+            "measured": latest["moisture_raw_2"] is not None,
+            "moisture_pct": pct2,
+            "moisture_raw": latest["moisture_raw_2"],
+            # Still "unknown" when the probe is absent, so nothing implies 0.
+            "moisture_state": compost.moisture_state(pct2)
+            if latest["moisture_raw_2"] is not None else "unknown",
+            "temp_c": latest["probe_temp_c_2"],
+        },
+    }
 
     # Stages. The unmeasured layer gets 'started' rather than an invented
     # stage, which also keeps bottom_ready false until a probe exists.

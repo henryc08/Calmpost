@@ -30,7 +30,6 @@ class ApiRepository implements CalmpostRepository {
   /// rate costs the same latency.
   final Duration dropPollEvery;
   final http.Client _http;
-  BinSnapshot? _last;
 
   void close() => _http.close();
 
@@ -60,7 +59,7 @@ class ApiRepository implements CalmpostRepository {
   Stream<BinSnapshot> watchBin() async* {
     while (true) {
       try {
-        yield _last = snapshotFromJson(await _get('/bins/${config.binId}/live') as Map<String, dynamic>);
+        yield snapshotFromJson(await _get('/bins/${config.binId}/live') as Map<String, dynamic>);
       } catch (e) {
         // Keep polling; the UI keeps the last snapshot and can show the error.
         yield* Stream<BinSnapshot>.error(e);
@@ -71,9 +70,12 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<List<TrendPoint>> trends(Zone zone, Metric metric) async {
-    // The backend's series come from the one probe (top layer) and the air
-    // sensor. There is no bottom-layer series until a second probe exists.
-    if (zone == Zone.bottom && !(_last?.bottomMeasured ?? false)) return const [];
+    // The bottom layer now reports live (second probe), but the continuous
+    // aggregates behind /trends still carry probe 1 only, so asking for a
+    // bottom series would chart the TOP probe's history under a bottom label.
+    // Empty until readings_15m/readings_1d gain the second probe -- see
+    // backend/sql/007_second_probe.sql.
+    if (zone == Zone.bottom) return const [];
     final name = switch (metric) {
       Metric.moisture => 'moisture',
       Metric.temperature => zone == Zone.air ? 'air_temp' : 'temperature',

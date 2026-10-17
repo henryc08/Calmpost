@@ -75,7 +75,10 @@ async def list_bins() -> list[dict]:
 
 @router.post("/bins/{bin_id}/calibration")
 async def set_calibration(bin_id: str, body: CalibrationUpdate) -> dict:
-    """Store the probe's dry/wet raw counts and optionally replay history.
+    """Store a probe's dry/wet raw counts and optionally replay history.
+
+    `probe` picks which sensor: 1 is the top layer, 2 the bottom. Each has its
+    own calibration because they are different physical sensors.
 
     Without this the moisture percentage is a guess, and moisture is the
     heaviest term in the health score -- so calibrating is the single most
@@ -88,13 +91,20 @@ async def set_calibration(bin_id: str, body: CalibrationUpdate) -> dict:
     if binr is None:
         raise HTTPException(status_code=404, detail="unknown bin")
 
+    # Column names rather than values, so probe 2 reuses this whole path
+    # instead of growing a parallel copy of it.
+    suffix = "" if body.probe == 1 else "_2"
+    dry_col, wet_col = f"moisture_raw_dry{suffix}", f"moisture_raw_wet{suffix}"
+    raw_col, pct_col = f"moisture_raw{suffix}", f"moisture_pct{suffix}"
+    done_col = f"calibrated{suffix}"
+
     updated = 0
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                """
+                f"""
                 UPDATE bins
-                SET moisture_raw_dry = $2, moisture_raw_wet = $3, calibrated = true
+                SET {dry_col} = $2, {wet_col} = $3, {done_col} = true
                 WHERE bin_id = $1
                 """,
                 bin_id,
@@ -105,12 +115,12 @@ async def set_calibration(bin_id: str, body: CalibrationUpdate) -> dict:
                 # Recompute stored percentages with the new curve so the
                 # charts are consistent instead of kinking at this moment.
                 result = await conn.execute(
-                    """
+                    f"""
                     UPDATE readings
-                    SET moisture_pct = greatest(0, least(100,
-                        100.0 * ($2::double precision - moisture_raw)
+                    SET {pct_col} = greatest(0, least(100,
+                        100.0 * ($2::double precision - {raw_col})
                               / ($2::double precision - $3::double precision)))
-                    WHERE bin_id = $1 AND moisture_raw IS NOT NULL
+                    WHERE bin_id = $1 AND {raw_col} IS NOT NULL
                     """,
                     bin_id,
                     body.moisture_raw_dry,
@@ -120,6 +130,7 @@ async def set_calibration(bin_id: str, body: CalibrationUpdate) -> dict:
 
     return {
         "bin_id": bin_id,
+        "probe": body.probe,
         "calibrated": True,
         "moisture_raw_dry": body.moisture_raw_dry,
         "moisture_raw_wet": body.moisture_raw_wet,

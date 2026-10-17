@@ -43,6 +43,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
+| 2.9 | **Single photo submission** (point a phone at something, ask what it is) | ✅ backend + app data layer · ⏳ capture UI · ⏳ needs Gemini billing |
 | 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + app data layer · ⏳ chat UI · ⏳ needs Gemini billing |
 
 ### 2.1 Live sensing & Bin Health Score
@@ -128,6 +129,35 @@ Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, 
 
 ---
 
+### 2.9 Single photo submission ✅ *backend + app data layer; capture UI open*
+
+The camera drop-in (2.4) watches the bin and decides for itself when something
+arrived. This is the other way round: the user points a phone at something and
+asks what it is.
+
+`CalmpostRepository.submitPhoto(Uint8List jpeg)` ⇒ a pending `CameraDrop` with
+`source == 'photo'` (`drop.fromPhoto`). **It is an ordinary drop**, so
+`confirmDrop` and `dismissDrop` finish it exactly as they finish a camera
+detection — there is no separate photo flow to build, and the XP rules, the
+add_log rows and the history all come for free.
+
+- Downscale to about **1024 px** before calling. Over ~1.5 MB is a 413 whose
+  message says so.
+- **A failed identification is not an error.** `guesses` comes back empty with
+  `geminiOk == false` and the photo kept, for the user to name by hand — the
+  same state an unknown `catalog_id` already produces.
+- Categories are decided by `app/rules/compost.py`, never by the model: the
+  prompt explicitly forbids it from judging, so a cheese rind comes back
+  `avoid` from its label alone.
+- `MockRepository.submitPhoto` returns a scripted banana peel with a bounding
+  box, so an overlay has something to draw with no backend. Pass an **empty**
+  `Uint8List` to get the failed-identification state.
+
+`source` also keeps `/drops/accuracy` honest: that number is about the camera,
+so photos the user framed are excluded from it.
+
+---
+
 ### 2.8 Trunc: the compost assistant ✅ *backend + app data layer; chat UI open*
 
 Trunc answers free-text composting questions. Everything else in the app takes
@@ -192,6 +222,7 @@ The app never calls Gemini and never holds its key.
 | **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
 | **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: great \| careful \| avoid, headline, reason, balance, suggest_add[], suggest_avoid[], pair_with[], tip}` | Flash |
 | **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
+| **Photo identification** | 2.9 | one user-supplied JPEG + the catalog ids | same `items` shape as drop identification; categories come from the rules, not the model | Flash |
 | **Trunc chat** | 2.8 | snapshot + `recent_adds` + newest 2 drop photos + the question and prior turns | `{on_topic, reply, used_readings}`; off topic ⇒ the backend's own line | Flash |
 | **Summaries** | 2.5 | snapshot (+ week stats) | `{title, body, bullets[], mood}` | Flash or Flash-Lite |
 
@@ -295,6 +326,7 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 | Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?hours=&metrics=` · `GET /bins/{id}/stats` · `POST /bins/{id}/calibration` |
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
 | Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `POST /bins/{id}/harvest` |
+| **Photo submission** | `POST /bins/{id}/drops/photo` — `{image_jpeg_b64}` ⇒ a pending drop with `source: 'photo'`. Downscale to ~1024 px; over ~1.5 MB is a 413. Finishes through the normal `/drops/{id}/confirm` and `/dismiss`. |
 | **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, context}`. Stateless: the app owns the conversation. |
 | **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` · `GET /bins/{id}/drops/history` (resolved drops, paged; `has_photo` rather than inline base64) · `GET /drops/{id}` · `GET /drops/{id}/photo` (real `image/jpeg`) |
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |

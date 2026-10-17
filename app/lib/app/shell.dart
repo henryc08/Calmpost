@@ -44,6 +44,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   /// Web preview deep links for design review: ?tab=0-4 &scenario=tooWet &checkin=1 &source=mock|live
+  /// &drop=banana|check|mixed|unclear|nothing (opens the camera drop-in on the mock)
   void _applyDevLinks() {
     if (!kIsWeb) return;
     final q = Uri.base.queryParameters;
@@ -51,6 +52,14 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (tab != null && tab >= 0 && tab < AppTab.values.length) ref.read(tabProvider.notifier).state = AppTab.values[tab];
     final s = Scenario.values.where((s) => s.name == q['scenario']).firstOrNull;
     if (s != null) ref.read(scenarioProvider.notifier).state = s;
+    final drop = MockDrop.values.where((d) => d.name == q['drop']).firstOrNull;
+    if (drop != null) {
+      final repo = ref.read(repositoryProvider);
+      if (repo is MockRepository) repo.nextDrop = drop;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) Routes.drop(context);
+      });
+    }
     final source = DataSource.values.where((d) => d.name == q['source']).firstOrNull;
     if (source != null) ref.read(dataSourceProvider.notifier).state = source;
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();

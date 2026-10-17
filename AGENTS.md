@@ -39,7 +39,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ⏳ second probe |
 | 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
-| 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
+| 2.4 | **Camera drop-in: identify and track what goes in** | ✅ vision + backend + app (sheet, "Is this right?" review, mixed drops) |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
@@ -61,7 +61,7 @@ Each feature lists what the user sees, how it works, and its status.
 - **How:** `domain/advice_rules.dart` decides from the live snapshot. Meat, dairy, oil, pet waste and glossy paper are **always avoid**. Gemini rewrites the reason in plain words and handles items not in the catalog.
 - **Demo moment:** banana peel → great when the bin is dry; careful when it's soggy.
 
-### 2.4 Camera drop-in: identify and track what goes in ✅ *backend + vision built; app sheet on mocks*
+### 2.4 Camera drop-in: identify and track what goes in ✅ *built*
 
 When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked.
 
@@ -73,7 +73,10 @@ When you drop something into the bin, a camera sees it, Gemini identifies it, an
    - **Type:** Green / Brown / Keep out
    - **Amount:** Small / Handful / Large (≈ grams behind the scenes)
    - **Confidence:** e.g. 82%
-4. If anything is wrong (say, it called the banana a "mango skin"), the user edits it right there. The item field is a search over the catalog with free-text fallback; type and amount are segmented choices. Low-confidence fields (< 60%) are pre-highlighted with "Check this".
+4. **It always asks "Is this right?"**, even when the camera is sure, because Gemini can be confidently wrong. Nothing is logged until the user answers. Every row can be changed: tap it to search the catalog (free text if it's not there; the user then picks its type), change the amount, or remove it, and **Add something it missed** adds a row. How hard it asks depends on the camera (`domain/drop.dart`, `tierOf`):
+   - **Confident** (every item matched, ≥ 60%): "Is this right?" with **Yes, that's right**.
+   - **Check** (some item < 60% or not in the catalog): the same, with those rows marked **Check this**.
+   - **Couldn't tell** (no items, Gemini failed, or a mix it couldn't separate): "What went in?" with a quick multi-pick of common items, **Mixed food scraps** (a catalog green, ~150 g), and **Any of these in it?** (meat, fish, dairy, oily food, bones). A keep-out item in a drop says "Take it back out, then tick here"; ticking logs it as a skip (+5).
 5. **Submit.** The drop becomes a tracked add: the scrap-check verdict appears (great / careful / avoid) and XP is awarded by the normal rules (0 for adding; +15 if it was the next best action). If it's a **Keep out** item, the app says to take it back out, and confirming that earns the usual +5.
 6. **"Nothing was added"** dismisses a false trigger.
 
@@ -109,8 +112,10 @@ Why this design:
 
 **Edge cases**
 - **Several items in one drop:** Gemini returns a list; the pop-up shows one row per item, each editable or removable.
+- **A mix it can't separate** (plate scrapings, leftovers): the prompt asks Gemini for one `mixed_scraps` item rather than a confident guess, plus any keep-out food it can see as its own item. The pop-up goes to **Couldn't tell**. The rules still win: a label naming a keep-out food ("mixed scraps with chicken") is `avoid` whatever it matched.
 - **No motion within 60 s:** the session closes quietly ("Didn't see anything. Tap to try again.").
-- **Gemini fails or times out (> 4 s):** the pop-up still appears with the photo and empty fields for manual entry.
+- **Gemini fails or times out (> 4 s):** the pop-up still appears with the photo, in the **Couldn't tell** tier.
+- **Camera service down or nothing seen:** the sheet says so and offers **Log it by hand** (the Log tab).
 - **Hands, lids or utensils:** the prompt says to ignore them; a person-only detection is treated as no drop.
 
 **Built in this order:** (1) mock flow in the app (`MockRepository` emits a fake banana detection 2.5 s after arming, so the pop-up and edit form can be built now) → (2) vision service with webcam + motion trigger, logging to console → (3) Gemini call → (4) backend endpoints + Tiger tables → (5) swap the app to the API.
@@ -296,7 +301,8 @@ calmpost/
       features/social/      # ✅ social_screen (league table, ladder, friends, friend quest)
       features/profile/     # ✅ profile_screen (stats, rewards waiting, impact, achievements, collection, settings)
       features/greenhouse/  # ✅ greenhouse_screen, pull_reveal, collectible_art (badges, Seed Packet art)
-      features/<…>/         # drop/ rewards/ (to build)
+      features/drop/        # ✅ drop_sheet (arm → watching → review → result), drop_review (rows, editor, quick picks), drop_photo
+      features/<…>/         # rewards/ (to build)
     assets/                 # fonts/, sfx/
     test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow, real fonts)
   backend/                  # FastAPI: app/{rules,services,routers,catalog}, sql/000-090, scripts/, tests/
@@ -308,7 +314,7 @@ calmpost/
 - Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Switch tabs with `ref.read(tabProvider.notifier).state = AppTab.x`.
 - Screens never call HTTP or mocks directly; they go through `repositoryProvider`.
 - Game and health logic lives in `domain/` as **pure, unit-tested functions**.
-- For 2.4, `CalmpostRepository` gains: `startDropSession()`, `watchDrops(sessionId)` (stream of detections), `confirmDrop(id, corrected fields)` → `Advice`, `dismissDrop(id)`.
+- For 2.4, `CalmpostRepository` has `startDropSession()`, `watchDrop(session)` (one `DropSeen` or `DropNothing`), `confirmDrop(drop, lines)` → a verdict per row, `dismissDrop(drop)`. Open the sheet with `Routes.drop(context)`.
 
 ### Screens
 
@@ -319,12 +325,12 @@ Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBan
 
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, status. Then the game loop, top to bottom: **Daily goal** (today's XP fills a pink track to 20 / 40 / 60 XP reward nodes: 15 Loam, 30 Loam, Sprout crate; tap a pulsing node to claim) · **What to add** (main section: headline, why, three recommended items with their effect and a +15 XP badge, hold-off list) · **Rewards ready** (crates and Seed Packets wiggling; tap a crate for the reveal) · **Today** quests · **League race** (your rank, XP to the promotion zone, the players just above and below you) · **Streak** calendar + next milestone and its reward · Live readings (moved to the bottom). *Planned:* Drop something in |
+| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, status. Then the game loop, top to bottom: **Daily goal** (today's XP fills a pink track to 20 / 40 / 60 XP reward nodes: 15 Loam, 30 Loam, Sprout crate; tap a pulsing node to claim) · **What to add** (main section: headline, why, three recommended items with their effect and a +15 XP badge, hold-off list) · **Rewards ready** (crates and Seed Packets wiggling; tap a crate for the reveal) · **Today** quests · **League race** (your rank, XP to the promotion zone, the players just above and below you) · **Streak** calendar + next milestone and its reward · Live readings (moved to the bottom). **Drop something in** (forest pill under the status line) opens the camera drop-in |
 | **Layers** | ✅ | Band: Top / Bottom / Air switcher, big live value + state pill. Then moisture/temperature toggle, 24 h chart with healthy band and dashed pink **add markers**, Now / Avg / Low / High, what it means, life-cycle line (Active → Ready), recent adds |
-| **Log** | ✅ | Band: search field + camera button (camera drop-in is planned). Then Recommended now (tips), Greens / Browns / Keep out lists → **verdict sheet**: Good to add / Add with care / Keep it out, headline, reason, pair-it-with (tap to check that instead), XP note, Add it / Keep it out. **Demo moment** |
+| **Log** | ✅ | Band: search field + camera button (opens the camera drop-in). Then Recommended now (tips), Greens / Browns / Keep out lists → **verdict sheet**: Good to add / Add with care / Keep it out, headline, reason, pair-it-with (tap to check that instead), XP note, Add it / Keep it out. **Demo moment** |
 | **Social** | ✅ | Band: league name, reset countdown, your rank, XP this week, "XP to go" or Promotion zone, six-tier ladder. Then This week (table with promotion/demotion zones, your row marked in pink) / Friends (co-op friend quest, friends list with Nudge) |
 | **Profile** | ✅ | Band: avatar, level + title, XP bar, streak / total XP / harvests / Loam. Then rewards waiting (crates + packets, Open), impact, achievements (tier dots, progress, next crate), collection by rarity, settings |
-| Drop-in | 📝 | "Watching the bin…" sheet with preview + countdown → "Something was added" pop-up → verdict |
+| **Drop-in** | ✅ | "Watching the bin…" sheet with a 60 s countdown → **"Is this right?"** review (photo with boxes, editable rows, tiers above) → per-item verdicts and XP. "Nothing was added" dismisses a false trigger |
 | Rewards inbox | to design | unopened crates and packets, quiet open reveal, celebration history |
 | **Greenhouse** | ✅ | Opened from the **Loam coin** on Home, the **Seed Packet** in Rewards ready, the gift button (when only packets are waiting), and Profile → Collection. Band: Loam balance, floating Seed Packet, **Open your Seed Packets** (pink), **1 pull · 100** / **10 pulls · 900**, pity counters. Then **What Loam is for** (Seed Packets, Lid Lock with a Buy button, how you earn it), **Collection** (40 items; All / Plants / Finishes / Titles; unowned slots are `???` with a rarity-coloured ring; tap an owned finish or title to **Equip**), **Odds per pull** table. Pulls play the **pull reveal**: the packet shakes (longer and harder for Epic+), bursts in the best item's rarity colour, then one big card or a 5×2 grid with NEW tags and duplicate refunds |
 
@@ -443,7 +449,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 - **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
 - **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
 - **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
-- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull), `?source=mock|live` (planned: `?drop=1` fakes a camera detection).
+- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict), `?greenhouse=1`, `?greenhouse=1&loam=2000&pull=10` (plays a 10-pull), `?source=mock|live`, `?drop=banana|check|mixed|unclear|nothing` (opens the drop-in with that fake detection).
 
 **Demo script**
 1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
@@ -484,7 +490,7 @@ cd vision && python main.py
 
 ### Build order
 1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
-2. **Drop-in UI on mocks** (sheet, pop-up, edit form).
+2. ✅ **Drop-in UI** (sheet, "Is this right?" review, edit form, mixed drops), on mocks and the live API.
 3. ✅ **Backend + Tiger Data** (ingest, readings, logs, drops, advice, game + economy) and **vision service** (webcam + motion + Gemini).
 4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · Rewards inbox history.
 5. ✅ `ApiRepository` (live bin data) · next: game economy from the server, firmware on the real bin, polish on a real phone.

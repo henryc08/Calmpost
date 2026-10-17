@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../app/toast.dart';
+import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../state/providers.dart';
 import '../../ui/brand.dart';
@@ -68,7 +68,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       title: 'Log',
       subtitle: 'What\'s going in the bin?',
       trailing: Pressable(
-        onTap: () => showToast(ref, 'Camera drop-in arrives with the vision service'),
+        onTap: () => Routes.drop(context),
         child: Container(
           width: 44,
           height: 44,
@@ -106,7 +106,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                 const SizedBox(height: S.x3),
                 Text('Nothing called "$_query" yet', style: T.heading),
                 const SizedBox(height: S.x1),
-                Text('The camera will recognise things the list doesn\'t.', style: T.small, textAlign: TextAlign.center),
+                Text('Try a simpler word, or log it as mixed food scraps.', style: T.small, textAlign: TextAlign.center),
               ],
             ),
           ),

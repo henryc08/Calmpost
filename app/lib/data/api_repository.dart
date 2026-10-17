@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../domain/advice_rules.dart';
+import '../domain/drop.dart';
 import '../domain/models.dart';
 import 'api_config.dart';
 import 'calmpost_repository.dart';
@@ -20,10 +21,18 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3)}) : _http = client ?? http.Client();
+  ApiRepository(
+    this.config, {
+    http.Client? client,
+    this.pollEvery = const Duration(seconds: 3),
+    this.dropPollEvery = const Duration(seconds: 1),
+  }) : _http = client ?? http.Client();
 
   final ApiConfig config;
   final Duration pollEvery;
+
+  /// How often the drop sheet asks whether the camera saw something.
+  final Duration dropPollEvery;
   final http.Client _http;
   BinSnapshot? _last;
 
@@ -121,6 +130,74 @@ class ApiRepository implements CalmpostRepository {
   @override
   Future<FoodItem> identifyPhoto() => Future.error(UnsupportedError('Photo logging is handled by the camera drop-in'));
 
+  // --- camera drop-in -----------------------------------------------------------------
+  //
+  // vision/ watches the bin while a session is armed and reports what it saw;
+  // the backend keeps it pending until the user confirms it here.
+
+  @override
+  Future<DropSession> startDropSession() async {
+    final j = await _post('/bins/${config.binId}/drops/session', const {}) as Map<String, dynamic>;
+    return DropSession(j['session_id'] as String, DateTime.parse(j['expires_at'] as String).toLocal());
+  }
+
+  @override
+  Stream<DropEvent> watchDrop(DropSession session) async* {
+    var reportedButMissing = false;
+    while (true) {
+      final pending = (await _get('/bins/${config.binId}/drops/pending') as List).cast<Map<String, dynamic>>();
+      final mine = pending.where((d) => d['session_id'] == session.id).firstOrNull;
+      if (mine != null) {
+        yield DropSeen(dropFromJson(mine));
+        return;
+      }
+      final st = await _get('/bins/${config.binId}/drops/sessions/${session.id}') as Map<String, dynamic>;
+      if (st['open'] != true) {
+        // 'reported' between our two reads: look at pending once more.
+        if (st['close_reason'] == 'reported' && !reportedButMissing) {
+          reportedButMissing = true;
+          continue;
+        }
+        yield const DropNothing();
+        return;
+      }
+      await Future<void>.delayed(dropPollEvery);
+    }
+  }
+
+  @override
+  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
+    final j =
+        await _post('/drops/${drop.id}/confirm', {
+              'items': [
+                for (final l in lines)
+                  {
+                    'label': l.item.name,
+                    'catalog_id': l.isCustom ? 'unknown' : l.item.id,
+                    'category': l.item.category.name,
+                    'amount': l.amount.name,
+                    'removed': l.removed,
+                    'was_advised': advisedIds.contains(l.item.id),
+                  },
+              ],
+            })
+            as Map<String, dynamic>;
+    final items = (j['items'] as List).cast<Map<String, dynamic>>();
+    return [
+      for (final (i, l) in lines.indexed)
+        if (i < items.length && items[i]['verdict'] is Map<String, dynamic>)
+          adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>)
+        else if (l.removed)
+          Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.')
+        else
+          // No readings to judge against yet: the add is still logged.
+          adviseFor(l.item, _last ?? _neutral, foodById),
+    ];
+  }
+
+  @override
+  Future<void> dismissDrop(Drop drop) async => _post('/drops/${drop.id}/dismiss', const {});
+
   // --- league ------------------------------------------------------------------------
 
   @override
@@ -214,3 +291,41 @@ Advice adviceFromJson(FoodItem item, Map<String, dynamic> j) {
     pairWith: pair,
   );
 }
+
+/// GET /bins/{id}/drops/pending item -> Drop.
+Drop dropFromJson(Map<String, dynamic> j) {
+  final thumb = j['thumbnail_jpeg_b64'] as String? ?? '';
+  return Drop(
+    id: (j['id'] as num).toInt(),
+    geminiOk: j['gemini_ok'] != false,
+    thumbnail: thumb.isEmpty ? null : base64Decode(thumb),
+    items: [
+      for (final i in ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>())
+        Detection(
+          label: (i['label'] as String?) ?? 'Something',
+          catalogId: i['catalog_id'] == null || i['catalog_id'] == 'unknown' ? null : i['catalog_id'] as String,
+          category: FoodCategory.values.where((c) => c.name == i['category']).firstOrNull,
+          amount: Amount.values.where((a) => a.name == i['amount']).firstOrNull,
+          confidence: _d(i['confidence']) ?? 0,
+          box: (i['box_2d'] as List?)?.map((v) => (v as num).toDouble()).toList(),
+        ),
+    ],
+  );
+}
+
+/// Stand-in readings before the first poll returns: a mid-range bin.
+final _neutral = BinSnapshot(
+  time: DateTime.fromMillisecondsSinceEpoch(0),
+  topMoisture: 50,
+  topTemp: 30,
+  bottomMoisture: 50,
+  bottomTemp: 22,
+  co2: 1500,
+  ambientTemp: 21,
+  co2SlopePerDay: 0,
+  greens7d: 3,
+  browns7d: 6,
+  topStage: Stage.active,
+  bottomStage: Stage.started,
+  healthyHoursToday: 0,
+);

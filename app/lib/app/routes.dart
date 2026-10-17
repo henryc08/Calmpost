@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../features/drop/drop_sheet.dart';
 import '../features/greenhouse/greenhouse_screen.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  /// Camera drop-in: arm the camera, then review what it saw.
+  static Future<void> drop(BuildContext context) => showDropSheet(context);
+
   /// The Greenhouse (Seed Packet gacha, collection, what Loam is for).
   static Future<void> greenhouse(BuildContext context) => Navigator.of(context).push(
     PageRouteBuilder<void>(

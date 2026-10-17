@@ -1,3 +1,4 @@
+import '../domain/drop.dart';
 import '../domain/models.dart';
 
 /// Everything the app needs from the outside world. Screens only ever talk to
@@ -30,4 +31,21 @@ abstract class CalmpostRepository {
   Future<List<LeagueMember>> leagueCohort();
 
   FoodItem? food(String id);
+
+  // --- camera drop-in (AGENTS.md 2.4) ---------------------------------------
+
+  /// POST /bins/{id}/drops/session: arm the camera for 60 s.
+  Future<DropSession> startDropSession();
+
+  /// What the camera reports for [session]: one [DropSeen], or [DropNothing]
+  /// when the window closes empty; then the stream ends. Cancel to stop.
+  Stream<DropEvent> watchDrop(DropSession session);
+
+  /// POST /drops/{id}/confirm with the rows the user accepted or edited.
+  /// Returns a verdict for every row, in order. [advisedIds] are today's
+  /// suggestions, so following one earns its XP.
+  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}});
+
+  /// POST /drops/{id}/dismiss: "Nothing was added".
+  Future<void> dismissDrop(Drop drop);
 }

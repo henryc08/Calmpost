@@ -38,6 +38,7 @@ class GameState {
     required this.kgDiverted,
     required this.questsClaimedAllTime,
     required this.friendQuestProgress,
+    this.cameraDrops = 0,
   });
 
   static const playerName = 'You';
@@ -81,6 +82,9 @@ class GameState {
   final int questsClaimedAllTime;
   final int friendQuestProgress;
 
+  /// Camera drops the user reviewed and confirmed (Sharp Eye).
+  final int cameraDrops;
+
   int get level => levelForXp(totalXp);
   bool get caredToday => streak.caredOn(DateTime.now());
   double get co2eAvoided => kgDiverted * Impact.co2ePerKg;
@@ -110,6 +114,7 @@ class GameState {
     double? kgDiverted,
     int? questsClaimedAllTime,
     int? friendQuestProgress,
+    int? cameraDrops,
   }) => GameState(
     weekXp: weekXp ?? this.weekXp,
     totalXp: totalXp ?? this.totalXp,
@@ -134,6 +139,7 @@ class GameState {
     kgDiverted: kgDiverted ?? this.kgDiverted,
     questsClaimedAllTime: questsClaimedAllTime ?? this.questsClaimedAllTime,
     friendQuestProgress: friendQuestProgress ?? this.friendQuestProgress,
+    cameraDrops: cameraDrops ?? this.cameraDrops,
   );
 
   List<Achievement> get achievements => [
@@ -200,14 +206,14 @@ class GameState {
       goals: const [25, 100, 365],
       rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
     ),
-    const Achievement(
+    Achievement(
       id: 'sharp_eye',
       title: 'Sharp Eye',
       description: 'Camera drops confirmed',
       icon: PhosphorIconsRegular.camera,
-      progress: 0,
-      goals: [10, 50, 200],
-      rewards: [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
+      progress: cameraDrops.toDouble(),
+      goals: const [10, 50, 200],
+      rewards: const [CrateTier.sprout, CrateTier.grove, CrateTier.canopy],
     ),
     const Achievement(
       id: 'climber',
@@ -390,6 +396,15 @@ class GameController extends Notifier<GameState> {
     _care();
     return LogOutcome(xp: xp, followed: followed, capped: base > 0 && xp < base);
   }
+
+  /// A reviewed camera drop: each row is logged like a manual add (adding
+  /// earns 0; following the next action or taking a keep-out item back out
+  /// earns the usual XP), and the drop counts toward Sharp Eye.
+  List<LogOutcome> recordDrop(List<Advice> verdicts, {required List<bool> added, required Iterable<String> suggestedIds}) => _act(() {
+    final out = [for (final (i, a) in verdicts.indexed) _recordLog(a, added: added[i], suggestedIds: suggestedIds)];
+    state = state.copyWith(cameraDrops: state.cameraDrops + 1);
+    return out;
+  });
 
   void syncHealthyHours(double hours) {
     final q = state.quests.firstWhere((q) => q.id == 'healthy');

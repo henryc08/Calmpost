@@ -160,3 +160,27 @@ def test_confirm_returns_verdict_when_available(c, monkeypatch):
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}).json()
     assert r["items"][0]["verdict"]["verdict"] == "great"
+
+
+def test_mixed_drop_the_camera_could_not_separate(c):
+    """The camera reports one 'mixed_scraps' item; the user says what was in
+    it, including meat they took back out. Same pop-up, same drop."""
+    sid = arm(c)
+    drop_id = report(c, sid, items=[{"label": "mixed scraps: rice, peels", "catalog_id": "mixed_scraps", "confidence": 0.41}]).json()["drop_id"]
+    pending = c.get("/bins/bin-001/drops/pending").json()[0]
+    assert pending["items"][0]["category"] == "green"  # the catalog's type, from the rules
+
+    r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
+        {"label": "Mixed food scraps", "catalog_id": "mixed_scraps", "category": "green", "amount": "large"},
+        {"label": "Meat scraps", "catalog_id": "meat", "category": "avoid", "amount": "small", "removed": True},
+    ]}).json()
+    added, meat = (i["log"] for i in r["items"])
+    assert added["category"] == "green" and added["quantity_g"] == 250 and added["xp_awarded"] == 0
+    assert meat["action"] == "skipped" and meat["xp_awarded"] == 5
+    assert r["corrected"] is True
+
+
+def test_a_mix_mentioning_meat_is_never_green(c):
+    """Rules over the camera: a 'mixed' label naming a keep-out food is avoid."""
+    report(c, arm(c), items=[{"label": "mixed scraps with chicken", "catalog_id": "mixed_scraps", "category": "green", "confidence": 0.5}])
+    assert c.get("/bins/bin-001/drops/pending").json()[0]["items"][0]["category"] == "avoid"

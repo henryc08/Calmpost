@@ -16,6 +16,7 @@ FOOD: list[dict] = [
     {'id': 'avocado', 'name': 'Avocado skin', 'category': 'green', 'grams': 40.0, 'wet': False, 'note': 'Slow to break down. Chop it up.'},
     {'id': 'pepper', 'name': 'Pepper tops', 'category': 'green', 'grams': 30.0, 'wet': True, 'note': 'Easy green.'},
     {'id': 'grass', 'name': 'Grass clippings', 'category': 'green', 'grams': 120.0, 'wet': True, 'note': 'Heats things up fast. Thin layers only.'},
+    {'id': 'mixed_scraps', 'name': 'Mixed food scraps', 'category': 'green', 'grams': 150.0, 'wet': True, 'note': 'Plate scrapings and leftovers: fine if there is no meat, dairy or oil in them.'},
     {'id': 'cardboard', 'name': 'Shredded cardboard', 'category': 'brown', 'grams': 40.0, 'wet': False, 'note': 'Soaks up extra water and adds air.'},
     {'id': 'newspaper', 'name': 'Newspaper', 'category': 'brown', 'grams': 35.0, 'wet': False, 'note': 'Shred it. Skip glossy pages.'},
     {'id': 'dry_leaves', 'name': 'Dry leaves', 'category': 'brown', 'grams': 30.0, 'wet': False, 'note': 'The gold standard brown.'},

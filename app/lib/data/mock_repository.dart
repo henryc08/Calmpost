@@ -2,12 +2,16 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import '../domain/advice_rules.dart';
+import '../domain/drop.dart';
 import '../domain/models.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
 
 /// Demo scenarios. Switch from the hidden debug panel (long-press the health score).
 enum Scenario { healthy, tooWet, tooDry, curing, ready }
+
+/// What the mock camera "sees" after you arm it (?drop= on the web preview).
+enum MockDrop { banana, check, mixed, unclear, nothing }
 
 extension ScenarioLabel on Scenario {
   String get label => switch (this) {
@@ -151,6 +155,57 @@ class MockRepository implements CalmpostRepository {
 
   @override
   Future<List<LeagueMember>> leagueCohort() async => _cohort;
+
+  // --- camera drop-in: a fake detection [dropDelay] after arming -------------
+
+  MockDrop nextDrop = MockDrop.banana;
+  Duration dropDelay = const Duration(milliseconds: 2500);
+  var _dropIds = 0;
+
+  @override
+  Future<DropSession> startDropSession() async => DropSession('mock-${++_dropIds}', DateTime.now().add(const Duration(seconds: 60)));
+
+  @override
+  Stream<DropEvent> watchDrop(DropSession session) async* {
+    await Future<void>.delayed(dropDelay);
+    const box = [360.0, 300.0, 660.0, 640.0];
+    Detection d(String label, String? id, FoodCategory c, Amount a, double conf) =>
+        Detection(label: label, catalogId: id, category: c, amount: a, confidence: conf, box: box);
+    yield switch (nextDrop) {
+      MockDrop.banana => DropSeen(Drop(id: _dropIds, items: [d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.86)])),
+      MockDrop.check => DropSeen(
+        Drop(
+          id: _dropIds,
+          items: [
+            d('banana peel', 'banana_peel', FoodCategory.green, Amount.handful, 0.91),
+            d('something papery', 'newspaper', FoodCategory.brown, Amount.small, 0.44),
+          ],
+        ),
+      ),
+      MockDrop.mixed => DropSeen(Drop(id: _dropIds, items: [d('mixed scraps: rice, peels', 'mixed_scraps', FoodCategory.green, Amount.large, 0.41)])),
+      MockDrop.unclear => DropSeen(Drop(id: _dropIds, items: const [], geminiOk: false)),
+      MockDrop.nothing => const DropNothing(),
+    };
+  }
+
+  @override
+  Future<List<Advice>> confirmDrop(Drop drop, List<DropLine> lines, {Set<String> advisedIds = const {}}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final snap = _last ?? _snapshot(0);
+    final out = <Advice>[];
+    for (final l in lines) {
+      if (l.removed) {
+        out.add(Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.'));
+        continue;
+      }
+      out.add(adviseFor(l.item, snap, foodById));
+      await logItem(l.item);
+    }
+    return out;
+  }
+
+  @override
+  Future<void> dismissDrop(Drop drop) async {}
 }
 
 const _names = [

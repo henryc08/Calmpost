@@ -85,7 +85,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  _ScoreBlock(health: health),
+                  _ScoreBlock(health: health, onDrop: () => Routes.drop(context)),
                 ],
               ),
             ),
@@ -265,8 +265,9 @@ class _LevelRing extends CustomPainter {
 
 /// Score under the world: the number, the state, one plain sentence.
 class _ScoreBlock extends StatelessWidget {
-  const _ScoreBlock({required this.health});
+  const _ScoreBlock({required this.health, required this.onDrop});
   final BinHealth health;
+  final VoidCallback onDrop;
 
   @override
   Widget build(BuildContext context) {
@@ -325,6 +326,8 @@ class _ScoreBlock extends StatelessWidget {
             style: T.body.copyWith(color: C.onBrand),
           ),
         ),
+        const SizedBox(height: S.x4),
+        PillButton(label: 'Drop something in', icon: PhosphorIconsRegular.camera, dense: true, onTap: onDrop),
       ],
     );
   }

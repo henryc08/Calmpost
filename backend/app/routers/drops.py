@@ -26,6 +26,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .. import db
+from ..catalog import food
 from ..rules import compost
 from ..models import AdviceResponse, LogCreate, LogEntry
 from ..security import require_app_key
@@ -102,10 +103,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def rules_category(label: str, claimed: str | None) -> str:
-    """Hard-avoid by rules first; then the catalog category the camera sent; then rules."""
+def rules_category(label: str, claimed: str | None, catalog_id: str | None = None) -> str:
+    """Hard-avoid by the label first (a "mix with chicken" is avoid whatever it
+    matched); then the catalog item's own type; then the type the camera or
+    the user gave an item the catalog doesn't know; then the rules."""
     if compost.avoid_reason(label):
         return "avoid"
+    if catalog_id and catalog_id in food.BY_ID:
+        return food.BY_ID[catalog_id]["category"]
     if claimed in ("green", "brown", "avoid"):
         return claimed
     return compost.categorise(label)
@@ -213,7 +218,7 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
 
     final = [i.model_dump() for i in body.items]
     for f in final:
-        f["category"] = rules_category(f["label"], f["category"])
+        f["category"] = rules_category(f["label"], f["category"], f["catalog_id"])
     guess = {(g["catalog_id"], g["label"].lower()) for g in drop["guess"]}
     corrected = guess != {(f["catalog_id"], f["label"].lower()) for f in final}
 
@@ -304,7 +309,7 @@ async def report(bin_id: str, body: DropReport) -> dict:
     items = []
     for it in body.items:
         d = it.model_dump()
-        d["category"] = rules_category(it.label, it.category)
+        d["category"] = rules_category(it.label, it.category, it.catalog_id)
         if d["amount"] is None and d["est_grams"]:
             d["amount"] = "small" if d["est_grams"] < 60 else "handful" if d["est_grams"] < 180 else "large"
         items.append(d)

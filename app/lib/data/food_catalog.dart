@@ -88,6 +88,17 @@ const foodCatalog = <FoodItem>[
     note: 'Heats things up fast. Thin layers only.',
   ),
 
+  // For a drop the camera (or you) can't break down item by item. Only when
+  // nothing from the keep-out list is in it: the drop pop-up asks.
+  FoodItem(
+    id: 'mixed_scraps',
+    name: 'Mixed food scraps',
+    category: FoodCategory.green,
+    icon: PhosphorIconsFill.bowlFood,
+    grams: 150,
+    wet: true,
+    note: 'Plate scrapings and leftovers: fine if there is no meat, dairy or oil in them.',
+  ),
   // Browns: carbon, dry.
   FoodItem(
     id: 'cardboard',

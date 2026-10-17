@@ -60,7 +60,8 @@ python main.py --save-frames                      # also write before/after JPEG
 ## Guarantees
 
 - **Hard-avoid items can't slip through.** Gemini only picks a `catalog_id` from the enum. The category (green / brown / avoid) is looked up from the catalog, both here and again in the mock backend. Unknown ids become `unknown` with no category, and the user picks one.
-- **Gemini failure never blocks the flow.** With no key, a bad key, a timeout over 4 s, or bad JSON, the drop is still reported with `gemini_ok: false` and no items. The app then shows the photo with empty fields, as in AGENTS.md.
+- **Gemini failure never blocks the flow.** With no key, a bad key, a timeout over 4 s, or bad JSON, the drop is still reported with `gemini_ok: false` and no items. The app then asks "What went in?" with the photo, as in AGENTS.md.
+- **A mix it can't separate is said, not guessed.** The prompt asks for one `mixed_scraps` item (plus any keep-out food it can see) and a low confidence for anything unclear. The app always asks "Is this right?" before logging, so a confident mistake is one tap to fix.
 - **Hands and utensils are ignored.** A hand-only detection is not a drop.
 - **Privacy.** Frames are only processed while a session is armed. Nothing goes to disk unless `--save-frames` is set. The backend gets a 320 px thumbnail.
 

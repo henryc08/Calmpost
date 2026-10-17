@@ -334,6 +334,13 @@ class _ScoreBlock extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: S.x4),
+        PillButton(
+          label: 'Drop something in',
+          icon: PhosphorIconsBold.camera,
+          dense: true,
+          onTap: () => Routes.dropIn(context),
+        ),
       ],
     );
   }

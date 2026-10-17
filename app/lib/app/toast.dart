@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -119,29 +120,32 @@ class ComingNext extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(S.gutter),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: S.x4),
-            Text(title, style: T.display),
-            const Spacer(),
-            Center(
-              child: Column(
-                children: [
-                  const Icon(PhosphorIconsRegular.compassTool, size: 28, color: C.faint),
-                  const SizedBox(height: S.x3),
-                  Text('Designing next', style: T.heading.copyWith(color: C.muted)),
-                  const SizedBox(height: S.x1),
-                  Text(description, textAlign: TextAlign.center, style: T.small),
-                ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(S.gutter),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: S.x4),
+              Text(title, style: T.display),
+              const Spacer(),
+              Center(
+                child: Column(
+                  children: [
+                    const Icon(PhosphorIconsRegular.compassTool, size: 28, color: C.faint),
+                    const SizedBox(height: S.x3),
+                    Text('Designing next', style: T.heading.copyWith(color: C.muted)),
+                    const SizedBox(height: S.x1),
+                    Text(description, textAlign: TextAlign.center, style: T.small),
+                  ],
+                ),
               ),
-            ),
-            const Spacer(flex: 2),
-            const Hairline(),
-          ],
+              const Spacer(flex: 2),
+              const Hairline(),
+            ],
+          ),
         ),
       ),
     );

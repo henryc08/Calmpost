@@ -310,13 +310,14 @@ Everything visual comes from `lib/ui/`. **Never use raw Material widgets with de
 
 | Token | Hex | Use |
 |---|---|---|
-| `paper` | `#ADC8A0` | muted sage app background, with faint topographic contour lines on top (`ui/backdrop.dart`, `TopoBackdrop`) |
-| `surface` / `sunk` / `line` | `#B9D1AC` / `#9AB98C` / `#93B285` | sheets, nav bar / tracks / hairlines |
-| `ink` / `ink2` / `muted` / `faint` | `#12231A` / `#263F2F` / `#3F5B47` / `#64806B` | text hierarchy (deep greens, all readable on the green paper) |
+| `paper` | `#F2F8EC` | bright mint-white app background, with faint topographic contour lines (`ui/backdrop.dart`, `TopoBackdrop`) |
+| `brand` / `brandDeep` / `onBrand` | `#34B868` / `#26A057` / `#FFFFFF` | **the signature Calmpost green band** at the top of Home (HUD, Bin World, score), with a two-layer hill along its bottom edge; white text and a white gauge on it |
+| `surface` / `sunk` / `line` | `#FFFFFF` / `#E0ECD6` / `#D4E4C9` | sheets, nav bar / tracks / hairlines |
+| `ink` / `ink2` / `muted` / `faint` | `#11251A` / `#2D4637` / `#6A8273` / `#A6BBAC` | text hierarchy (deep greens, all readable on the green paper) |
 | `forest` / `forest2` / `onForest` | `#1F3A2E` / `#2B4D3E` / `#EDEFE6` | primary actions, dark surfaces |
 | `sprout` | `#B9DD7B` | positive accent on forest |
 | `pink` / `pinkSoft` / `pinkDeep` | `#FF66C4` / `#F3A6D6` / `#B8327F` | **the reward accent**: streak days and flame, XP pills, rewards badge, health-ring marker, the plant's bloom. Use as a fill with dark text on it, never as text on green |
-| `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#1E5534` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · too dry · moisture / too wet · warnings |
+| `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#2E8A50` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · too dry · moisture / too wet · warnings |
 | `loam` | `#6B3F22` | currency |
 
 Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623F` · Legendary `#D9A426`. **No purple, gradients, glass or drop shadows.**

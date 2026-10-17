@@ -13,7 +13,7 @@ import '../../ui/tokens.dart';
 /// - The bezel ring around it is the health score, like a game gauge.
 /// - The sky follows the time of day (stars and fireflies at night).
 class BinWorld extends StatefulWidget {
-  const BinWorld({super.key, required this.score, required this.mood, required this.growth, required this.co2, this.size = 300});
+  const BinWorld({super.key, required this.score, required this.mood, required this.growth, required this.co2, this.size = 300, this.onBrand = false});
 
   final int score;
   final BinMood mood;
@@ -22,6 +22,9 @@ class BinWorld extends StatefulWidget {
   final double growth;
   final double co2;
   final double size;
+
+  /// Draw the bezel in white for the green brand band.
+  final bool onBrand;
 
   /// Web preview override (`?hour=14`) to review day/dusk/night skies.
   static double? debugHour;
@@ -59,6 +62,7 @@ class _BinWorldState extends State<BinWorld> with TickerProviderStateMixin {
               mood: widget.mood,
               growth: widget.growth,
               co2: widget.co2,
+              onBrand: widget.onBrand,
               hour: BinWorld.debugHour ?? DateTime.now().hour + DateTime.now().minute / 60,
             ),
           ),
@@ -69,7 +73,16 @@ class _BinWorldState extends State<BinWorld> with TickerProviderStateMixin {
 }
 
 class _WorldPainter extends CustomPainter {
-  _WorldPainter({required this.t, required this.intro, required this.score, required this.mood, required this.growth, required this.co2, required this.hour});
+  _WorldPainter({
+    required this.t,
+    required this.intro,
+    required this.score,
+    required this.mood,
+    required this.growth,
+    required this.co2,
+    required this.hour,
+    this.onBrand = false,
+  });
 
   final double t; // seconds
   final double intro; // 0..1
@@ -78,6 +91,7 @@ class _WorldPainter extends CustomPainter {
   final double growth;
   final double co2;
   final double hour;
+  final bool onBrand;
 
   bool get night => hour < 6.5 || hour >= 19.5;
   bool get dusk => !night && (hour >= 17.5 || hour < 8);
@@ -113,7 +127,7 @@ class _WorldPainter extends CustomPainter {
   void _bezel(Canvas canvas, Offset c, double r) {
     final ringR = r + 16;
     final tick = Paint()
-      ..color = C.line
+      ..color = (onBrand ? C.onBrand.withValues(alpha: 0.3) : C.line)
       ..strokeWidth = 1.2
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < 100; i += 2) {
@@ -121,7 +135,8 @@ class _WorldPainter extends CustomPainter {
       final major = i % 10 == 0;
       final d = Offset(math.cos(a), math.sin(a));
       final lit = i <= score * intro;
-      tick.color = lit ? C.forest.withValues(alpha: major ? 0.9 : 0.45) : C.line;
+      final litColor = onBrand ? C.onBrand : C.forest;
+      tick.color = lit ? litColor.withValues(alpha: major ? 0.95 : 0.55) : (onBrand ? C.onBrand.withValues(alpha: 0.28) : C.line);
       tick.strokeWidth = major ? 1.8 : 1.2;
       canvas.drawLine(c + d * (ringR - (major ? 7 : 4)), c + d * (ringR + (major ? 2 : 0)), tick);
     }
@@ -133,7 +148,7 @@ class _WorldPainter extends CustomPainter {
       math.pi * 2,
       false,
       Paint()
-        ..color = C.sunk
+        ..color = (onBrand ? C.onBrand.withValues(alpha: 0.22) : C.sunk)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -143,7 +158,7 @@ class _WorldPainter extends CustomPainter {
       sweep,
       false,
       Paint()
-        ..color = C.forest
+        ..color = (onBrand ? C.onBrand : C.forest)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round,
@@ -153,7 +168,7 @@ class _WorldPainter extends CustomPainter {
     final m = c + Offset(math.cos(end), math.sin(end)) * (ringR + 9);
     final pulse = (t % 2) / 2;
     canvas.drawCircle(m, 6 + pulse * 8, Paint()..color = C.pink.withValues(alpha: 0.55 * (1 - pulse) * intro));
-    canvas.drawCircle(m, 6, Paint()..color = C.forest);
+    canvas.drawCircle(m, 6, Paint()..color = onBrand ? C.onBrand : C.forest);
     canvas.drawCircle(m, 3, Paint()..color = C.pink);
   }
 
@@ -334,7 +349,9 @@ class _WorldPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    final metric = stem.computeMetrics().first;
+    final metrics = stem.computeMetrics().toList();
+    if (metrics.isEmpty || metrics.first.length < 1) return;
+    final metric = metrics.first;
     final pairs = (2 + growth * 2).round();
     for (var i = 0; i < pairs; i++) {
       final f = 0.32 + i / pairs * 0.62;

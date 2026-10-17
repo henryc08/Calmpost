@@ -63,7 +63,8 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Home'));
     await _settle(tester);
-    await tester.scrollUntilVisible(find.text('Claim'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Claim'));
+    await _settle(tester, 600);
     final before = container.read(gameProvider).loam;
     await tester.tap(find.text('Claim'));
     await _settle(tester);

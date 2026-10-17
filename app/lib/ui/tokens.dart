@@ -2,22 +2,29 @@ import 'package:flutter/widgets.dart';
 
 import '../domain/models.dart' show Rarity;
 
-/// Colour tokens. Muted sage paper, deep green text, pink as the reward accent.
+/// Colour tokens. Bright mint-white paper, a vivid Calmpost-green brand band,
+/// deep green text, pink as the reward accent.
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFFADC8A0);
-  static const surface = Color(0xFFB9D1AC);
-  static const sunk = Color(0xFF9AB98C);
-  static const line = Color(0xFF93B285);
+  static const paper = Color(0xFFF2F8EC);
+  static const surface = Color(0xFFFFFFFF);
+  static const sunk = Color(0xFFE0ECD6);
+  static const line = Color(0xFFD4E4C9);
 
   // Text
-  static const ink = Color(0xFF12231A);
-  static const ink2 = Color(0xFF263F2F);
-  static const muted = Color(0xFF3F5B47);
-  static const faint = Color(0xFF64806B);
+  static const ink = Color(0xFF11251A);
+  static const ink2 = Color(0xFF2D4637);
+  static const muted = Color(0xFF6A8273);
+  static const faint = Color(0xFFA6BBAC);
 
-  // Forest: the hero surface and primary actions
+  // Brand: the vivid band at the top of Home (and future hero moments)
+  static const brand = Color(0xFF34B868);
+  static const brandDeep = Color(0xFF26A057);
+  static const onBrand = Color(0xFFFFFFFF);
+  static const onBrandMuted = Color(0xCCFFFFFF);
+
+  // Forest: primary actions
   static const forest = Color(0xFF1F3A2E);
   static const forest2 = Color(0xFF2B4D3E);
   static const onForest = Color(0xFFEDEFE6);
@@ -25,8 +32,8 @@ abstract final class C {
 
   // Accents
   static const sprout = Color(0xFFB9DD7B); // positive on dark
-  static const leaf = Color(0xFF1E5534); // positive on the green paper
-  static const leafSoft = Color(0xFFC9DDBE);
+  static const leaf = Color(0xFF2E8A50); // positive on the green paper
+  static const leafSoft = Color(0xFFDCF0D2);
   static const amber = Color(0xFFE39B3A); // streak
   static const amberSoft = Color(0xFFF6E6CC);
   static const water = Color(0xFF4F8FC9); // moisture / too wet

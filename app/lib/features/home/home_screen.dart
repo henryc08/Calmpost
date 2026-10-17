@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -33,7 +34,7 @@ class HomeScreen extends ConsumerWidget {
 
     if (health == null) {
       return const Center(
-        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: C.forest)),
+        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: C.brand)),
       );
     }
     final s = health.snapshot;
@@ -44,45 +45,107 @@ class HomeScreen extends ConsumerWidget {
       Stage.cooling => 0.8,
       _ => 1.0,
     };
+    final top = MediaQuery.paddingOf(context).top;
 
-    return SafeArea(
-      bottom: false,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(S.gutter, S.x3, S.gutter, S.x8),
+        padding: const EdgeInsets.only(bottom: S.x8),
         children: [
-          _Hud(game: game),
-          const SizedBox(height: S.x2),
-          // The world: long-press for the demo scenario picker.
-          GestureDetector(
-            onTap: () => goTo(AppTab.layers),
-            onLongPress: () => showScenarioPicker(context, ref),
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, c) => BinWorld(size: math.min(c.maxWidth, 340), score: health.score, mood: health.mood, growth: growth, co2: s.co2),
+          // The brand band: HUD, the Bin World and the score on Calmpost green.
+          _BrandBand(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(S.gutter, top + S.x3, S.gutter, 0),
+              child: Column(
+                children: [
+                  _Hud(game: game),
+                  const SizedBox(height: S.x2),
+                  GestureDetector(
+                    onTap: () => goTo(AppTab.layers),
+                    onLongPress: () => showScenarioPicker(context, ref),
+                    child: Center(
+                      child: LayoutBuilder(
+                        builder: (context, c) =>
+                            BinWorld(size: math.min(c.maxWidth, 330), score: health.score, mood: health.mood, growth: growth, co2: s.co2, onBrand: true),
+                      ),
+                    ),
+                  ),
+                  _ScoreBlock(health: health),
+                ],
               ),
             ),
           ),
-          _ScoreBlock(health: health),
-          const SizedBox(height: S.x6),
-          ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
-          const SizedBox(height: S.x6),
-          const Hairline(),
-          const SizedBox(height: S.x6),
-          if (suggestion != null) ...[
-            NextAction(suggestion: suggestion, ready: s.bottomStage == Stage.ready, onLog: (_) => goTo(AppTab.log)),
-            const SizedBox(height: S.x6),
-            const Hairline(),
-            const SizedBox(height: S.x6),
-          ],
-          StreakCalendar(game: game),
-          const SizedBox(height: S.x6),
-          const Hairline(),
-          const SizedBox(height: S.x6),
-          const TodayQuests(),
-        ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(S.gutter, S.x2, S.gutter, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
+                const SizedBox(height: S.x6),
+                const Hairline(),
+                const SizedBox(height: S.x6),
+                if (suggestion != null) ...[
+                  NextAction(suggestion: suggestion, ready: s.bottomStage == Stage.ready, onLog: (_) => goTo(AppTab.log)),
+                  const SizedBox(height: S.x6),
+                  const Hairline(),
+                  const SizedBox(height: S.x6),
+                ],
+                StreakCalendar(game: game),
+                const SizedBox(height: S.x6),
+                const Hairline(),
+                const SizedBox(height: S.x6),
+                const TodayQuests(),
+              ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// Full-bleed green band with a soft two-layer hill along the bottom edge.
+class _BrandBand extends StatelessWidget {
+  const _BrandBand({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: const _BandPainter(),
+      child: Padding(padding: const EdgeInsets.only(bottom: 54), child: child),
+    );
+  }
+}
+
+class _BandPainter extends CustomPainter {
+  const _BandPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    // Back hill, a shade deeper, peeks out below the front one.
+    final back = Path()
+      ..moveTo(0, 0)
+      ..lineTo(w, 0)
+      ..lineTo(w, h - 30)
+      ..quadraticBezierTo(w * 0.78, h - 2, w * 0.52, h - 14)
+      ..quadraticBezierTo(w * 0.22, h - 28, 0, h - 6)
+      ..close();
+    canvas.drawPath(back, Paint()..color = C.brandDeep);
+    final front = Path()
+      ..moveTo(0, 0)
+      ..lineTo(w, 0)
+      ..lineTo(w, h - 40)
+      ..quadraticBezierTo(w * 0.7, h - 8, w * 0.38, h - 26)
+      ..quadraticBezierTo(w * 0.15, h - 38, 0, h - 22)
+      ..close();
+    canvas.drawPath(front, Paint()..color = C.brand);
+  }
+
+  @override
+  bool shouldRepaint(_BandPainter old) => false;
 }
 
 /// Game-style HUD: level + XP on the left, streak, Loam and rewards on the right.
@@ -105,7 +168,9 @@ class _Hud extends ConsumerWidget {
           height: 34,
           child: CustomPaint(
             painter: _LevelRing(xp01),
-            child: Center(child: Text('$level', style: T.num.copyWith(fontSize: 13))),
+            child: Center(
+              child: Text('$level', style: T.num.copyWith(fontSize: 13, color: C.onBrand)),
+            ),
           ),
         ),
         const SizedBox(width: S.x2),
@@ -115,20 +180,20 @@ class _Hud extends ConsumerWidget {
             children: [
               Text(
                 titleForLevel(level),
-                style: T.small.copyWith(color: C.ink, fontWeight: FontWeight.w700),
+                style: T.small.copyWith(color: C.onBrand, fontWeight: FontWeight.w700),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               SizedBox(
                 width: 90,
-                child: ThinBar(value: xp01, color: C.forest, height: 3),
+                child: ThinBar(value: xp01, color: C.onBrand, track: C.onBrand.withValues(alpha: 0.28), height: 3),
               ),
             ],
           ),
         ),
         _HudStat(
-          icon: Icon(PhosphorIconsFill.fire, size: 18, color: game.caredToday ? C.pink : C.faint),
+          icon: Icon(PhosphorIconsFill.fire, size: 18, color: game.caredToday ? C.pink : C.onBrandMuted),
           value: '${game.streak.days}',
           onTap: null,
         ),
@@ -142,19 +207,19 @@ class _Hud extends ConsumerWidget {
               children: [
                 const Padding(
                   padding: EdgeInsets.all(4),
-                  child: Icon(PhosphorIconsRegular.gift, size: 22, color: C.ink),
+                  child: Icon(PhosphorIconsRegular.gift, size: 22, color: C.onBrand),
                 ),
                 if (inbox > 0)
                   Positioned(
                     top: 1,
                     right: 1,
                     child: Container(
-                      width: 9,
-                      height: 9,
+                      width: 10,
+                      height: 10,
                       decoration: BoxDecoration(
                         color: C.pink,
                         shape: BoxShape.circle,
-                        border: Border.all(color: C.paper, width: 1.5),
+                        border: Border.all(color: C.brand, width: 1.5),
                       ),
                     ),
                   ),
@@ -183,7 +248,7 @@ class _HudStat extends StatelessWidget {
           children: [
             icon,
             const SizedBox(width: 5),
-            Text(value, style: T.num.copyWith(fontSize: 14)),
+            Text(value, style: T.num.copyWith(fontSize: 14, color: C.onBrand)),
           ],
         ),
       ),
@@ -202,8 +267,8 @@ class _LevelRing extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round;
-    canvas.drawArc(rect, 0, math.pi * 2, false, p..color = C.line);
-    canvas.drawArc(rect, -math.pi / 2, math.pi * 2 * value.clamp(0, 1), false, p..color = C.forest);
+    canvas.drawArc(rect, 0, math.pi * 2, false, p..color = C.onBrand.withValues(alpha: 0.28));
+    canvas.drawArc(rect, -math.pi / 2, math.pi * 2 * value.clamp(0, 1), false, p..color = C.onBrand);
   }
 
   @override
@@ -218,8 +283,8 @@ class _ScoreBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = health.snapshot;
-    final color = switch (health.mood) {
-      BinMood.thriving || BinMood.healthy => C.leaf,
+    final pillText = switch (health.mood) {
+      BinMood.thriving || BinMood.healthy => C.brandDeep,
       BinMood.wet => C.water,
       BinMood.dry => C.amber,
       _ => C.clay,
@@ -230,10 +295,10 @@ class _ScoreBlock extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64)),
+            CountUp(health.score, from: 0, style: T.hero.copyWith(fontSize: 64, color: C.onBrand)),
             Padding(
               padding: const EdgeInsets.only(bottom: 9, left: 3),
-              child: Text('/100', style: T.label),
+              child: Text('/100', style: T.label.copyWith(color: C.onBrandMuted)),
             ),
           ],
         ),
@@ -241,16 +306,24 @@ class _ScoreBlock extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(moodLabel(health.mood).toUpperCase(), style: T.caps.copyWith(color: color)),
-            Text('  ·  KITCHEN BIN  ·  ', style: T.caps.copyWith(color: C.faint)),
-            const LiveDot(color: C.leaf, size: 5),
-            Text('LIVE', style: T.caps),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: C.onBrand, borderRadius: BorderRadius.circular(R.pill)),
+              child: Text(moodLabel(health.mood).toUpperCase(), style: T.caps.copyWith(color: pillText, fontSize: 10.5)),
+            ),
+            Text('   KITCHEN BIN  ·  ', style: T.caps.copyWith(color: C.onBrandMuted)),
+            const LiveDot(color: C.onBrand, size: 5),
+            Text('LIVE', style: T.caps.copyWith(color: C.onBrandMuted)),
           ],
         ),
         const SizedBox(height: S.x3),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: S.x4),
-          child: Text(_status(s), textAlign: TextAlign.center, style: T.body),
+          child: Text(
+            _status(s),
+            textAlign: TextAlign.center,
+            style: T.body.copyWith(color: C.onBrand),
+          ),
         ),
       ],
     );

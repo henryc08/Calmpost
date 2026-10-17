@@ -127,17 +127,16 @@ class _Pick extends StatelessWidget {
                 child: Icon(item.icon, size: 32, color: accent),
               ),
               Positioned(
-                right: -2,
-                bottom: 2,
+                right: -10,
+                top: -4,
                 child: Container(
-                  width: 24,
-                  height: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
-                    color: C.forest,
-                    shape: BoxShape.circle,
+                    color: C.pink,
+                    borderRadius: BorderRadius.circular(R.pill),
                     border: Border.all(color: C.paper, width: 2),
                   ),
-                  child: const Icon(PhosphorIconsBold.plus, size: 12, color: C.onForest),
+                  child: Text('+${Xp.followedSuggestion}', style: T.num.copyWith(fontSize: 11, color: C.ink)),
                 ),
               ),
             ],

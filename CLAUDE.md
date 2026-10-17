@@ -293,7 +293,7 @@ Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBan
 
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, one-line status. Then **What to add** (the main section: headline + why, three recommended items as tappable circles with what each will do, "Hold off on", "Log something else"; tapping an item opens its verdict in Log) · Live readings · Streak calendar · Today quests. *Planned:* **Drop something in** |
+| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, status. Then the game loop, top to bottom: **Daily goal** (today's XP fills a pink track to 20 / 40 / 60 XP reward nodes: 15 Loam, 30 Loam, Sprout crate; tap a pulsing node to claim) · **What to add** (main section: headline, why, three recommended items with their effect and a +15 XP badge, hold-off list) · **Rewards ready** (crates and Seed Packets wiggling; tap a crate for the reveal) · **Today** quests · **League race** (your rank, XP to the promotion zone, the players just above and below you) · **Streak** calendar + next milestone and its reward · Live readings (moved to the bottom). *Planned:* Drop something in |
 | **Layers** | ✅ | Band: Top / Bottom / Air switcher, big live value + state pill. Then moisture/temperature toggle, 24 h chart with healthy band and dashed pink **add markers**, Now / Avg / Low / High, what it means, life-cycle line (Active → Ready), recent adds |
 | **Log** | ✅ | Band: search field + camera button (camera drop-in is planned). Then Recommended now (tips), Greens / Browns / Keep out lists → **verdict sheet**: Good to add / Add with care / Keep it out, headline, reason, pair-it-with (tap to check that instead), XP note, Add it / Keep it out. **Demo moment** |
 | **Social** | ✅ | Band: league name, reset countdown, your rank, XP this week, "XP to go" or Promotion zone, six-tier ladder. Then This week (table with promotion/demotion zones, your row marked in pink) / Friends (co-op friend quest, friends list with Nudge) |
@@ -363,6 +363,9 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 | Streak milestones 3/7/14/30/100 | 25/50/100/200/500 | | 10 Seed Packets | 900 (one Rare+ guaranteed) |
 | Harvest | 100 | | Lid Lock | 60 |
 | League finish (promoted/safe/demoted) | 150/60/20 | | | |
+
+### Daily goal (Home)
+Today's XP (from any source) fills a track with three rewards, each claimed once a day: **20 XP → 15 Loam · 40 XP → 30 Loam · 60 XP → Sprout crate**. It resets at midnight. Because XP only comes from care, the daily goal can't be hit by dumping food in.
 
 ### Crates
 

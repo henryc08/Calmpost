@@ -17,6 +17,9 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'bin_world.dart';
+import 'daily_track.dart';
+import 'league_race.dart';
+import 'rewards_shelf.dart';
 import 'what_to_add.dart';
 import 'readings_row.dart';
 import 'streak_calendar.dart';
@@ -81,6 +84,8 @@ class HomeScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const DailyTrack(),
+                const SectionBreak(),
                 if (suggestion != null) ...[
                   WhatToAdd(
                     suggestion: suggestion,
@@ -92,13 +97,16 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const SectionBreak(),
                 ],
-                const SectionLabel('LIVE READINGS'),
-                const SizedBox(height: S.x3),
-                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
+                if (game.crates.isNotEmpty || game.packets > 0) ...[const RewardsShelf(), const SectionBreak()],
+                const TodayQuests(),
+                const SectionBreak(),
+                LeagueRace(onOpen: () => goTo(AppTab.social)),
                 const SectionBreak(),
                 StreakCalendar(game: game),
                 const SectionBreak(),
-                const TodayQuests(),
+                const SectionLabel('LIVE READINGS'),
+                const SizedBox(height: S.x3),
+                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
               ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
             ),
           ),

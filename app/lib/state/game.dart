@@ -23,6 +23,8 @@ class GameState {
     required this.bestStreak,
     required this.crates,
     required this.packets,
+    required this.xpToday,
+    required this.dailyClaimed,
     required this.harvests,
     required this.kgDiverted,
     required this.questsClaimedAllTime,
@@ -51,6 +53,10 @@ class GameState {
   /// Unopened reward crates and Seed Packets (the rewards inbox).
   final List<CrateTier> crates;
   final int packets;
+
+  /// XP earned today (drives the daily goal track) and which of its rewards are claimed.
+  final int xpToday;
+  final Set<int> dailyClaimed;
   final int harvests;
   final double kgDiverted;
   final int questsClaimedAllTime;
@@ -75,6 +81,8 @@ class GameState {
     int? bestStreak,
     List<CrateTier>? crates,
     int? packets,
+    int? xpToday,
+    Set<int>? dailyClaimed,
     int? harvests,
     double? kgDiverted,
     int? questsClaimedAllTime,
@@ -93,6 +101,8 @@ class GameState {
     bestStreak: bestStreak ?? this.bestStreak,
     crates: crates ?? this.crates,
     packets: packets ?? this.packets,
+    xpToday: xpToday ?? this.xpToday,
+    dailyClaimed: dailyClaimed ?? this.dailyClaimed,
     harvests: harvests ?? this.harvests,
     kgDiverted: kgDiverted ?? this.kgDiverted,
     questsClaimedAllTime: questsClaimedAllTime ?? this.questsClaimedAllTime,
@@ -241,6 +251,8 @@ GameState _initial() {
     bestStreak: 21,
     crates: const [CrateTier.sprout, CrateTier.grove],
     packets: 1,
+    xpToday: 0,
+    dailyClaimed: const {},
     harvests: 2,
     kgDiverted: 14.6,
     questsClaimedAllTime: 34,
@@ -283,7 +295,7 @@ class GameController extends Notifier<GameState> {
   void _addXp(int xp) {
     if (xp <= 0) return;
     final beforeLevel = state.level;
-    state = state.copyWith(weekXp: state.weekXp + xp, totalXp: state.totalXp + xp);
+    state = state.copyWith(weekXp: state.weekXp + xp, totalXp: state.totalXp + xp, xpToday: state.xpToday + xp);
     if (state.level > beforeLevel) {
       _party.push(LevelUpCelebration(state.level, titleForLevel(state.level)));
     }
@@ -362,6 +374,7 @@ class GameController extends Notifier<GameState> {
     final quests = [for (final x in state.quests) x.id == id ? x.copyWith(claimed: true) : x];
     state = state.copyWith(quests: quests, loam: state.loam + q.loam, questsClaimedAllTime: state.questsClaimedAllTime + 1);
     _party.push(QuestCelebration(q, allDone: quests.every((x) => x.claimed)));
+    _toast.show('Quest done · +${q.loam} Loam', xp: q.xp);
     _addXp(q.xp);
   }
 
@@ -387,7 +400,53 @@ class GameController extends Notifier<GameState> {
     return true;
   }
 
+  /// Daily goal track: claim the reward at milestone [i] once today's XP reaches it.
+  DailyReward? claimDaily(int i) {
+    if (i < 0 || i >= dailyGoals.length) return null;
+    if (state.xpToday < dailyGoals[i] || state.dailyClaimed.contains(i)) return null;
+    final reward = dailyRewards[i];
+    state = state.copyWith(
+      dailyClaimed: {...state.dailyClaimed, i},
+      loam: state.loam + reward.loam,
+      crates: reward.crate == null ? state.crates : [...state.crates, reward.crate!],
+    );
+    return reward;
+  }
+
+  /// Opens the crate at [index] and pays out Loam + Seed Packets.
+  CrateOpening? openCrate(int index) {
+    if (index < 0 || index >= state.crates.length) return null;
+    final tier = state.crates[index];
+    final (loam, packets) = switch (tier) {
+      CrateTier.sprout => (60, 1),
+      CrateTier.grove => (160, 3),
+      CrateTier.canopy => (400, 5),
+    };
+    final crates = [...state.crates]..removeAt(index);
+    state = state.copyWith(crates: crates, loam: state.loam + loam, packets: state.packets + packets);
+    return CrateOpening(tier, loam, packets);
+  }
+
   void resetDemo() => state = _initial();
 }
 
 final gameProvider = NotifierProvider<GameController, GameState>(GameController.new);
+
+/// Daily goal track: XP milestones and what each pays.
+const dailyGoals = [20, 40, 60];
+
+class DailyReward {
+  const DailyReward(this.label, {this.loam = 0, this.crate});
+  final String label;
+  final int loam;
+  final CrateTier? crate;
+}
+
+const dailyRewards = [DailyReward('15 Loam', loam: 15), DailyReward('30 Loam', loam: 30), DailyReward('Sprout crate', crate: CrateTier.sprout)];
+
+class CrateOpening {
+  const CrateOpening(this.tier, this.loam, this.packets);
+  final CrateTier tier;
+  final int loam;
+  final int packets;
+}

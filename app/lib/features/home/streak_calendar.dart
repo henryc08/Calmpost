@@ -135,6 +135,8 @@ class _StreakCalendarState extends State<StreakCalendar> {
         ),
         const SizedBox(height: S.x3),
         Text(caredToday ? 'Today counts. See you tomorrow.' : 'Check your layers or follow the next action to keep it going.', style: T.small),
+        const SizedBox(height: S.x3),
+        _Milestone(days: game.streak.days),
       ],
     );
   }
@@ -201,6 +203,54 @@ class _Day extends StatelessWidget {
           dot,
         ],
       ),
+    );
+  }
+}
+
+/// The next streak milestone and its reward.
+class _Milestone extends StatelessWidget {
+  const _Milestone({required this.days});
+  final int days;
+
+  static const _milestones = [
+    (3, '25 Loam'),
+    (7, 'Sprout crate + 50 Loam'),
+    (14, '100 Loam'),
+    (30, 'Grove crate + 200 Loam'),
+    (100, 'Canopy crate + 500 Loam'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final next = _milestones.firstWhere((m) => m.$1 > days, orElse: () => _milestones.last);
+    final prev = _milestones.lastWhere((m) => m.$1 <= days, orElse: () => (0, ''));
+    final left = next.$1 - days;
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: C.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: C.pink, width: 1.5),
+          ),
+          child: const Icon(PhosphorIconsFill.package, size: 15, color: C.pinkDeep),
+        ),
+        const SizedBox(width: S.x3),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(left == 1 ? '1 more day to a ${next.$1}-day streak' : '$left days to a ${next.$1}-day streak', style: T.heading.copyWith(fontSize: 13.5)),
+              const SizedBox(height: 4),
+              ThinBar(value: (days - prev.$1) / (next.$1 - prev.$1), color: C.pink, height: 4),
+              const SizedBox(height: 3),
+              Text('Reward: ${next.$2}', style: T.small.copyWith(fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

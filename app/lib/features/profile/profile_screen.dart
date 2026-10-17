@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../app/reward_reveal.dart';
 import '../../app/toast.dart';
 import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
@@ -130,7 +131,16 @@ class _Rewards extends ConsumerWidget {
             for (final c in g.crates) ...[_RewardMark(icon: PhosphorIconsFill.package, label: crateName(c).split(' ').first), const SizedBox(width: S.x4)],
             for (var i = 0; i < g.packets; i++) ...[const _RewardMark(icon: PhosphorIconsFill.plant, label: 'Packet'), const SizedBox(width: S.x4)],
             const Spacer(),
-            PillButton(label: 'Open', dense: true, onTap: () => showToast(ref, 'The rewards inbox is next')),
+            PillButton(
+              label: 'Open',
+              dense: true,
+              onTap: g.crates.isEmpty
+                  ? () => showToast(ref, 'Open Seed Packets in the Greenhouse (next)')
+                  : () async {
+                      final o = ref.read(gameProvider.notifier).openCrate(0);
+                      if (o != null) await revealCrate(context, o.tier, o.loam, o.packets);
+                    },
+            ),
           ],
         ),
       ],

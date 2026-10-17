@@ -1,4 +1,5 @@
 import 'package:calmpost/data/calmpost_repository.dart';
+import 'package:calmpost/data/food_catalog.dart';
 import 'package:calmpost/data/mock_repository.dart';
 import 'package:calmpost/domain/models.dart';
 import 'package:calmpost/main.dart';
@@ -130,5 +131,27 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 5));
+  });
+
+  test('economy: daily goal rewards and crate opening', () {
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+    final game = c.read(gameProvider.notifier);
+    expect(game.claimDaily(0), isNull, reason: 'not enough XP yet');
+    // Follow a tip (+15) and check in (+5) = 20 XP today.
+    game.checkIn();
+    final advice = Advice(item: foodById['cardboard']!, verdict: Verdict.great, headline: '', reason: '');
+    game.recordLog(advice, added: true, suggestedIds: const ['cardboard']);
+    expect(c.read(gameProvider).xpToday, 20);
+    final loam = c.read(gameProvider).loam;
+    expect(game.claimDaily(0)?.loam, 15);
+    expect(c.read(gameProvider).loam, loam + 15);
+    expect(game.claimDaily(0), isNull, reason: 'already claimed');
+
+    final crates = c.read(gameProvider).crates.length;
+    final packets = c.read(gameProvider).packets;
+    final opened = game.openCrate(0)!;
+    expect(c.read(gameProvider).crates.length, crates - 1);
+    expect(c.read(gameProvider).packets, packets + opened.packets);
   });
 }

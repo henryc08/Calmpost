@@ -3,47 +3,256 @@
 > A sensor-equipped compost bin + a gamified Android app. **The bin tells you what it needs; the app makes looking after it rewarding.**
 > Hack the Valley 11 · Climate Action & Sustainability track · Tiger Data sponsor track
 
-This file is the source of truth for how we build Calmpost. Read it before you write code, and update it when a decision changes.
+This file is the source of truth for how we build Calmpost. Read it before you write code, and update it in the same commit when a decision changes.
+
+**Contents**
+1. [Key ideas](#1-key-ideas-dont-break-these)
+2. [Major features](#2-major-features): sensing & health · next best action · scrap check · **camera drop-in** · summaries · game & economy · notifications
+3. [Gemini: what it does and how](#3-gemini-what-it-does-and-how)
+4. [System architecture](#4-system-architecture)
+5. [Backend & Tiger Data](#5-backend--tiger-data)
+6. [Vision service (camera)](#6-vision-service-camera)
+7. [App (Flutter)](#7-app-flutter): structure, screens, design system
+8. [Game reference](#8-game-reference): XP, Loam, crates, achievements, gacha
+9. [Mock data & demo](#9-mock-data--demo)
+10. [Commands, build order, working together](#10-commands)
 
 ---
 
-## The key ideas (don't break these)
+## 1. Key ideas (don't break these)
 
-1. **Reward balance, never volume.** Logging a food scrap earns **0 XP** on its own. XP and Loam come only from *care*: following the next best action, keeping layers in their healthy range, balancing greens and browns, finishing quests, harvesting. If a mechanic would reward dumping more food in the bin, it's wrong.
+1. **Reward balance, never volume.** Adding a scrap earns **0 XP** on its own. XP and Loam come only from *care*: following the next best action, keeping layers in their healthy range, balancing greens and browns, finishing quests, harvesting. If a mechanic would reward dumping more food in the bin, it's wrong.
 2. **Same scrap, different answer.** Advice is always based on the bin's *current* readings. This is our demo moment, so protect it.
-3. **Honest about accuracy.** Moisture is our most reliable signal; temperature and CO₂ add context. Stage and "ready" are guides from sensor trends, not lab results. Copy should never overclaim.
-4. **Sleek, minimal, grown-up.** Calm editorial design: lots of whitespace, one strong hero, hairlines instead of shadows, a soft serif for big numbers. **No mascot, no cartoons, no childish bounce.** Rewards are satisfying but quiet. See *Design system*.
-5. **Frontend first.** The app runs fully on mock data through a repository interface. The backend plugs in later with no UI changes.
+3. **Honest about accuracy.** Moisture is our most reliable signal; temperature and CO₂ add context. Stage and "ready" are guides, not lab results. The camera can be wrong, so **the user always confirms what it saw**.
+4. **Sleek, minimal, grown-up.** Calm editorial design, one living illustration per screen, open layout instead of boxes. **No mascot, no cartoons.**
+5. **Rules decide, Gemini explains and sees.** Deterministic rules own every judgement. Gemini identifies things and writes words. Every Gemini answer has a rule-based fallback.
+6. **Frontend first.** The app runs fully on mock data through `CalmpostRepository`; the backend plugs in later with no UI changes.
 
 ---
 
-## Tech stack
+## 2. Major features
+
+Each feature lists what the user sees, how it works, and its status.
+
+| # | Feature | Status |
+|---|---|---|
+| 2.1 | Live sensing & Bin Health Score | ✅ app (mock data) · ⏳ firmware + backend |
+| 2.2 | Next best action (what the bin needs) | ✅ app (rules) · ⏳ Gemini wording |
+| 2.3 | Scrap check ("Can I add this?") | ✅ rules · ⏳ Log tab UI · ⏳ Gemini |
+| 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
+| 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
+| 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home + rules · ⏳ other screens |
+| 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
+
+### 2.1 Live sensing & Bin Health Score
+- **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
+- **How:** the ESP32 posts moisture + temperature for both layers and CO₂ for the air gap every 2–5 min. The score comes from `domain/health_score.dart`:
+  ```
+  health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
+  ```
+  `moisture` is per layer: 100 inside 40–60%, falling to 0 at ±25%. `balance` is 7-day greens:browns ≈ 1:2–1:3. State: Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
+
+### 2.2 Next best action
+- **Sees:** "Next best action" on Home: a title ("Add something dry"), one sentence why, 2–3 suggested items, +15 XP for following it.
+- **How:** rules compute `need` ∈ `browns | greens | water | mix | nothing` from moisture, balance, CO₂ and temperature (table in §3). Gemini only words it. **`nothing` is a good answer**; never suggest food just to have a suggestion.
+
+### 2.3 Scrap check ("Can I add this?")
+- **Sees:** on the Log tab, search for an item (or tap a suggestion), then get a verdict: **great**, **careful** (add with browns or greens, with the pair-with items listed) or **avoid**, plus the reason.
+- **How:** `domain/advice_rules.dart` decides from the live snapshot. Meat, dairy, oil, pet waste and glossy paper are **always avoid**. Gemini rewrites the reason in plain words and handles items not in the catalog.
+- **Demo moment:** banana peel → great when the bin is dry; careful when it's soggy.
+
+### 2.4 Camera drop-in: identify and track what goes in 📝 *planned*
+
+When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked.
+
+**What the user does**
+1. On Home, tap **Drop something in** (forest pill under the score). This arms the camera for 60 s and opens a "Watching the bin…" sheet with a live preview and a countdown.
+2. Drop the scrap in.
+3. A pop-up slides up: **"Something was added"**. The photo appears with a box around the item, then the details fill in one by one:
+   - **Item:** "Banana peel"
+   - **Type:** Green / Brown / Keep out
+   - **Amount:** Small / Handful / Large (≈ grams behind the scenes)
+   - **Confidence:** e.g. 82%
+4. If anything is wrong (say, it called the banana a "mango skin"), the user edits it right there. The item field is a search over the catalog with free-text fallback; type and amount are segmented choices. Low-confidence fields (< 60%) are pre-highlighted with "Check this".
+5. **Submit.** The drop becomes a tracked add: the scrap-check verdict appears (great / careful / avoid) and XP is awarded by the normal rules (0 for adding; +15 if it was the next best action). If it's a **Keep out** item, the app says to take it back out, and confirming that earns the usual +5.
+6. **"Nothing was added"** dismisses a false trigger.
+
+**What "tracked" means**
+- The confirmed drop is an `add_log` row with `source = 'camera'`, its photo thumbnail and the model's first guess.
+- It counts toward the 7-day greens:browns balance, kg kept from landfill, and the next best action.
+- Layers marks it on the moisture/CO₂ chart ("Banana peel · 2:14 pm"), so you can see what each drop did to the bin over the next hours.
+- Corrections are kept. They measure camera accuracy (a Tiger Data stat), and recent corrections are fed back to Gemini as hints ("in this bin, items that looked like X were Y").
+
+**How it works (recommended approach)**
+
+```
+App ──tap "Drop something in"──▶ POST /bins/{id}/drops/session   (arms for 60 s)
+                                         │
+Vision service (laptop + webcam) ◀──poll─┘   GET /bins/{id}/drops/session/active
+   1. grab a BEFORE frame
+   2. OpenCV motion detection on the bin opening (local, free, ~30 fps)
+   3. motion starts → something is going in; motion stops for 0.8 s → grab the sharpest AFTER frame
+   4. send BEFORE + AFTER to Gemini Flash (vision, JSON schema)  → item, type, grams, confidence, box
+   5. POST /bins/{id}/drops  (detection + thumbnail)
+                                         │
+Backend: validate with rules, store drop_events (status = pending) ──▶ App (SSE / 1 s poll)
+App: "Something was added" pop-up → user edits → POST /drops/{id}/confirm → add_log + verdict + XP
+```
+
+Why this design:
+- **Local motion trigger + one Gemini call per drop**, not continuous video streaming. A drop is a discrete event, so one image request is cheaper, faster (~1–2 s), has no session limits, and doesn't depend on a long-lived connection. OpenCV decides *when*; Gemini decides *what*. The Gemini Live API isn't needed.
+- **Before + after frames.** The bin already holds scraps, so we ask Gemini what is *new* in the second image. This avoids "identifying" last week's peels.
+- **Gemini Flash for vision**, set by `GEMINI_VISION_MODEL`: use the newest stable Flash model in Google AI Studio. It recognizes food zero-shot ("banana peel" vs "banana"), returns bounding boxes, supports JSON schemas, and needs no training data. We considered a local YOLO/COCO model, but it only knows a handful of whole foods and nothing about compost categories, and we have no time to train a custom one.
+- **Constrained output.** `catalog_id` must be one of the food catalog ids or `unknown`, with a free-text `label`. Rules, not Gemini, assign the type for known items, so hard-avoid items can never slip through as "green".
+- **Laptop webcam now, in-lid camera later.** Only the vision service touches the camera, via `CAMERA_SOURCE` (`0` for the laptop webcam, later an ESP32-CAM / Pi camera stream URL). Nothing else changes.
+- **Privacy.** Frames are captured only while armed, kept as small thumbnails, and deleted after 30 days.
+
+**Edge cases**
+- **Several items in one drop:** Gemini returns a list; the pop-up shows one row per item, each editable or removable.
+- **No motion within 60 s:** the session closes quietly ("Didn't see anything. Tap to try again.").
+- **Gemini fails or times out (> 4 s):** the pop-up still appears with the photo and empty fields for manual entry.
+- **Hands, lids or utensils:** the prompt says to ignore them; a person-only detection is treated as no drop.
+
+**Built in this order:** (1) mock flow in the app (`MockRepository` emits a fake banana detection 2.5 s after arming, so the pop-up and edit form can be built now) → (2) vision service with webcam + motion trigger, logging to console → (3) Gemini call → (4) backend endpoints + Tiger tables → (5) swap the app to the API.
+
+### 2.5 Summaries 📝 *planned*
+Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Layers), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
+
+### 2.6 Game & economy
+Streak calendar, daily quests, XP and levels, **Loam** currency, **crates** from achievements, **Seed Packet** gacha for cosmetic collectibles, weekly leagues and friends. All numbers are in §8.
+**Core loop:** open → check health → do the next best action → streak day fills in → quests pay XP + Loam → achievements drop crates → crates and Loam open Seed Packets → collection grows → league rank moves.
+
+### 2.7 Notifications
+Plain, state-triggered, **max 2 a day**: compost ready (built), streak at risk, crate earned, "something was added but not confirmed" (from 2.4, after 10 min).
+
+---
+
+## 3. Gemini: what it does and how
+
+**Gemini is the bin's eyes and voice, not its judgement.** Rules in `domain/` (mirrored in the backend) decide; Gemini identifies and explains. If Gemini is slow, fails, or disagrees with the rules, the rule-based answer is shown and nobody notices.
+
+| Job | Feature | Input | Output (JSON schema) | Model |
+|---|---|---|---|---|
+| **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
+| **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: add \| add_with_browns \| add_with_greens \| avoid, reason, suggest_add[], suggest_avoid[], tip}` | Flash |
+| **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
+| **Summaries** | 2.5 | snapshot (+ week stats) | `{title, body, bullets[], mood}` | Flash or Flash-Lite |
+
+**Every text call gets the same context snapshot:**
+```
+{ live: {moisture_top, moisture_bottom, temp_top, temp_bottom, co2_ppm, co2_slope_24h},
+  balance_7d: {greens_kg, browns_kg, ratio},
+  stage: {top, bottom, bottom_ready},
+  health: {score, breakdown},
+  recent_logs: [last 10 adds],
+  need: <computed by rules> }
+```
+The snapshot is stored with each response (`advice` table), so we can always show *why* the app said something.
+
+**Rule-computed `need` (next best action)**
+
+| `need` | When (any of) | Example wording |
+|---|---|---|
+| `browns` | moisture > 60%, ratio greener than 1:2, CO₂ high + temp low (going anaerobic) | "The top layer is 76% wet. Dry browns will soak it up." |
+| `greens` | moisture < 40% *and* ratio browner than 1:3, temp dropping in the Active stage | "Plenty of dry material. Fresh scraps will get it going." |
+| `water` | moisture < 40% with balance already fine | "Just a splash of water, no food needed." |
+| `mix` | CO₂ rising with flat temp | "Give it a stir to let air in." |
+| `nothing` | everything in range, or bottom layer curing / ready | "All on target. Nothing to add today." |
+
+**Guardrails**
+- **Validate everything:** responses must match the schema; `verdict` and `need` must match the rules; hard-avoid items can never appear in `suggest_add`; drop `catalog_id` must be in the catalog or `unknown`. Otherwise, fall back.
+- **Honest:** stage and "ready" are described as guides ("looks ready"); low-confidence answers say so.
+- **Fallback templates** live in `domain/advice_rules.dart` (and the Python mirror), so the app works offline and on mock data.
+- **Settings:** `temperature 0` for vision and verdicts, a low thinking budget, `media_resolution` medium for frames.
+- **Cost / speed:** cache text answers by `(bin, snapshot hash, job)`; daily note and recap are generated once per day/week. Targets: vision < 2 s, text < 2 s.
+- **Keys** live only in the backend and vision service `.env` files. Never in the app.
+
+---
+
+## 4. System architecture
+
+```
+                    ┌────────────── laptop next to the bin ──────────────┐
+ESP32 sensors ──POST /ingest──┐        Vision service (Python, OpenCV) ◀── webcam
+                              ▼          │  motion trigger → Gemini Flash (vision)
+                     FastAPI backend ◀───┘  POST /bins/{id}/drops
+                      │    │    ▲
+          Tiger Cloud ◀┘    │    │ REST + SSE
+          (TimescaleDB)     ▼    │
+                        Gemini   Flutter app (Android; web preview)
+```
 
 | Layer | Tech | Notes |
 |---|---|---|
-| **Mobile app** | **Flutter (Dart)**, Android-first | min SDK 24, edge-to-edge, predictive back |
-| State | `flutter_riverpod` 2.x (`Notifier`, `StreamProvider`, `FutureProvider.family`) | providers only, no `setState` for shared state |
-| Navigation | `tabProvider` (`AppTab`) + plain `Navigator` | no router package |
-| Models | plain immutable Dart classes in `domain/models.dart` | no codegen |
-| UI | **Fraunces** (serif) + **Manrope** (sans), bundled in `assets/fonts`; `phosphor_flutter` (Regular/Fill); `flutter_animate`; `fl_chart` (Layers charts) | |
-| Feedback | `HapticFeedback.selectionClick` on every tap; `audioplayers` reserved for reward moments | |
-| Device | `flutter_local_notifications` (compost ready) | |
-| **Backend** (phase 2) | **Python 3.12 + FastAPI + asyncpg** | thin API: keeps DB + Gemini keys off the phone |
-| **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions |
-| AI | **Gemini API** (`google-genai`), JSON-schema structured output | rule-based fallback always on |
-| **Hardware** | ESP32 (Arduino), 2× capacitive moisture, 2× DS18B20 temp, 1× SCD40/41 CO₂ | POSTs JSON over Wi-Fi |
-
-```
-ESP32 ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
-                           │ ▲
-                 Gemini ◀──┘ │ REST
-                             │
-                    Flutter app (Riverpod)
-```
+| **Mobile app** | **Flutter (Dart)**, Android-first | Riverpod 2, plain Navigator, `CustomPainter` art, Fraunces + Manrope, Phosphor icons, `flutter_animate`, `fl_chart`, `flutter_local_notifications` |
+| **Backend** | **Python 3.12 + FastAPI + asyncpg** | the only thing that talks to the DB and to Gemini for text; keeps keys off the phone |
+| **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions (sponsor track) |
+| **Vision service** | **Python + OpenCV + `google-genai`** | runs on the laptop with the webcam; later the in-lid camera |
+| **AI** | **Gemini API** (`google-genai`), JSON-schema structured output | rule fallback always on |
+| **Hardware** | ESP32 (Arduino), 2× capacitive moisture, 2× DS18B20, 1× SCD40/41 CO₂; laptop webcam (for now) | ESP32 POSTs JSON over Wi-Fi |
 
 ---
 
-## Repo layout
+## 5. Backend & Tiger Data
+
+The backend is a thin FastAPI app. Endpoint shapes mirror `CalmpostRepository`, so the app's `ApiRepository` is a mechanical swap (one line in `state/providers.dart`).
+
+**Tiger Data schema**
+
+| Object | Kind | What it holds |
+|---|---|---|
+| `readings` | hypertable | one wide row per ESP32 POST: moisture/temp for both layers, CO₂ |
+| `add_log` | hypertable | every confirmed add: item, category, grams, `source` (`manual` / `camera` / `suggestion`), `drop_id` |
+| `drop_events` | hypertable | every camera detection: session, status (`pending` / `confirmed` / `dismissed`), model guess (label, catalog_id, grams, confidence, box), final values, `corrected`, latency, thumbnail path |
+| `advice` | hypertable | every Gemini answer + the snapshot it saw (proof of "same scrap, different answer") |
+| `point_events` | hypertable | XP and Loam ledger |
+| `stage_history` | hypertable | life-cycle stage changes per layer |
+| `readings_15m`, `readings_1d` | continuous aggregates | charts and sparklines |
+| `xp_weekly` | continuous aggregate | league tables |
+| `vision_accuracy_1d` | continuous aggregate | share of drops confirmed without correction, avg confidence, avg latency |
+
+- **Hyperfunctions:** `state_agg` / `duration_in` (time in healthy band, "in range for 6h" quest), `time_weight`, `regr_slope` (CO₂ trend → stage), `time_bucket_gapfill` + `locf` (charts).
+- **Policies:** columnstore after 7 days; retention on raw readings and drop thumbnails (30 days).
+- **Optional:** a Tiger fork as a "demo" database seeded with scenarios.
+
+**Endpoints**
+
+| Area | Endpoint |
+|---|---|
+| Sensors | `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends?zone=&metric=&range=` |
+| Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice/next` · `GET /bins/{id}/summary?kind=daily\|score\|layer\|weekly\|batch` |
+| Logging | `POST /bins/{id}/logs` · `POST /bins/{id}/harvest` |
+| **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE to app; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` |
+| Game | `GET /users/{id}/game` · `GET /quests/today` · `GET /leagues/current` |
+
+**Environment** (`backend/.env`, `vision/.env`, both git-ignored): `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_VISION_MODEL`, `CAMERA_SOURCE`, `BIN_ID`, `BACKEND_URL`, `DEVICE_KEY`.
+
+---
+
+## 6. Vision service (camera)
+
+`vision/` is a small Python process that owns the camera (planned, see 2.4).
+
+```
+vision/
+  main.py          # loop: wait for an armed session → watch → detect → report
+  camera.py        # OpenCV capture from CAMERA_SOURCE (webcam index or stream URL)
+  motion.py        # background subtraction (MOG2) inside a bin-opening ROI; start/stop events
+  frames.py        # sharpest-frame pick (Laplacian variance), resize, JPEG encode
+  gemini.py        # before/after prompt, JSON schema, catalog enum, timeout + retry
+  preview.py       # optional MJPEG preview at :8081 with the detection box (for the demo screen)
+  calibrate.py     # one-off: draw the ROI over the bin opening, saved to roi.json
+```
+
+- **Trigger tuning:** motion must cover > 2% of the ROI for ≥ 150 ms to start; it ends after 0.8 s of stillness. Ignore the first 0.5 s after arming (the user's hand moving away from the button).
+- **Demo setup:** the laptop on a stand, webcam angled down into the open bin, the ROI drawn once with `calibrate.py`. The MJPEG preview on the laptop screen is a good thing for judges to watch.
+- **Run:** `cd vision && python main.py` (needs `pip install opencv-python google-genai httpx`).
+
+---
+
+## 7. App (Flutter)
+
+### Layout
 
 ```
 calmpost/
@@ -51,319 +260,192 @@ calmpost/
   app/                      # Flutter app
     lib/
       main.dart             # theme, web phone frame
-      app/                  # shell (5-tab nav + event loop), toast, notifications, ComingNext placeholder
+      app/                  # shell (5-tab nav + event loop), toast + demo picker + ComingNext, notifications
       ui/                   # DESIGN SYSTEM: tokens.dart, type.dart, theme.dart, components.dart
       domain/               # pure Dart: models, health_score, xp_rules, advice_rules
       data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), food_catalog
       state/                # Riverpod: providers (bin, health, trends, tab), game (XP/streak/quests/economy), celebrations
-      features/home/        # ✅ designed: header, health hero, layer strip, next action, streak calendar, today, impact
-      features/<tab>/       # layers/ log/ social/ profile/ rewards/ greenhouse/ (to design)
+      features/home/        # ✅ bin_world, home_screen (HUD + score), readings_row, next_action, streak_calendar, today_quests
+      features/<…>/         # layers/ log/ drop/ social/ profile/ rewards/ greenhouse/ (to build)
     assets/                 # fonts/, sfx/
-    test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow check, real fonts loaded)
-  backend/                  # FastAPI + SQL migrations (phase 2)
-  firmware/                 # ESP32 sketch (phase 2)
+    test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow, real fonts)
+  backend/                  # FastAPI + SQL migrations
+  vision/                   # camera + motion trigger + Gemini vision
+  firmware/                 # ESP32 sketch
 ```
 
-**Rules:**
+**Rules**
 - Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Switch tabs with `ref.read(tabProvider.notifier).state = AppTab.x`.
 - Screens never call HTTP or mocks directly; they go through `repositoryProvider`.
-- Game and health logic lives in `domain/` as **pure, unit-tested functions**. No logic in widgets.
+- Game and health logic lives in `domain/` as **pure, unit-tested functions**.
+- For 2.4, `CalmpostRepository` gains: `startDropSession()`, `watchDrops(sessionId)` (stream of detections), `confirmDrop(id, corrected fields)` → `Advice`, `dismissDrop(id)`.
 
----
+### Screens
 
-## Design system
-
-Everything visual comes from `lib/ui/`. **Never use raw Material widgets with default styling** (`AppBar`, `Card`, `ElevatedButton`, `BottomNavigationBar`, `Chip`).
-
-**Colour tokens** (`ui/tokens.dart`)
-
-| Token | Hex | Use |
-|---|---|---|
-| `paper` | `#F4F2EC` | warm app background |
-| `surface` | `#FFFFFF` | panels |
-| `sunk` | `#ECE9E1` | tracks, wells |
-| `line` | `#E3DFD5` | 1px hairline borders and dividers |
-| `ink` / `ink2` / `muted` / `faint` | `#17201B` / `#46504A` / `#8B918C` / `#BCC0BA` | text hierarchy |
-| `forest` / `forest2` | `#1F3A2E` / `#2B4D3E` | the hero surface, primary buttons, Log button |
-| `onForest` / `onForestMuted` | `#EDEFE6` / `#9DB3A6` | text on forest |
-| `sprout` | `#B9DD7B` | positive accent on forest |
-| `leaf` + `leafSoft` | `#3F8A5F` / `#E3EEE2` | positive on light, "in range" |
-| `amber` + `amberSoft` | `#E39B3A` / `#F6E6CC` | streak, "too dry" |
-| `water` + `waterSoft` | `#4F8FC9` / `#E1ECF6` | moisture, "too wet" |
-| `clay` + `claySoft` | `#C65A3E` / `#F5E0D9` | warnings, avoid, notification badges |
-| `loam` | `#8A5A3B` | the currency |
-
-Rarity colours: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623F` · Legendary `#D9A426`.
-**No purple, no gradients, no glass/blur, no drop shadows.**
-
-- **Type** (`ui/type.dart`): **Fraunces** (soft serif, weights 400/500) for the hero number (84), screen greetings (32), card titles (23) and stats (24). **Manrope** (500–800) for everything else: heading 16, body 14.5, label 13, small 12, caps 11 with 1.2 letter-spacing. Numbers use tabular figures. Fraunces has no `₂`, so never put "CO₂" in a serif style.
-- **Spacing:** 4/8 grid, 20 px side gutter. **Radii:** 10 chips · 16 tiles · 22 panels · 28 hero · pills fully round.
-- **Surfaces:** prefer **open layout over boxes**: sections sit straight on the paper, separated by space and full-width hairlines, with a caps label (`NEXT BEST ACTION`, `STREAK`, `TODAY`). No rounded "bubbly" cards on Home. `Panel` exists for sheets and dense screens only, and should be rare.
-- **Hero = a living illustration, Flora-style.** Each main screen gets at most one animated `CustomPainter` scene as its focal point; everything else stays quiet.
-- **Icons:** Phosphor **Regular** for UI, **Fill** for the active nav tab and small status marks. No emoji anywhere in the UI.
-- **Motion:** `flutter_animate` fade + 4% slide-up on entry, 50 ms stagger, curve `M.ease` (0.2, 0.8, 0.2, 1). Numbers count up. Presses scale to 0.98 with a selection haptic. Nothing bounces or wobbles.
-
-**Components** (`ui/components.dart`): `Pressable`, `Panel`, `PillButton`, `Chip2` (outline chip), `Badge2` (tinted label), `ThinBar` (4 px progress), `CountUp`, `Sparkline` (24 h line + healthy band), `LiveDot`, `LoamCoin`, `SectionTitle`, `Hairline`.
-
-**Before you open a PR, check:**
-- [ ] Only tokens and `ui/` components (no hard-coded colours or sizes)
-- [ ] Empty, loading and error states designed
-- [ ] Real, plain copy (no lorem ipsum, no cutesy voice)
-- [ ] Looks right at 360dp and 412dp wide, and at font scale 1.3 (`flutter test` checks Home)
-- [ ] Runs on a real Android phone
-
----
-
-## App structure
-
-**Bottom nav (5 tabs):** Home · Layers · **Log** (forest pill in the middle) · Social · Profile.
-**Off-tab screens** (opened from buttons, not tabs): **Rewards inbox** (gift button on Home: crates, packets, celebrations), **Greenhouse** (Loam pill on Home: Seed Packet gacha + collection), health breakdown, settings.
+**Bottom nav:** Home · Layers · **Log** (forest pill) · Social · Profile.
+**Off-tab:** Rewards inbox (gift on Home) · Greenhouse (Loam on Home) · **Drop-in sheet + "Something was added" pop-up** (from Home) · health breakdown · settings.
 
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ designed | **HUD** (level ring + title + XP bar · streak · Loam · rewards gift with dot) · **Bin World** (animated circular cross-section, see below) · score + state + one-line status · readings row (top / bottom / air, open columns) · **Next best action** (serif title, why, suggested items as a plain list, "Log something else") · **streak calendar** (this week, expands to the month; runs joined, Lid Lock days) · **Today** quests (claim for XP + Loam). Impact moved to Profile |
-| Layers | to design | per-zone live values, 24 h / 7 d charts with healthy band, what it means |
-| Log | to design | search + camera → verdict (great / careful / avoid), reason, pair-with items, XP. **Demo moment** |
-| Social | to design | weekly league table with promotion/demotion zones, friends, co-op friend quests |
-| Profile | to design | level + title, stats, achievements (with their crate rewards), collection, impact, settings |
-| Rewards inbox | to design | unopened crates and packets, open animation, history of celebrations |
-| Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counter, collection by rarity |
+| **Home** | ✅ | HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state, one-line status · **Drop something in** (📝 planned) · readings row · next best action · streak calendar (week, expands to month) · Today quests |
+| Drop-in | 📝 | "Watching the bin…" sheet with preview + countdown → "Something was added" pop-up (photo + box, fields fill in, edit, Submit / Nothing was added) → verdict |
+| Layers | to design | per-zone values, 24 h / 7 d charts with healthy band and **drop markers**, what it means |
+| Log | to design | search + suggestions → verdict (great / careful / avoid), reason, pair-with, XP. Manual alternative to the camera |
+| Social | to design | weekly league table with promotion/demotion zones, friends, co-op quests |
+| Profile | to design | level, stats, impact, achievements with crate rewards, collection, settings |
+| Rewards inbox | to design | unopened crates and packets, quiet open reveal, celebration history |
+| Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counters, collection by rarity |
 
-**Bin World** (`features/home/bin_world.dart`): a Flora-style circle with a cross-section of the bin. The sky follows the time of day (sun / dusk / moon, stars and fireflies at night). A plant on the horizon grows with the batch, blooms at Thriving and droops when the bin is dry or struggling. The two soil bands are the real top and bottom layers: CO₂ bubbles rise faster when microbes are busy, rain falls when it's too wet, and the soil cracks when it's too dry. Around it, a watch-style bezel of 50 ticks with a forest arc is the health score, with a pulsing marker at the tip. Tap it to open Layers; long-press it for the demo scenario picker. Web preview: `?hour=13` forces the time of day.
+**Bin World** (`features/home/bin_world.dart`): a Flora-style circle showing a cross-section of the bin.
+- The sky follows the time of day: sun, dusk, or moon with stars and fireflies.
+- A plant on the horizon grows with the batch, blooms at Thriving, and droops when the bin is dry or struggling.
+- The two soil bands are the real layers. CO₂ bubbles rise faster when the microbes are busy, rain falls when it's too wet, and the soil cracks when it's too dry.
+- A watch-style bezel with a forest arc shows the health score.
 
-The **Duolingo-style journey path is gone**. Life-cycle stage shows as a line in the hero and on Layers.
-The **mascot is gone**. The bin speaks through plain copy ("The top layer is 76% wet…").
+Tap the circle to open Layers; long-press it for the demo picker. *Planned:* a confirmed drop briefly falls into the top layer as a small scrap.
+
+### Design system
+
+Everything visual comes from `lib/ui/`. **Never use raw Material widgets with default styling.**
+
+| Token | Hex | Use |
+|---|---|---|
+| `paper` | `#F4F2EC` | app background |
+| `surface` / `sunk` / `line` | `#FFFFFF` / `#ECE9E1` / `#E3DFD5` | sheets / tracks / hairlines |
+| `ink` / `ink2` / `muted` / `faint` | `#17201B` / `#46504A` / `#8B918C` / `#BCC0BA` | text hierarchy |
+| `forest` / `forest2` / `onForest` | `#1F3A2E` / `#2B4D3E` / `#EDEFE6` | primary actions, dark surfaces |
+| `sprout` | `#B9DD7B` | positive accent on forest |
+| `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#3F8A5F` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · streak / too dry · moisture / too wet · warnings |
+| `loam` | `#8A5A3B` | currency |
+
+Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623F` · Legendary `#D9A426`. **No purple, gradients, glass or drop shadows.**
+
+- **Type:** **Fraunces** (serif, 400/500) for big numbers and titles; **Manrope** (500–800) for UI. Tabular figures for numbers. Fraunces has no `₂`, so "CO₂" always goes in Manrope.
+- **Layout:** open sections on the paper, separated by space and full-width hairlines, with a caps label. No rounded "bubbly" cards on main screens. `Panel` is for sheets only.
+- **Hero:** at most one animated `CustomPainter` scene per screen.
+- **Icons:** Phosphor Regular; Fill for the active tab and status marks. No emoji.
+- **Motion:** fade + 4% slide-up, 50 ms stagger, curve (0.2, 0.8, 0.2, 1); numbers count up; presses scale to 0.98 with a selection haptic. Nothing bounces.
+- **Components** (`ui/components.dart`): `Pressable`, `Panel`, `PillButton`, `Chip2`, `Badge2`, `ThinBar`, `CountUp`, `Sparkline`, `LiveDot`, `LoamCoin`, `SectionTitle`, `Hairline`.
+
+**PR checklist:** tokens and `ui/` components only · empty / loading / error states · plain copy · 360dp + 412dp + font scale 1.3 · runs on a real Android phone.
 
 ---
 
-## Gamification & economy
+## 8. Game reference
 
-**Bin Health Score (0–100)** is the hero number:
-```
-health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
-```
-- `moisture`: per layer, 100 inside the 40–60% band, falling linearly to 0 at ±25%. Weighted highest because it's our most reliable sensor.
-- `balance`: 7-day greens:browns ≈ 1:2–1:3.
-- State pill (`BinMood`): Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
-
-**Core loop:** open → check health → do the next best action → streak day fills in → quests pay XP + Loam → achievements drop crates → crates and Loam open Seed Packets → collection grows → league rank moves.
-
-### XP, streaks, quests
+### XP, streaks, quests, levels, leagues
 
 | Mechanic | Rule |
 |---|---|
-| XP | followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100 · **log = 0**. Action XP capped at 60/day |
-| Streak | consecutive days with ≥1 care action (open Layers, follow the next action, fix balance). Shown as a calendar on Home; consecutive days join into one amber run |
-| Lid Lock | streak freeze, covers one missed day automatically; hold max 2; 60 Loam (shown as a shield on the calendar) |
-| Daily quests | 3 per day, care-based only: "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
-| Levels | lifetime XP → Lvl 1–50, level n needs 30·n·(n−1) XP; titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
-| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia. Top 7 up, bottom 5 down, Sunday reset. League XP only from care, so a bigger bin can't win |
-| Friends | friends leaderboard, co-op Friend Quests, nudges |
+| XP | followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100 · **add a scrap (manual or camera) = 0**. Action XP capped at 60/day |
+| Streak | consecutive days with ≥ 1 care action (open Layers, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
+| Lid Lock | streak freeze; covers one missed day; hold max 2; 60 Loam |
+| Daily quests | "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
+| Levels | level n needs 30·n·(n−1) XP; titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
+| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia; top 7 up, bottom 5 down; XP only from care |
+| Friends | leaderboard, co-op friend quests, nudges |
+| Impact | kg kept from landfill, CO₂e avoided (0.55 kg per kg), $ fertilizer saved; labelled as estimates; on Profile |
 
-### Currency: Loam
+### Loam (currency)
+**Never sold for real money.**
 
-**Loam** is the one soft currency (coin: `LoamCoin`). **Never sold for real money**, and nothing in the game can be bought with money.
+| Earn | Loam | | Spend | Loam |
+|---|---|---|---|---|
+| Daily quests | 10–25 | | Seed Packet | 100 |
+| Streak milestones 3/7/14/30/100 | 25/50/100/200/500 | | 10 Seed Packets | 900 (one Rare+ guaranteed) |
+| Harvest | 100 | | Lid Lock | 60 |
+| League finish (promoted/safe/demoted) | 150/60/20 | | | |
 
-| Earn | Loam |
-|---|---|
-| Daily quests | 10–25 each |
-| Streak milestones (3 / 7 / 14 / 30 / 100 days) | 25 / 50 / 100 / 200 / 500 |
-| Harvest | 100 |
-| Weekly league finish | promoted 150 · safe 60 · demoted 20 |
-| Crates | see below |
-| Duplicate collectibles | refunded (see gacha) |
-
-| Spend | Loam |
-|---|---|
-| Seed Packet (1 pull) | 100 |
-| 10 Seed Packets | 900 (one Rare+ guaranteed) |
-| Lid Lock | 60 |
-
-### Crates (achievement and milestone rewards)
+### Crates
 
 | Crate | Contains |
 |---|---|
-| **Sprout Crate** | 40–80 Loam + 1 Seed Packet |
-| **Grove Crate** | 120–200 Loam + 3 Seed Packets (one guaranteed Rare or better) |
-| **Canopy Crate** | 300–500 Loam + 5 Seed Packets (one guaranteed Epic or better) |
+| Sprout | 40–80 Loam + 1 Seed Packet |
+| Grove | 120–200 Loam + 3 Seed Packets (one Rare+) |
+| Canopy | 300–500 Loam + 5 Seed Packets (one Epic+) |
 
-Crates and packets land in the **Rewards inbox** (gift button on Home, badge = unopened count). Opening one is a short, quiet reveal: the lid lifts, items fade up one by one, rarity colour on each card, a single soft chime.
+### Achievements (every tier pays a crate)
 
-### Achievements → rewards
-
-Each achievement has three tiers; every tier pays a crate.
-
-| Achievement | Tier goals | Rewards per tier |
+| Achievement | Tiers | Crates |
 |---|---|---|
-| **First Harvest** | 1 harvest | Grove |
-| **Harvester** | 3 / 10 / 25 harvests | Sprout / Grove / Canopy |
-| **Hot Streak** | 7 / 30 / 100-day streak | Sprout / Grove / Canopy |
-| **In the Zone** | 7 / 30 / 90 days with both layers in range | Sprout / Grove / Canopy |
-| **Balanced Diet** | 1 / 4 / 12 balanced weeks (greens:browns in 1:2–1:3) | Sprout / Grove / Canopy |
-| **Good Listener** | 10 / 50 / 200 next-best-actions followed | Sprout / Grove / Canopy |
-| **Landfill Dodger** | 5 / 25 / 100 kg kept from landfill | Sprout / Grove / Canopy |
-| **Quest Keeper** | 25 / 100 / 365 quests claimed | Sprout / Grove / Canopy |
-| **Climber** | 1 / 3 / 5 league promotions | Grove / Grove / Canopy |
-| **Good Neighbour** | 1 / 5 / 20 friend quests completed | Sprout / Grove / Canopy |
-| **Collector** | 10 / 30 / all collectibles | Sprout / Grove / Canopy |
+| First Harvest | 1 harvest | Grove |
+| Harvester | 3 / 10 / 25 harvests | Sprout / Grove / Canopy |
+| Hot Streak | 7 / 30 / 100-day streak | Sprout / Grove / Canopy |
+| In the Zone | 7 / 30 / 90 days both layers in range | Sprout / Grove / Canopy |
+| Balanced Diet | 1 / 4 / 12 balanced weeks | Sprout / Grove / Canopy |
+| Good Listener | 10 / 50 / 200 next actions followed | Sprout / Grove / Canopy |
+| Landfill Dodger | 5 / 25 / 100 kg kept from landfill | Sprout / Grove / Canopy |
+| Quest Keeper | 25 / 100 / 365 quests | Sprout / Grove / Canopy |
+| Sharp Eye | 10 / 50 / 200 camera drops confirmed | Sprout / Grove / Canopy |
+| Climber | 1 / 3 / 5 league promotions | Grove / Grove / Canopy |
+| Good Neighbour | 1 / 5 / 20 friend quests | Sprout / Grove / Canopy |
+| Collector | 10 / 30 / all collectibles | Sprout / Grove / Canopy |
 
-### Gacha: Seed Packets (in the Greenhouse)
-
-A Seed Packet reveals one **collectible**. Collectibles are **cosmetic only**: they never change XP, health or league standing.
-
-| Collectible type | Examples | Where it shows |
-|---|---|---|
-| **Specimens** (plants) | Fern, Tulip, Lavender, Toadstool, Sunflower… up to Ghost Orchid, Golden Pumpkin | Greenhouse collection, profile showcase |
-| **Bin finishes** | Slate, Terracotta, Birch, Moss, Copper | colour of the Home health hero |
-| **Profile frames + titles** | "Night Composter", "Mycelium Mind" | profile and league rows |
+### Seed Packets (gacha, in the Greenhouse)
+Cosmetic only: **specimens** (plants), **bin finishes** (colour of the Bin World bezel), **profile frames and titles**.
 
 | Rarity | Odds | Duplicate refund |
 |---|---|---|
 | Common | 60% | 5 Loam |
-| Uncommon | 25% | 10 Loam |
-| Rare | 11% | 25 Loam |
-| Epic | 3.5% | 60 Loam |
-| Legendary | 0.5% | 150 Loam |
+| Uncommon | 25% | 10 |
+| Rare | 11% | 25 |
+| Epic | 3.5% | 60 |
+| Legendary | 0.5% | 150 |
 
-- **Pity:** an Epic or better is guaranteed within 30 pulls, a Legendary within 80. Both counters show in the Greenhouse.
-- **Odds are always visible** next to the pull button.
-- Seasonal **featured specimen** each month (higher share of the Legendary rate), tied to real composting seasons.
-
-### Other
-
-| Mechanic | Rule |
-|---|---|
-| Impact | kg kept from landfill, kg CO₂e avoided (0.55 kg per kg), $ fertilizer saved; shown on Home and Profile, labelled as estimates |
-| Notifications | plain, state-triggered, **max 2/day**: compost ready (built), streak at risk, crate earned |
-| Celebrations | short full-screen moments for streak milestones, level-ups, crates and harvests; afterwards they live in the Rewards inbox history |
+Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds always shown next to the pull button. A monthly featured specimen is tied to the composting season.
 
 ---
 
-## Mock data & demo scenarios
+## 9. Mock data & demo
 
-`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following the next action visibly raises the health score. Switch scenarios from the hidden demo picker: **long-press the Bin World** on Home.
+- **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
+- **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
+- **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
+- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24` (planned: `?drop=1` fakes a camera detection).
 
-Seed state for the demo: 6-day streak (best 21) that extends to 7 on the first care action, 1 Lid Lock, 240 Loam, 2 unopened crates (Sprout, Grove) + 1 Seed Packet, Level 9.
-
-Verdicts in the app are `great` / `careful` / `avoid`; `careful` covers the backend's `add_with_browns` and `add_with_greens` (the `pairWith` list says which). The rule engine lives in `domain/advice_rules.dart`.
-
-**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`. On a wide window the app renders in a phone-sized frame.
-
-**Demo script:** Home in `tooDry` → next action says "Add fresh scraps" → log banana peel → "great". Switch to `tooWet` → same peel → "careful, add browns first". Open Layers → today's calendar day fills in, quest claimable → claim → Loam ticks up → open a crate in the Rewards inbox → pull a Seed Packet.
-
----
-
-## Backend & Tiger Data (phase 2)
-
-Endpoint shapes mirror `CalmpostRepository` methods, so `ApiRepository` is a mechanical swap.
-
-- **Hypertables:** `readings` (one wide row per ESP32 POST), `add_log`, `advice` (stores the input snapshot as proof of "same scrap, different answer"), `point_events` (XP ledger), `stage_history`
-- **Continuous aggregates:** `readings_15m`, `readings_1d` (charts), `xp_weekly` (powers Leagues)
-- **Hyperfunctions:** `state_agg`/`duration_in` (time in healthy band), `time_weight`, `regr_slope` (CO₂ trend → stage), `time_bucket_gapfill` + `locf`
-- **Policies:** columnstore after 7 days, retention on raw readings
-- **Endpoints:** `POST /ingest` · `GET /bins/{id}/live` · `GET /bins/{id}/trends` · `POST /bins/{id}/logs` · `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice/next` · `GET /bins/{id}/summary` · `GET /users/{id}/game` · `GET /leagues/current` · `GET /quests/today` · `POST /bins/{id}/harvest`
-- **Gemini:** JSON-schema output `{verdict, reason, suggest_add[], suggest_avoid[], balance, stage_top, stage_bottom, bottom_ready, tip}`. Meat, dairy and oil are **always** `avoid` via rules, and rules also answer if Gemini fails. Full feature list in *Gemini features*.
-- **Optional:** a Tiger fork as a "demo" database seeded with scenarios.
-- **Secrets:** go in `backend/.env` only, which is git-ignored. **Never put keys in the Flutter app.**
+**Demo script**
+1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
+2. Tap **Drop something in** and drop a banana peel under the webcam. The pop-up appears with the photo and box, filling in "Banana peel · Green · Handful".
+3. If it's wrong, correct it live, then Submit. The verdict is **great**, and +15 XP because it was the next action.
+4. Switch to `tooWet` and drop another peel. Now it's **careful, add browns first**.
+5. Open Layers: the drop markers are on the chart, and today's streak day fills in.
+6. Claim a quest → Loam ticks up → open a crate → pull a Seed Packet.
 
 ---
 
-## Gemini features
-
-Gemini is the bin's voice, not its judgement. **Rules decide, Gemini explains.** The deterministic logic in `domain/` (mirrored in the backend) works out *what the bin needs*; Gemini turns that into friendly, specific advice and summaries. If Gemini is slow, fails, or returns something that disagrees with the rules, the rule-based answer is shown instead and nobody notices.
-
-**Every call gets the same context snapshot:**
-```
-{ live: {moisture_top, moisture_bottom, temp_top, temp_bottom, co2_ppm, co2_slope_24h},
-  balance_7d: {greens_kg, browns_kg, ratio},
-  stage: {top, bottom, bottom_ready},
-  health: {score, breakdown},
-  recent_logs: [last 10 adds],
-  need: <computed by rules, see below> }
-```
-The snapshot is stored with the response in `advice` so we can always show *why* the app said something.
-
-### 1. Scrap check ("Can I add this?") — demo moment
-- Input: scrap name (typed) **or** a photo from the Log camera (Gemini vision identifies it, the user confirms).
-- Output: `{verdict: add | add_with_browns | add_with_greens | avoid, reason, suggest_add[], suggest_avoid[], tip}`.
-- The verdict depends on the current snapshot, so the same banana peel gets a different answer in `too_dry` vs `too_wet`.
-- Hard rules win: meat, dairy, oil, pet waste, glossy/plastic-coated paper → always `avoid`.
-
-### 2. "What should I add?" (balance advisor)
-Proposes what the bin needs next, including **whether it needs more browns or more greens**.
-- Rules compute `need`, one of:
-
-  | `need` | When (any of) | Example advice |
-  |---|---|---|
-  | `browns` | moisture > 60%, ratio greener than 1:2, CO₂ high + temp low (going anaerobic) | "I'm a bit soggy. Tear up some cardboard or add dry leaves." |
-  | `greens` | moisture < 40% *and* ratio browner than 1:3, temp dropping in the Active stage | "I've got plenty of dry stuff. Some veggie peels would wake me up." |
-  | `water` | moisture < 40% with balance already fine | "Just a splash of water, no food needed." |
-  | `mix` | CO₂ rising with flat temp | "Give me a stir to let some air in." |
-  | `nothing` | everything in range, or bottom layer is curing / ready | "I'm happy! Nothing to add today." |
-
-- Gemini output: `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence: low | medium | high}`. `amount` is plain-language ("a handful", "two egg cartons"), never grams.
-- `suggest_add` prefers items the user has logged before, so advice fits their kitchen.
-- **`nothing` is a valid, good answer.** Never suggest food just to have a suggestion (key idea 1).
-- Shown in the "Next best action" card on Home. Following it earns the +15 XP.
-
-### 3. Summaries
-All summaries are short (≤ 3 sentences or ≤ 4 bullets), in a calm, plain voice, and only reference numbers from the snapshot. No invented stats.
-
-| Summary | Where | What it covers |
-|---|---|---|
-| **Daily note** | Home, in the health hero status line | Today's state in one or two lines + the one thing to do |
-| **Score explainer** | Health score breakdown sheet | "Why is my score 72?": the biggest drag on the score and how to fix it |
-| **Layer trend** | Layer detail | What moisture / temp / CO₂ did this week, in plain words |
-| **Weekly recap** | Sunday, alongside the league reset | Health trend, greens:browns balance, care actions, XP, streak; one win and one thing to try next week |
-| **Batch story** | Harvest celebration | How the batch went from Started to Ready: days per stage, kg diverted, best week. Shareable card |
-
-Output: `{title, body, bullets[], mood}`. `mood` must match the rule-computed mood; if it doesn't, fall back.
-
-### Guardrails
-- **Honest:** stage and "ready" are described as guides ("looks ready", "seems to be curing"), never certainties. Low-confidence answers say so.
-- **Validate everything:** responses must match the JSON schema, `verdict`/`need` must match the rules, and hard-avoid items can never be in `suggest_add`. Otherwise use the rule fallback.
-- **Fallback templates** live in `domain/advice_templates.dart` (and the Python mirror), so the app works fully offline and on mock data.
-- **Cost / speed:** cache by `(bin, snapshot hash, feature)`; daily note and recap are generated once per day/week, not per app open. Target < 2 s, show the brand shimmer while waiting.
-- **Endpoints:** `POST /bins/{id}/advice/check` (scrap check) · `GET /bins/{id}/advice/next` (balance advisor) · `GET /bins/{id}/summary?kind=daily|score|layer|weekly|batch`. `CalmpostRepository` gets matching methods so `MockRepository` can return canned responses for each scenario.
-
----
-
-## Commands
+## 10. Commands
 
 ```bash
 # app
 cd app
 flutter pub get
-flutter analyze                                            # must be clean
-flutter test                                               # rules + full-flow + small-screen overflow tests
-flutter run                     # debug on connected Android phone
-flutter run --profile           # check for jank
-flutter run -d chrome           # quick design review in the browser (see deep links above)
-flutter build apk --release     # APK to sideload for the demo
+flutter analyze                 # must be clean
+flutter test                    # rules + Home flows + small-screen overflow
+flutter run                     # Android phone
+flutter run -d chrome           # browser preview (deep links above)
+flutter build apk --release     # APK for the demo
 
-# backend (phase 2)
+# backend
 cd backend && uvicorn app.main:app --reload
 python scripts/simulator.py --scenario too_wet
+
+# vision (laptop with webcam)
+cd vision && python calibrate.py   # once: draw the bin-opening ROI
+cd vision && python main.py
 ```
 
----
+### Build order
+1. ✅ Design system + **Home** (Bin World, HUD, open layout).
+2. **Drop-in UI on mocks** (sheet, pop-up, edit form) + **Log** tab + **Layers** tab.
+3. **Backend + Tiger Data** (ingest, readings, logs, drops, advice) and **vision service** (webcam + motion + Gemini).
+4. Rewards inbox + crates, Greenhouse (Seed Packets).
+5. Social and Profile.
+6. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
 
-## Build order
+### Working together
+- **`main` must always build and run.** Pull before you push; run `flutter analyze && flutter test` first.
+- Small commits with clear messages: `feat(drop): confirm pop-up`, `fix(vision): ROI scaling`.
+- One owner per folder (`app/features/x`, `backend/`, `vision/`, `firmware/`). Announce before touching `ui/` or `domain/`.
+- If you change a token, rule, endpoint or mechanic, **update this file in the same commit**.
 
-1. **Redesign v2 (sleek):** ✅ design system + **Home** (this commit). Other tabs show a "Designing next" placeholder.
-2. **Log** tab (demo moment) and **Layers** tab.
-3. **Rewards inbox** + crate opening, **Greenhouse** (Seed Packets, collection).
-4. **Social** (leagues, friends) and **Profile** (achievements with crate rewards, collection showcase).
-5. **Polish:** real phone testing, motion tuning, reward sounds.
-6. **Phase 2:** backend + Tiger Data + Gemini + firmware, then write `ApiRepository` and swap it in `state/providers.dart` (one line).
-
----
-
-## Working together
-
-- **`main` must always build and run.** Pull before you push, and run `flutter analyze && flutter test` first.
-- Use small commits with clear messages: `feat(home): health ring`, `fix(log): verdict sheet overflow`.
-- One owner per feature folder to avoid merge conflicts. Announce in the team chat before touching `ui/` or `domain/`, because everyone depends on them.
-- If you change a design token, rule or mechanic, **update this file in the same commit**.
-
-**Owners** (fill in names): Design system — ___ · Home/Log — ___ · Game (quests, streak, leagues) — ___ · Backend/Tiger/Gemini — ___ · Firmware/hardware — ___
+**Owners** (fill in names): Design system & app — ___ · Backend & Tiger — ___ · Vision & Gemini — ___ · Firmware & hardware — ___

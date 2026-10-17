@@ -48,7 +48,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 ### 2.1 Live sensing & Bin Health Score
 - **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
-- **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Today there is **one** probe, in the top layer; the bottom layer shows as *not measured*, never 0, until a second probe is added. The score comes from `domain/health_score.dart`:
+- **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Firmware supports two sensor pairs: A0/D2 retains `moisture_raw` / `probe_temp_c`; A1/D3 adds `moisture_raw_2` / `probe_temp_c_2`. Each externally powered DS18B20 data line needs its own 4.7 kΩ pull-up to 5 V (unless its module already includes one). The bridge/backend currently ingest only the original pair, so the bottom layer remains *not measured*, never 0, until the second pair is integrated. The score comes from `domain/health_score.dart`:
   ```
   health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
   ```
@@ -279,7 +279,7 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 | **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions (sponsor track) |
 | **Vision service** | **Python + OpenCV + `google-genai`** | runs on the laptop with the webcam; later the in-lid camera |
 | **AI** | **Gemini API** (`google-genai`), JSON-schema structured output | rule fallback always on |
-| **Hardware** | Arduino board, **1×** capacitive moisture + temperature probe (top layer), 1× SCD40/41 air sensor (CO₂, temp, humidity); laptop webcam | prints JSON over USB serial; `backend/scripts/serial_bridge.py` POSTs it. The bottom layer is `measured: false` until a second probe exists |
+| **Hardware** | Arduino UNO R4, **2×** analog capacitive moisture sensors + **2×** DS18B20 temperature probes, 1× DFRobot STCC4 air module (CO₂, temp, humidity); laptop webcam | firmware prints both pairs as JSON over USB serial; `backend/scripts/serial_bridge.py` currently POSTs only the original pair. The bottom layer stays `measured: false` until the second pair is integrated |
 
 ---
 

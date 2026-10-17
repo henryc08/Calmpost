@@ -1,8 +1,17 @@
-"""Motion trigger inside the bin-opening ROI (MOG2 background subtraction).
+"""Motion trigger inside the bin-opening ROI.
 
 Tuning from CLAUDE.md section 6: motion must cover > 2% of the ROI for at least
 150 ms to start a drop, and the drop ends after 0.8 s of stillness. The
 first 0.5 s after arming is ignored (the user's hand leaving the button).
+
+Two different measurements, because "something arrived" and "nothing is
+moving" are different questions:
+  - fraction(): MOG2 background subtraction. Something is in the ROI that was
+    not part of the scene. Blind to gradual lighting drift.
+  - change():   difference from the previous frame. Nothing is moving now.
+
+Judging stillness from the background fraction does not work: the model is
+frozen during a drop, so an item at rest stays 'foreground' indefinitely.
 """
 
 import json
@@ -15,6 +24,10 @@ import numpy as np
 START_FRACTION = 0.02
 START_HOLD_S = 0.15
 STILL_S = 0.8
+# Frame-to-frame change below this counts as still. Lower than
+# START_FRACTION: arrival is measured against the background (a big, lasting
+# difference), stillness against the previous frame (which goes to ~0).
+STILL_FRACTION = 0.004
 ARM_GRACE_S = 0.5
 WORK_WIDTH = 320  # motion runs on a small copy: cheap, and less sensor noise
 
@@ -63,6 +76,7 @@ class MotionTrigger:
     start_fraction: float = START_FRACTION
     start_hold_s: float = START_HOLD_S
     still_s: float = STILL_S
+    still_fraction: float = STILL_FRACTION
     grace_s: float = ARM_GRACE_S
 
     def __post_init__(self):
@@ -74,30 +88,69 @@ class MotionTrigger:
         self.active = False
         self._above_since: float | None = None
         self._still_since: float | None = None
+        self._prev_gray: np.ndarray | None = None
         self.peak_fraction = 0.0
         self.last_fraction = 0.0
+        self.last_change = 0.0
 
-    def fraction(self, frame: np.ndarray, learn: bool = True) -> float:
+    def _gray(self, frame: np.ndarray) -> np.ndarray:
         roi = self.roi.crop(frame)
         scale = WORK_WIDTH / max(roi.shape[1], 1)
         small = cv2.resize(roi, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else roi
-        gray = cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+        return cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+
+    def fraction(self, frame: np.ndarray, learn: bool = True) -> float:
+        """Share of ROI pixels that differ from the learned background.
+
+        Good for deciding something has ARRIVED, and deliberately blind to
+        gradual lighting drift. Not usable for deciding something has
+        STOPPED: see change() for why.
+        """
+        gray = self._gray(frame)
         # Freeze the background model while something is moving, so a slow
         # drop isn't learned into the background halfway through.
         mask = self._bg.apply(gray, learningRate=-1 if learn else 0)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._kernel)
         return float(np.count_nonzero(mask)) / mask.size
 
+    def change(self, frame: np.ndarray) -> float:
+        """Share of ROI pixels that differ from the PREVIOUS frame.
+
+        Stillness has to be measured frame-to-frame, not against the
+        background. While a drop is active the background model is frozen, so
+        an item resting in the ROI stays 'foreground' indefinitely and the
+        background fraction never falls back under the threshold -- the end
+        event would never fire and watcher.py's MAX_DROP_S timeout would have
+        to rescue every drop. That only looked fine with a whole-frame ROI,
+        where a small item sits just under the 2% threshold by luck; with the
+        tight ROI calibrate.py produces, the item is a much larger share of
+        the ROI and nothing ever ends.
+
+        Frame differencing goes to ~0 the moment the item comes to rest,
+        which is the actual question being asked.
+        """
+        gray = self._gray(frame)
+        prev, self._prev_gray = self._prev_gray, gray
+        if prev is None or prev.shape != gray.shape:
+            return 0.0
+        diff = cv2.absdiff(gray, prev)
+        # 12 grey levels: above sensor noise, below a real moving object.
+        moved = cv2.threshold(diff, 12, 255, cv2.THRESH_BINARY)[1]
+        moved = cv2.morphologyEx(moved, cv2.MORPH_OPEN, self._kernel)
+        return float(np.count_nonzero(moved)) / moved.size
+
     def update(self, frame: np.ndarray, t: float) -> Event | None:
         """t: seconds since the session was armed."""
         f = self.fraction(frame, learn=not self.active)
+        c = self.change(frame)
         self.last_fraction = f
+        self.last_change = c
         if t < self.grace_s:
             return None  # still learning the background; hand leaving the button
-        moving = f > self.start_fraction
 
         if not self.active:
-            if moving:
+            # Arrival: something is in the ROI that was not in the background.
+            if f > self.start_fraction:
                 self._above_since = t if self._above_since is None else self._above_since
                 if t - self._above_since >= self.start_hold_s:
                     self.active = True
@@ -109,7 +162,9 @@ class MotionTrigger:
             return None
 
         self.peak_fraction = max(self.peak_fraction, f)
-        if moving:
+        # Stillness: nothing is MOVING any more, which is not the same as
+        # nothing being there. Measured frame-to-frame (see change()).
+        if c > self.still_fraction:
             self._still_since = None
         else:
             self._still_since = t if self._still_since is None else self._still_since

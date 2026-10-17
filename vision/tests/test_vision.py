@@ -40,6 +40,38 @@ def test_drop_gives_one_start_then_end():
     assert landed + 0.8 - 0.1 <= end.t < landed + 0.8 + 0.4   # then 0.8 s of stillness
 
 
+def test_drop_ends_promptly_with_a_tight_roi():
+    """The ROI calibrate.py produces is a tight box over the bin opening, so
+    the item is a large share of it -- not the sliver it is in a whole frame.
+
+    Stillness therefore cannot be judged from the background-subtraction
+    fraction: the background model is frozen while a drop is active, so an
+    item resting in the ROI stays 'foreground' forever and the fraction never
+    falls back under START_FRACTION. Before stillness was measured
+    frame-to-frame, this produced no end event at all and every drop fell
+    back on watcher.py's MAX_DROP_S timeout -- a 15 s pause per drop.
+    """
+    landed = 2.0 + 0.6  # drop_at + fall_s
+
+    for roi in (Roi(0, 0, 1, 1),                 # whole frame
+                Roi(0.35, 0.35, 0.40, 0.40),     # tight, as calibrated
+                Roi(0.40, 0.45, 0.25, 0.30)):    # tighter still
+        trig, bg = MotionTrigger(roi=roi), background()
+        start = end = None
+        for i in range(int(20.0 * 30)):
+            t = i / 30
+            ev = trig.update(frame_at(t, bg, drop_at=2.0), t)
+            if ev and ev.kind == "start" and start is None:
+                start = t
+            if ev and ev.kind == "end":
+                end = t
+                break                            # as watcher.py does
+        assert start is not None, f"no start for {roi}"
+        assert end is not None, f"no end for {roi}: every drop would wait MAX_DROP_S"
+        # Settles about STILL_S after the item lands, whatever the ROI size.
+        assert 0.7 <= end - landed <= 1.6, f"end {end - landed:.2f}s after landing for {roi}"
+
+
 def test_grace_period_ignores_early_motion():
     trig, bg = MotionTrigger(), background()
     other = np.zeros_like(bg)

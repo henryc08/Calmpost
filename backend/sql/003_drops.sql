@@ -1,4 +1,4 @@
--- Camera drop-in (AGENT.md 2.4): sessions the app arms, detections the
+-- Camera drop-in (AGENTS.md 2.4): sessions the app arms, detections the
 -- vision service reports, and the camera-accuracy rollup. Confirmed drops
 -- become add_log rows with source = 'camera' and a drop_id (001).
 -- Idempotent: runs on every boot.

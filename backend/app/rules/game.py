@@ -1,7 +1,7 @@
 """Game and economy rules. No I/O.
 
 Mirrors app/lib/domain/xp_rules.dart and app/lib/state/game.dart (and
-AGENT.md section 8). The core rule: care earns XP and Loam; volume never
+AGENTS.md section 8). The core rule: care earns XP and Loam; volume never
 does. Logging a scrap is worth ZERO.
 """
 

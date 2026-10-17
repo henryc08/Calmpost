@@ -366,7 +366,7 @@ async def trends(
 async def add_log_entry(bin_id: str, body: LogCreate) -> LogEntry:
     """Record an add -- or a skip.
 
-    XP rules (AGENT.md): a plain log is worth ZERO. Following a suggestion
+    XP rules (AGENTS.md): a plain log is worth ZERO. Following a suggestion
     pays 15; trusting an avoid verdict and skipping the item pays 5. Paying
     per scrap logged would reward wasting more food, which is the one thing
     the game must never do.

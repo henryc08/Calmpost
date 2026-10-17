@@ -1,6 +1,6 @@
 # Calmpost app
 
-The Flutter (Android-first) app for Calmpost. The repo-root `AGENT.md` covers the design system, game rules and architecture.
+The Flutter (Android-first) app for Calmpost. The repo-root `AGENTS.md` covers the design system, game rules and architecture.
 
 ```bash
 flutter pub get

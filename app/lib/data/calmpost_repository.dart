@@ -3,7 +3,7 @@ import '../domain/models.dart';
 /// Everything the app needs from the outside world. Screens only ever talk to
 /// this interface: MockRepository (demo scenarios) or ApiRepository (the real
 /// bin, through FastAPI + Tiger Data). Method shapes mirror the backend
-/// endpoints in AGENT.md section 5.
+/// endpoints in AGENTS.md section 5.
 abstract class CalmpostRepository {
   /// GET /bins/{id}/live, polled.
   Stream<BinSnapshot> watchBin();

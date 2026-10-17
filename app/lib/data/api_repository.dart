@@ -116,7 +116,7 @@ class ApiRepository implements CalmpostRepository {
   @override
   FoodItem? food(String id) => foodById[id];
 
-  /// Replaced by the camera drop-in (AGENT.md 2.4), which goes through the
+  /// Replaced by the camera drop-in (AGENTS.md 2.4), which goes through the
   /// backend's /drops endpoints.
   @override
   Future<FoodItem> identifyPhoto() => Future.error(UnsupportedError('Photo logging is handled by the camera drop-in'));

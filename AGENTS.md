@@ -280,7 +280,8 @@ vision/
 
 ```
 calmpost/
-  AGENT.md
+  AGENTS.md                 # this file (CLAUDE.md just imports it for Claude Code)
+  CLAUDE.md
   app/                      # Flutter app
     lib/
       main.dart             # theme, web phone frame

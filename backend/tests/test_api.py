@@ -246,7 +246,7 @@ def test_economy_rules_endpoint(c):
 
 def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
     """Gemini once called a banana peel 'avoid' because the layer was curing.
-    For a catalogue item the rules' verdict stands (AGENT.md key idea 5)."""
+    For a catalogue item the rules' verdict stands (AGENTS.md key idea 5)."""
     from app.config import get_settings
     from app.services import advisor
 

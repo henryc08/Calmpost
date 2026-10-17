@@ -5,7 +5,7 @@ import base64
 import cv2
 import numpy as np
 
-MAX_SIDE = 1024      # what Gemini gets (AGENT.md: <= 1024 px)
+MAX_SIDE = 1024      # what Gemini gets (AGENTS.md: <= 1024 px)
 THUMB_SIDE = 320     # what the app's pop-up shows
 
 

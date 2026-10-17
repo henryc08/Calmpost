@@ -83,6 +83,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       hero: _SearchField(controller: _search, onChanged: (q) => setState(() => _query = q)),
       children: [
         PillButton(label: 'Compost inventory', icon: PhosphorIconsRegular.leaf, onTap: () => Routes.inventory(context)),
+        const SizedBox(height: S.x3),
+        PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),
         const SectionBreak(),
         if (_query.isEmpty && suggestion != null && suggestion.add.isNotEmpty) ...[
           const SectionLabel('RECOMMENDED NOW', trailing: PinkPill('+15 XP each')),

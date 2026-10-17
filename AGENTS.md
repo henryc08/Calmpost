@@ -210,7 +210,9 @@ exceptions and tracebacks must not enter drop history, responses, or logs.
 
 ---
 
-### 2.8 Trunc: the compost assistant ✅ *backend + app data layer; chat UI open*
+### 2.8 Trunc: the compost assistant ✅ *backend + app data layer + chat UI*
+
+Open **Ask Trunc** from Home or Log. The paper-and-brand-band conversation includes a keyboard-aware composer, waiting indicator, retry for transport failures, and clear-conversation action. Fallback and off-topic replies render normally, with the actual reading timestamp, recent-add count and photo count underneath. Recent photos are opt-in. Conversation history is in app memory and resets with repository/account/bin changes; only the latest ten completed exchanges are sent, excluding the new question. Late replies from an old account are discarded.
 
 Trunc answers free-text composting questions. Everything else in the app takes
 an item name and returns a fixed verdict shape, so there was nowhere to ask

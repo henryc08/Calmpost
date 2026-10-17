@@ -7,9 +7,11 @@ import '../features/social/social_screen.dart';
 import '../features/levels/level_map.dart';
 import '../features/greenhouse/collectible_details.dart';
 import '../data/collectibles.dart';
+import '../features/trunc/trunc_screen.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  static Future<void> trunc(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TruncScreen()));
   static Future<void> levels(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LevelMapScreen()));
   static Future<void> seed(BuildContext context, String id) => showCollectibleDetails(context, collectibleById[id]!);
   static Future<void> inventory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const InventoryScreen()));

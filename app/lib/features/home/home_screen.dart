@@ -119,6 +119,8 @@ class HomeScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const DailyTrack(),
+                const SizedBox(height: S.x3),
+                PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),
                 const SectionBreak(),
                 if (suggestion != null) ...[
                   WhatToAdd(

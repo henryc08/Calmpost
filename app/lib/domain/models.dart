@@ -173,18 +173,31 @@ class GardenPlant {
 }
 
 class Achievement {
-  const Achievement({required this.id, required this.title, required this.description, required this.icon, required this.progress, required this.goals});
+  const Achievement({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.progress,
+    required this.goals,
+    required this.rewards,
+  });
   final String id;
   final String title;
   final String description;
   final IconData icon;
   final double progress;
 
-  /// Thresholds for bronze, silver, gold.
+  /// Thresholds for each tier.
   final List<double> goals;
 
+  /// Crate paid out at each tier (same length as [goals]).
+  final List<CrateTier> rewards;
+
   int get tier => goals.where((g) => progress >= g).length;
-  double get nextGoal => tier >= goals.length ? goals.last : goals[tier];
+  bool get maxed => tier >= goals.length;
+  double get nextGoal => maxed ? goals.last : goals[tier];
+  CrateTier get nextReward => rewards[maxed ? rewards.length - 1 : tier];
 }
 
 class LogEntry {

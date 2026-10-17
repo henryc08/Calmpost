@@ -67,3 +67,6 @@ final trendProvider = FutureProvider.family<List<TrendPoint>, (Zone, Metric)>((r
 enum AppTab { home, layers, log, social, profile }
 
 final tabProvider = StateProvider<AppTab>((ref) => AppTab.home);
+
+/// An item another screen wants the Log tab to check (e.g. tapped on Home).
+final logIntentProvider = StateProvider<FoodItem?>((ref) => null);

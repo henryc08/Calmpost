@@ -12,11 +12,12 @@ import '../../domain/models.dart';
 import '../../domain/xp_rules.dart';
 import '../../state/game.dart';
 import '../../state/providers.dart';
+import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'bin_world.dart';
-import 'next_action.dart';
+import 'what_to_add.dart';
 import 'readings_row.dart';
 import 'streak_calendar.dart';
 import 'today_quests.dart';
@@ -53,7 +54,7 @@ class HomeScreen extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: S.x8),
         children: [
           // The brand band: HUD, the Bin World and the score on Calmpost green.
-          _BrandBand(
+          BrandBand(
             child: Padding(
               padding: EdgeInsets.fromLTRB(S.gutter, top + S.x3, S.gutter, 0),
               child: Column(
@@ -76,24 +77,27 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(S.gutter, S.x2, S.gutter, 0),
+            padding: const EdgeInsets.fromLTRB(S.gutter, S.x4, S.gutter, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
-                const SizedBox(height: S.x6),
-                const Hairline(),
-                const SizedBox(height: S.x6),
                 if (suggestion != null) ...[
-                  NextAction(suggestion: suggestion, ready: s.bottomStage == Stage.ready, onLog: (_) => goTo(AppTab.log)),
-                  const SizedBox(height: S.x6),
-                  const Hairline(),
-                  const SizedBox(height: S.x6),
+                  WhatToAdd(
+                    suggestion: suggestion,
+                    snapshot: s,
+                    onPick: (f) {
+                      ref.read(logIntentProvider.notifier).state = f;
+                      goTo(AppTab.log);
+                    },
+                  ),
+                  const SectionBreak(),
                 ],
+                const SectionLabel('LIVE READINGS'),
+                const SizedBox(height: S.x3),
+                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
+                const SectionBreak(),
                 StreakCalendar(game: game),
-                const SizedBox(height: S.x6),
-                const Hairline(),
-                const SizedBox(height: S.x6),
+                const SectionBreak(),
                 const TodayQuests(),
               ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
             ),
@@ -102,50 +106,6 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// Full-bleed green band with a soft two-layer hill along the bottom edge.
-class _BrandBand extends StatelessWidget {
-  const _BrandBand({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: const _BandPainter(),
-      child: Padding(padding: const EdgeInsets.only(bottom: 54), child: child),
-    );
-  }
-}
-
-class _BandPainter extends CustomPainter {
-  const _BandPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    // Back hill, a shade deeper, peeks out below the front one.
-    final back = Path()
-      ..moveTo(0, 0)
-      ..lineTo(w, 0)
-      ..lineTo(w, h - 30)
-      ..quadraticBezierTo(w * 0.78, h - 2, w * 0.52, h - 14)
-      ..quadraticBezierTo(w * 0.22, h - 28, 0, h - 6)
-      ..close();
-    canvas.drawPath(back, Paint()..color = C.brandDeep);
-    final front = Path()
-      ..moveTo(0, 0)
-      ..lineTo(w, 0)
-      ..lineTo(w, h - 40)
-      ..quadraticBezierTo(w * 0.7, h - 8, w * 0.38, h - 26)
-      ..quadraticBezierTo(w * 0.15, h - 38, 0, h - 22)
-      ..close();
-    canvas.drawPath(front, Paint()..color = C.brand);
-  }
-
-  @override
-  bool shouldRepaint(_BandPainter old) => false;
 }
 
 /// Game-style HUD: level + XP on the left, streak, Loam and rewards on the right.

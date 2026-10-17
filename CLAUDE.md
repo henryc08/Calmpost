@@ -37,11 +37,11 @@ Each feature lists what the user sees, how it works, and its status.
 | # | Feature | Status |
 |---|---|---|
 | 2.1 | Live sensing & Bin Health Score | ✅ app (mock data) · ⏳ firmware + backend |
-| 2.2 | Next best action (what the bin needs) | ✅ app (rules) · ⏳ Gemini wording |
-| 2.3 | Scrap check ("Can I add this?") | ✅ rules · ⏳ Log tab UI · ⏳ Gemini |
+| 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
+| 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | 📝 planned (this doc), not built |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
-| 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home + rules · ⏳ other screens |
+| 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile + rules · ⏳ Rewards inbox, Greenhouse |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
 
 ### 2.1 Live sensing & Bin Health Score
@@ -52,8 +52,8 @@ Each feature lists what the user sees, how it works, and its status.
   ```
   `moisture` is per layer: 100 inside 40–60%, falling to 0 at ±25%. `balance` is 7-day greens:browns ≈ 1:2–1:3. State: Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
 
-### 2.2 Next best action
-- **Sees:** "Next best action" on Home: a title ("Add something dry"), one sentence why, 2–3 suggested items, +15 XP for following it.
+### 2.2 Next best action → "What to add"
+- **Sees:** **What to add**, the main section on Home right under the band: a headline ("Add something dry"), one sentence why, three recommended items shown as tappable circles with what each will do ("Soaks up water", "Adds nitrogen"), what to hold off on, and +15 XP for following it. Tapping an item opens its verdict in Log.
 - **How:** rules compute `need` ∈ `browns | greens | water | mix | nothing` from moisture, balance, CO₂ and temperature (table in §3). Gemini only words it. **`nothing` is a good answer**; never suggest food just to have a suggestion.
 
 ### 2.3 Scrap check ("Can I add this?")
@@ -261,12 +261,16 @@ calmpost/
     lib/
       main.dart             # theme, web phone frame
       app/                  # shell (5-tab nav + event loop), toast + demo picker + ComingNext, notifications
-      ui/                   # DESIGN SYSTEM: tokens.dart, type.dart, theme.dart, components.dart
+      ui/                   # DESIGN SYSTEM: tokens, type, theme, components, brand (BrandPage/band, segments, PinkPill, Avatar), backdrop
       domain/               # pure Dart: models, health_score, xp_rules, advice_rules
       data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), food_catalog
       state/                # Riverpod: providers (bin, health, trends, tab), game (XP/streak/quests/economy), celebrations
-      features/home/        # ✅ bin_world, home_screen (HUD + score), readings_row, next_action, streak_calendar, today_quests
-      features/<…>/         # layers/ log/ drop/ social/ profile/ rewards/ greenhouse/ (to build)
+      features/home/        # ✅ bin_world, home_screen (band + HUD + score), what_to_add, readings_row, streak_calendar, today_quests
+      features/layers/      # ✅ layers_screen (zone switcher, chart with add markers, stats, life cycle)
+      features/log/         # ✅ log_screen (search, recommended, lists), verdict_sheet
+      features/social/      # ✅ social_screen (league table, ladder, friends, friend quest)
+      features/profile/     # ✅ profile_screen (stats, rewards waiting, impact, achievements, collection, settings)
+      features/<…>/         # drop/ rewards/ greenhouse/ (to build)
     assets/                 # fonts/, sfx/
     test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow, real fonts)
   backend/                  # FastAPI + SQL migrations
@@ -285,14 +289,16 @@ calmpost/
 **Bottom nav:** Home · Layers · **Log** (forest pill) · Social · Profile.
 **Off-tab:** Rewards inbox (gift on Home) · Greenhouse (Loam on Home) · **Drop-in sheet + "Something was added" pop-up** (from Home) · health breakdown · settings.
 
+Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBand`): the green header with a two-layer hill edge, a serif title, and a hero element in white on the green. Below it, open sections on the paper separated by `SectionBreak` hairlines with caps `SectionLabel`s. XP and rewards use `PinkPill`.
+
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ | HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state, one-line status · **Drop something in** (📝 planned) · readings row · next best action · streak calendar (week, expands to month) · Today quests |
-| Drop-in | 📝 | "Watching the bin…" sheet with preview + countdown → "Something was added" pop-up (photo + box, fields fill in, edit, Submit / Nothing was added) → verdict |
-| Layers | to design | per-zone values, 24 h / 7 d charts with healthy band and **drop markers**, what it means |
-| Log | to design | search + suggestions → verdict (great / careful / avoid), reason, pair-with, XP. Manual alternative to the camera |
-| Social | to design | weekly league table with promotion/demotion zones, friends, co-op quests |
-| Profile | to design | level, stats, impact, achievements with crate rewards, collection, settings |
+| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, one-line status. Then **What to add** (the main section: headline + why, three recommended items as tappable circles with what each will do, "Hold off on", "Log something else"; tapping an item opens its verdict in Log) · Live readings · Streak calendar · Today quests. *Planned:* **Drop something in** |
+| **Layers** | ✅ | Band: Top / Bottom / Air switcher, big live value + state pill. Then moisture/temperature toggle, 24 h chart with healthy band and dashed pink **add markers**, Now / Avg / Low / High, what it means, life-cycle line (Active → Ready), recent adds |
+| **Log** | ✅ | Band: search field + camera button (camera drop-in is planned). Then Recommended now (tips), Greens / Browns / Keep out lists → **verdict sheet**: Good to add / Add with care / Keep it out, headline, reason, pair-it-with (tap to check that instead), XP note, Add it / Keep it out. **Demo moment** |
+| **Social** | ✅ | Band: league name, reset countdown, your rank, XP this week, "XP to go" or Promotion zone, six-tier ladder. Then This week (table with promotion/demotion zones, your row marked in pink) / Friends (co-op friend quest, friends list with Nudge) |
+| **Profile** | ✅ | Band: avatar, level + title, XP bar, streak / total XP / harvests / Loam. Then rewards waiting (crates + packets, Open), impact, achievements (tier dots, progress, next crate), collection by rarity, settings |
+| Drop-in | 📝 | "Watching the bin…" sheet with preview + countdown → "Something was added" pop-up → verdict |
 | Rewards inbox | to design | unopened crates and packets, quiet open reveal, celebration history |
 | Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counters, collection by rarity |
 
@@ -403,7 +409,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 - **Scenarios** (`MockRepository`): `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. The mock bin reacts to what you log (browns dry the top layer over ~10 s; wet greens add water). Switch scenarios by **long-pressing the Bin World**.
 - **Seed state:** 6-day streak (best 21) that becomes 7 on the first care action, 1 Lid Lock, 240 Loam, 2 crates + 1 Seed Packet, Level 9.
 - **Verdicts:** the app's `great` / `careful` / `avoid`; `careful` covers `add_with_browns` and `add_with_greens` (the `pairWith` list says which).
-- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24` (planned: `?drop=1` fakes a camera detection).
+- **Web preview links:** `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`, `?hour=0-24`, `?tab=2&item=banana_peel` (opens a verdict) (planned: `?drop=1` fakes a camera detection).
 
 **Demo script**
 1. Home in `tooDry`. The plant droops, and the next action says "Add fresh scraps".
@@ -437,12 +443,11 @@ cd vision && python main.py
 ```
 
 ### Build order
-1. ✅ Design system + **Home** (Bin World, HUD, open layout).
-2. **Drop-in UI on mocks** (sheet, pop-up, edit form) + **Log** tab + **Layers** tab.
+1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
+2. **Drop-in UI on mocks** (sheet, pop-up, edit form).
 3. **Backend + Tiger Data** (ingest, readings, logs, drops, advice) and **vision service** (webcam + motion + Gemini).
 4. Rewards inbox + crates, Greenhouse (Seed Packets).
-5. Social and Profile.
-6. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
+5. Firmware on the real bin, then `ApiRepository` swap, then polish on a real phone.
 
 ### Working together
 - **`main` must always build and run.** Pull before you push; run `flutter analyze && flutter test` first.

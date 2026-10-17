@@ -100,6 +100,7 @@ class PillButton extends StatelessWidget {
         decoration: BoxDecoration(color: onTap == null ? C.sunk : color, borderRadius: BorderRadius.circular(R.pill)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Flexible(
               child: Text(

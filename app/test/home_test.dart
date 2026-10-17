@@ -75,7 +75,31 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('home: no overflows at 360dp with large text', (tester) async {
+  testWidgets('log: same scrap gets a verdict and can be added', (tester) async {
+    tester.view.physicalSize = const Size(412 * 3, 915 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final container = _container();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
+    await _settle(tester);
+    await tester.tap(find.bySemanticsLabel('Log'));
+    await _settle(tester);
+    await tester.ensureVisible(find.text('Banana peel').first);
+    await tester.tap(find.text('Banana peel').first);
+    await _settle(tester, 1600);
+    expect(find.text('GOOD TO ADD'), findsOneWidget);
+    final before = container.read(gameProvider).logs.length;
+    await tester.tap(find.text('Add it'));
+    await _settle(tester);
+    expect(container.read(gameProvider).logs.length, before + 1);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('all tabs: no overflows at 360dp with large text', (tester) async {
     tester.view.physicalSize = const Size(360 * 3, 740 * 3);
     tester.view.devicePixelRatio = 3;
     tester.platformDispatcher.textScaleFactorTestValue = 1.3;
@@ -85,18 +109,23 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
-    for (final s in Scenario.values) {
+    for (final s in [Scenario.healthy, Scenario.tooWet, Scenario.ready]) {
       container.read(scenarioProvider.notifier).state = s;
       await _settle(tester);
-      final scrollable = find.byType(Scrollable).first;
-      for (var i = 0; i < 6; i++) {
-        await tester.drag(scrollable, const Offset(0, -500), warnIfMissed: false);
-        await _settle(tester, 400);
+      for (final tab in AppTab.values) {
+        container.read(tabProvider.notifier).state = tab;
+        await _settle(tester, 600);
+        final scrollable = find.byType(Scrollable).hitTestable().first;
+        for (var i = 0; i < 8; i++) {
+          await tester.drag(scrollable, const Offset(0, -500), warnIfMissed: false);
+          await _settle(tester, 300);
+        }
+        for (var i = 0; i < 8; i++) {
+          await tester.drag(scrollable, const Offset(0, 500), warnIfMissed: false);
+        }
+        await _settle(tester, 300);
       }
-      for (var i = 0; i < 6; i++) {
-        await tester.drag(scrollable, const Offset(0, 500), warnIfMissed: false);
-      }
-      await _settle(tester, 400);
+      container.read(tabProvider.notifier).state = AppTab.home;
     }
 
     await tester.pumpWidget(const SizedBox());

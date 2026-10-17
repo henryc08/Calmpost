@@ -8,6 +8,10 @@ import '../data/mock_repository.dart';
 import '../domain/models.dart';
 import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
+import '../features/layers/layers_screen.dart';
+import '../features/log/log_screen.dart';
+import '../features/profile/profile_screen.dart';
+import '../features/social/social_screen.dart';
 import '../state/game.dart';
 import '../state/providers.dart';
 import '../ui/backdrop.dart';
@@ -46,6 +50,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     final s = Scenario.values.where((s) => s.name == q['scenario']).firstOrNull;
     if (s != null) ref.read(scenarioProvider.notifier).state = s;
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
+    final item = ref.read(repositoryProvider).food(q['item'] ?? '');
+    if (item != null) ref.read(logIntentProvider.notifier).state = item;
     BinWorld.debugHour = double.tryParse(q['hour'] ?? '');
   }
 
@@ -72,16 +78,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       body: Stack(
         children: [
           const Positioned.fill(child: TopoBackdrop()),
-          IndexedStack(
-            index: tab.index,
-            children: const [
-              HomeScreen(),
-              ComingNext('Layers', 'Live readings and 24-hour charts for\nthe top layer, bottom layer and air gap.'),
-              ComingNext('Log', 'Search or snap a scrap and get a\nverdict based on the live readings.'),
-              ComingNext('Social', 'Weekly leagues, friends and co-op quests.'),
-              ComingNext('Profile', 'Level, achievements, collection and settings.'),
-            ],
-          ),
+          IndexedStack(index: tab.index, children: const [HomeScreen(), LayersScreen(), LogScreen(), SocialScreen(), ProfileScreen()]),
           const ToastLayer(),
         ],
       ),

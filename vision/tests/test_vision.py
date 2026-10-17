@@ -10,7 +10,7 @@ import frames as fr
 import gemini
 import mock_backend
 from backend import Backend
-from motion import MotionTrigger, Roi
+from motion import STILL_S, MotionTrigger, Roi
 from tests.synth import FakeCamera, background, frame_at
 from watcher import Watcher
 
@@ -37,7 +37,9 @@ def test_drop_gives_one_start_then_end():
     start, end = events
     assert 2.0 <= start.t < 2.4                 # starts promptly
     landed = 2.0 + 0.6                          # the peel stops moving here
-    assert landed + 0.8 - 0.1 <= end.t < landed + 0.8 + 0.4   # then 0.8 s of stillness
+    # ...then STILL_S of quiet. Read the constant rather than hardcoding it,
+    # so tuning the latency does not look like a regression.
+    assert landed + STILL_S - 0.1 <= end.t < landed + STILL_S + 0.4
 
 
 def test_drop_ends_promptly_with_a_tight_roi():
@@ -69,7 +71,8 @@ def test_drop_ends_promptly_with_a_tight_roi():
         assert start is not None, f"no start for {roi}"
         assert end is not None, f"no end for {roi}: every drop would wait MAX_DROP_S"
         # Settles about STILL_S after the item lands, whatever the ROI size.
-        assert 0.7 <= end - landed <= 1.6, f"end {end - landed:.2f}s after landing for {roi}"
+        settle = end - landed
+        assert STILL_S - 0.1 <= settle <= STILL_S + 0.5,             f"settled {settle:.2f}s after landing for {roi} (STILL_S={STILL_S})"
 
 
 def test_grace_period_ignores_early_motion():

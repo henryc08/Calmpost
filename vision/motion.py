@@ -23,7 +23,9 @@ import numpy as np
 
 START_FRACTION = 0.02
 START_HOLD_S = 0.15
-STILL_S = 0.8
+STILL_S = 0.55        # how long the ROI must be quiet before a drop counts as
+                      # finished. Straight latency the user feels, so it is kept
+                      # just long enough to outlast a hand withdrawing.
 # Frame-to-frame change below this counts as still. Lower than
 # START_FRACTION: arrival is measured against the background (a big, lasting
 # difference), stillness against the previous frame (which goes to ~0).

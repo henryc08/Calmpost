@@ -9,9 +9,15 @@ from .. import compost, db
 from ..models import IngestPayload, IngestResult
 from ..security import require_device
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("calmpost.ingest")
 
 router = APIRouter(tags=["ingest"])
+
+# Samples stored since this process started. Uvicorn's access log only says
+# "POST /ingest 200 OK", which looks identical whether the reading was good,
+# empty, or had a dead sensor -- so the count and the values are logged here
+# instead. This is the line to watch when you want to see the pipeline work.
+_stored = 0
 
 
 @router.post("/ingest", response_model=IngestResult)
@@ -86,6 +92,40 @@ async def ingest(
             await conn.execute(
                 "UPDATE bins SET last_seen_at = $2 WHERE bin_id = $1", auth_bin_id, ts
             )
+
+    global _stored
+    _stored += 1
+
+    # One readable line per stored sample: what arrived, what it became, and
+    # anything missing or flagged.
+    bits = [f"#{_stored}", auth_bin_id]
+    if payload.moisture_raw is not None:
+        bits.append(
+            f"raw={payload.moisture_raw}->{pct:.1f}%" if pct is not None
+            else f"raw={payload.moisture_raw}->?"
+        )
+    else:
+        bits.append("raw=none")
+    if payload.probe_temp_c is not None:
+        delta = (
+            f" ({payload.probe_temp_c - payload.air_temp_c:+.1f} vs air)"
+            if payload.air_temp_c is not None
+            else ""
+        )
+        bits.append(f"probe={payload.probe_temp_c:.1f}C{delta}")
+    else:
+        bits.append("probe=none")
+    if payload.co2_ppm is not None:
+        flag = "" if payload.co2_status in (0, None) else f" !status={payload.co2_status}"
+        bits.append(f"co2={payload.co2_ppm:.0f}ppm{flag}")
+    else:
+        bits.append("co2=none")
+    if payload.air_humidity_pct is not None:
+        bits.append(f"rh={payload.air_humidity_pct:.0f}%")
+    if not binr["calibrated"]:
+        bits.append("[uncalibrated]")
+
+    log.info("stored " + "  ".join(bits))
 
     return IngestResult(
         accepted=True,

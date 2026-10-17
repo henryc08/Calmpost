@@ -95,6 +95,7 @@ touches only `app/security.py`.
 | POST   | `/bins`                         | register a bin, returns a device token |
 | GET    | `/bins`                         | list bins |
 | POST   | `/bins/{id}/calibration`        | set the probe's dry/wet raw counts |
+| GET    | `/bins/{id}/stats`              | is data arriving? counts + `flowing` |
 | GET    | `/bins/{id}/live`               | both layers + air gap + health components |
 | GET    | `/bins/{id}/trends`             | gap-filled chart series |
 | POST   | `/bins/{id}/advice/check`       | **verdict for one item — the demo moment** |

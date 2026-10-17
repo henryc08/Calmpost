@@ -79,6 +79,48 @@ The sketch talks over USB, so only the laptop needs internet (to reach Tiger
 Cloud) and any network will do. A hotspot only matters later, when the
 Flutter app on a phone needs to reach the laptop's LAN IP.
 
+### Proving it reached the backend, not just the terminal
+
+The bridge printing `sent raw=...` only proves the bridge read the board. For
+the backend's own view, use any of these:
+
+**The server terminal** logs each stored sample with its values, which is
+more useful than uvicorn's `POST /ingest 200 OK`:
+
+```
+INFO:calmpost.ingest:stored #42  bin-001  raw=473->47.4%  probe=21.4C (+0.0 vs air)  co2=390ppm  rh=48%
+```
+
+The `#42` counts samples stored since the server started, so a climbing
+number is the pipeline working. `[uncalibrated]` and `!status=N` appear when
+they apply.
+
+**One call that answers it outright:**
+
+```bash
+curl.exe -s -H "X-API-Key: $APP_API_KEY" http://127.0.0.1:8000/bins/bin-001/stats
+```
+
+```json
+{"readings_total": 2329, "readings_last_minute": 24, "seconds_since_last": 1,
+ "flowing": true, "missing_co2": 7, "co2_error_rows": 0, "calibrated": false}
+```
+
+`flowing` is simply "a reading arrived in the last two minutes".
+
+**Tiger Cloud's console** is the slowest place to look. Its Metrics
+dashboard aggregates on a delay of several minutes, so a healthy feed can
+look like a flat line. To see rows now, use the console's **SQL editor**:
+
+```sql
+SELECT time, probe_temp_c, moisture_raw, moisture_pct, co2_ppm, air_humidity_pct
+FROM readings WHERE bin_id = 'bin-001'
+ORDER BY time DESC LIMIT 20;
+```
+
+Don't judge whether ingest works from the Metrics graph -- use `/stats`,
+`watch_db`, or that query.
+
 Expected output, one line per second:
 
 ```

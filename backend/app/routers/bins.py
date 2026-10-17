@@ -124,6 +124,60 @@ async def set_calibration(bin_id: str, body: CalibrationUpdate) -> dict:
     }
 
 
+# --- stats -----------------------------------------------------------------
+
+@router.get("/bins/{bin_id}/stats")
+async def stats(bin_id: str) -> dict:
+    """Is data actually arriving? One call, straight from Tiger Data.
+
+    Separate from /live because /live answers "what is the bin doing" while
+    this answers "is the pipeline working" -- the question you want when the
+    bridge terminal is scrolling but you are not sure anything is landing.
+    """
+    binr = await binstate.bin_row(bin_id)
+    if binr is None:
+        raise HTTPException(status_code=404, detail="unknown bin")
+
+    row = await db.fetchrow(
+        """
+        SELECT count(*)::int                                            AS total,
+               min(time)                                                AS oldest,
+               max(time)                                                AS newest,
+               count(*) FILTER (WHERE time > now() - interval '1 minute')::int AS last_minute,
+               count(*) FILTER (WHERE time > now() - interval '1 hour')::int   AS last_hour,
+               count(*) FILTER (WHERE co2_ppm IS NULL)::int             AS missing_co2,
+               count(*) FILTER (WHERE moisture_raw IS NULL)::int        AS missing_moisture,
+               count(*) FILTER (WHERE coalesce(co2_status, 0) <> 0)::int AS co2_errors
+        FROM readings WHERE bin_id = $1
+        """,
+        bin_id,
+    )
+
+    newest = row["newest"]
+    age = (
+        (datetime.now(timezone.utc) - newest).total_seconds()
+        if newest is not None
+        else None
+    )
+
+    return {
+        "bin_id": bin_id,
+        "readings_total": row["total"],
+        "readings_last_minute": row["last_minute"],
+        "readings_last_hour": row["last_hour"],
+        "oldest": row["oldest"],
+        "newest": newest,
+        "seconds_since_last": round(age) if age is not None else None,
+        # The plain answer. Anything over ~2 minutes means the bridge is not
+        # running, or the board's port is held by something else.
+        "flowing": age is not None and age < 120,
+        "missing_moisture": row["missing_moisture"],
+        "missing_co2": row["missing_co2"],
+        "co2_error_rows": row["co2_errors"],
+        "calibrated": binr["calibrated"],
+    }
+
+
 # --- live ------------------------------------------------------------------
 
 @router.get("/bins/{bin_id}/live", response_model=LiveResponse)

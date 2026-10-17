@@ -6,7 +6,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../app/reward_reveal.dart';
 import '../../app/routes.dart';
 import '../../app/toast.dart';
 import '../../domain/health_score.dart';
@@ -178,16 +177,7 @@ class _Hud extends ConsumerWidget {
         ),
         _HudStat(icon: const LoamCoin(size: 18), value: '${game.loam}', onTap: () => Routes.greenhouse(context)),
         Pressable(
-          onTap: () async {
-            if (game.crates.isNotEmpty) {
-              final o = ref.read(gameProvider.notifier).openCrate(0);
-              if (o != null && context.mounted) await revealCrate(context, o.tier, o.loam, o.packets);
-            } else if (game.packets > 0) {
-              await Routes.greenhouse(context);
-            } else {
-              showToast(ref, 'No rewards waiting. Fill the daily goal to earn more.');
-            }
-          },
+          onTap: () => Routes.rewards(context),
           child: Padding(
             padding: const EdgeInsets.only(left: S.x2),
             child: Stack(

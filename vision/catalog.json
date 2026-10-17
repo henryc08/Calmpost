@@ -1,0 +1,140 @@
+[
+  {
+    "id": "banana_peel",
+    "name": "Banana peel",
+    "category": "green",
+    "grams": 110.0
+  },
+  {
+    "id": "veg_peels",
+    "name": "Veggie peels",
+    "category": "green",
+    "grams": 90.0
+  },
+  {
+    "id": "coffee_grounds",
+    "name": "Coffee grounds",
+    "category": "green",
+    "grams": 60.0
+  },
+  {
+    "id": "apple_core",
+    "name": "Apple core",
+    "category": "green",
+    "grams": 70.0
+  },
+  {
+    "id": "lettuce",
+    "name": "Lettuce leaves",
+    "category": "green",
+    "grams": 50.0
+  },
+  {
+    "id": "tea_bag",
+    "name": "Tea bag",
+    "category": "green",
+    "grams": 20.0
+  },
+  {
+    "id": "eggshells",
+    "name": "Eggshells",
+    "category": "green",
+    "grams": 15.0
+  },
+  {
+    "id": "citrus",
+    "name": "Citrus peel",
+    "category": "green",
+    "grams": 80.0
+  },
+  {
+    "id": "avocado",
+    "name": "Avocado skin",
+    "category": "green",
+    "grams": 40.0
+  },
+  {
+    "id": "pepper",
+    "name": "Pepper tops",
+    "category": "green",
+    "grams": 30.0
+  },
+  {
+    "id": "grass",
+    "name": "Grass clippings",
+    "category": "green",
+    "grams": 120.0
+  },
+  {
+    "id": "cardboard",
+    "name": "Shredded cardboard",
+    "category": "brown",
+    "grams": 40.0
+  },
+  {
+    "id": "newspaper",
+    "name": "Newspaper",
+    "category": "brown",
+    "grams": 35.0
+  },
+  {
+    "id": "dry_leaves",
+    "name": "Dry leaves",
+    "category": "brown",
+    "grams": 30.0
+  },
+  {
+    "id": "paper_towel",
+    "name": "Paper towel",
+    "category": "brown",
+    "grams": 10.0
+  },
+  {
+    "id": "egg_carton",
+    "name": "Egg carton",
+    "category": "brown",
+    "grams": 35.0
+  },
+  {
+    "id": "sawdust",
+    "name": "Sawdust (untreated)",
+    "category": "brown",
+    "grams": 30.0
+  },
+  {
+    "id": "meat",
+    "name": "Meat scraps",
+    "category": "avoid",
+    "grams": 0.0
+  },
+  {
+    "id": "fish",
+    "name": "Fish",
+    "category": "avoid",
+    "grams": 0.0
+  },
+  {
+    "id": "bones",
+    "name": "Bones",
+    "category": "avoid",
+    "grams": 0.0
+  },
+  {
+    "id": "cheese",
+    "name": "Cheese & dairy",
+    "category": "avoid",
+    "grams": 0.0
+  },
+  {
+    "id": "oily_food",
+    "name": "Oily leftovers",
+    "category": "avoid",
+    "grams": 0.0
+  },
+  {
+    "id": "bread",
+    "name": "Bread",
+    "category": "avoid",
+    "grams": 0.0
+  }
+]

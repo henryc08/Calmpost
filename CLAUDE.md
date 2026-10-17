@@ -310,9 +310,9 @@ Everything visual comes from `lib/ui/`. **Never use raw Material widgets with de
 
 | Token | Hex | Use |
 |---|---|---|
-| `paper` | `#F4F2EC` | app background |
-| `surface` / `sunk` / `line` | `#FFFFFF` / `#ECE9E1` / `#E3DFD5` | sheets / tracks / hairlines |
-| `ink` / `ink2` / `muted` / `faint` | `#17201B` / `#46504A` / `#8B918C` / `#BCC0BA` | text hierarchy |
+| `paper` | `#E9F1E2` | light green app background |
+| `surface` / `sunk` / `line` | `#F6FAF2` / `#DAE6D1` / `#CCDBC2` | sheets, nav bar / tracks / hairlines |
+| `ink` / `ink2` / `muted` / `faint` | `#14261C` / `#3D5245` / `#738A7B` / `#A8BCAD` | text hierarchy (green-tinted) |
 | `forest` / `forest2` / `onForest` | `#1F3A2E` / `#2B4D3E` / `#EDEFE6` | primary actions, dark surfaces |
 | `sprout` | `#B9DD7B` | positive accent on forest |
 | `leaf` · `amber` · `water` · `clay` (+ `Soft`) | `#3F8A5F` · `#E39B3A` · `#4F8FC9` · `#C65A3E` | in range · streak / too dry · moisture / too wet · warnings |

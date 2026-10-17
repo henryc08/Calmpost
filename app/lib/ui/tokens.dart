@@ -2,20 +2,20 @@ import 'package:flutter/widgets.dart';
 
 import '../domain/models.dart' show Rarity;
 
-/// Colour tokens. Warm paper, deep forest, a few quiet accents.
+/// Colour tokens. Light leaf-green paper, deep forest, a few quiet accents.
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFFF4F2EC);
-  static const surface = Color(0xFFFFFFFF);
-  static const sunk = Color(0xFFECE9E1);
-  static const line = Color(0xFFE3DFD5);
+  static const paper = Color(0xFFE9F1E2);
+  static const surface = Color(0xFFF6FAF2);
+  static const sunk = Color(0xFFDAE6D1);
+  static const line = Color(0xFFCCDBC2);
 
   // Text
-  static const ink = Color(0xFF17201B);
-  static const ink2 = Color(0xFF46504A);
-  static const muted = Color(0xFF8B918C);
-  static const faint = Color(0xFFBCC0BA);
+  static const ink = Color(0xFF14261C);
+  static const ink2 = Color(0xFF3D5245);
+  static const muted = Color(0xFF738A7B);
+  static const faint = Color(0xFFA8BCAD);
 
   // Forest: the hero surface and primary actions
   static const forest = Color(0xFF1F3A2E);

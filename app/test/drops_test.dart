@@ -4,6 +4,7 @@
 // `ConfirmResponse`, not invented.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -218,6 +219,8 @@ void main() {
     });
   });
 
+  _photoTests();
+
   group('MockRepository', () {
     test('arming produces a pending drop, and confirming clears it', () async {
       final repo = MockRepository(Scenario.healthy);
@@ -275,6 +278,95 @@ void main() {
       ]);
 
       expect(result.corrected, isTrue);
+    });
+  });
+}
+
+// --- single photo submission -------------------------------------------------
+//
+// The camera decides for itself that something arrived; this is the user
+// pointing a phone at something. It comes back as an ordinary pending drop, so
+// confirmDrop and dismissDrop finish it the same way.
+
+void _photoTests() {
+  group('ApiRepository.submitPhoto', () {
+    test('posts the image and parses the drop it becomes', () async {
+      late http.Request seen;
+      final repo = _repo((req) async {
+        seen = req;
+        return _json({..._dropJson(id: 11), 'source': 'photo'}, 201);
+      });
+
+      final drop = await repo.submitPhoto(Uint8List.fromList(_jpegBytes));
+
+      expect(seen.method, 'POST');
+      expect(seen.url.path, '/bins/bin-001/drops/photo');
+      expect(base64Decode((jsonDecode(seen.body) as Map)['image_jpeg_b64'] as String), _jpegBytes);
+
+      expect(drop.id, 11);
+      expect(drop.source, 'photo');
+      expect(drop.fromPhoto, isTrue);
+      expect(drop.status, DropStatus.pending);
+      expect(drop.guesses.single.item?.id, 'banana_peel');
+    });
+
+    test('a camera drop is not flagged as a photo', () {
+      // No source in the payload means camera: older rows predate the column.
+      expect(dropFromJson(_dropJson()).fromPhoto, isFalse);
+      expect(dropFromJson(_dropJson()).source, 'camera');
+    });
+
+    test('a failed identification is a drop with nothing named, not an error', () async {
+      final repo = _repo((req) async => _json({
+        ..._dropJson(id: 12, items: [], geminiOk: false),
+        'source': 'photo',
+        'error': '429 quota exhausted',
+      }, 201));
+
+      final drop = await repo.submitPhoto(Uint8List.fromList(_jpegBytes));
+
+      expect(drop.guesses, isEmpty, reason: 'the user names it by hand');
+      expect(drop.geminiOk, isFalse);
+      expect(drop.error, '429 quota exhausted');
+      expect(drop.thumbnailJpeg, isNotNull, reason: 'the photo is kept');
+    });
+
+    test('an oversized image surfaces the 413 rather than failing quietly', () async {
+      final repo = _repo((req) async => _json({'detail': 'image is too big; downscale'}, 413));
+      await expectLater(
+        repo.submitPhoto(Uint8List.fromList(_jpegBytes)),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 413)),
+      );
+    });
+  });
+
+  group('MockRepository.submitPhoto', () {
+    test('identifies a photo and leaves it pending for confirmation', () async {
+      final repo = MockRepository(Scenario.healthy);
+
+      final drop = await repo.submitPhoto(Uint8List.fromList(_jpegBytes));
+
+      expect(drop.fromPhoto, isTrue);
+      expect(drop.status, DropStatus.pending);
+      expect(drop.guesses.single.label, 'banana peel');
+      expect(drop.guesses.single.box, hasLength(4), reason: 'a box to draw');
+
+      // Appears in the same watch the camera drops use.
+      expect((await repo.watchDrops().first).single.id, drop.id);
+
+      // And finishes through the shared path.
+      await repo.confirmDrop(drop.id, const [
+        DropConfirmation(label: 'banana peel', catalogId: 'banana_peel', category: FoodCategory.green),
+      ]);
+      expect(await repo.watchDrops().first, isEmpty);
+    });
+
+    test('an empty image stands in for a failed identification', () async {
+      final drop = await MockRepository(Scenario.healthy).submitPhoto(Uint8List(0));
+
+      expect(drop.guesses, isEmpty);
+      expect(drop.geminiOk, isFalse);
+      expect(drop.status, DropStatus.pending, reason: 'still answerable by hand');
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data' show Uint8List;
 
 import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
@@ -327,6 +328,48 @@ class MockRepository implements CalmpostRepository {
   Future<void> dismissDrop(int dropId) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     _pending.removeWhere((d) => d.id == dropId);
+  }
+
+  @override
+  Future<CameraDrop> submitPhoto(Uint8List jpeg) async {
+    // About what a real identification costs, so a spinner gets exercised.
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+
+    // An empty image stands in for "the model could not name it", which is the
+    // case the sheet has to let the user answer by hand. Easier to trigger
+    // from a test or a debug button than a genuinely unrecognisable photo.
+    final failed = jpeg.isEmpty;
+    final drop = CameraDrop(
+      id: ++_dropId,
+      binId: 'bin-001',
+      sessionId: 'photo-mock-$_dropId',
+      time: DateTime.now(),
+      status: DropStatus.pending,
+      source: 'photo',
+      geminiOk: !failed,
+      latencyMs: 1800,
+      model: failed ? 'rules-fallback' : 'mock',
+      error: failed ? 'could not identify anything in the photo' : null,
+      thumbnailJpeg: jpeg.isEmpty ? null : jpeg,
+      guesses: failed
+          ? const []
+          : [
+              DropGuess(
+                label: 'banana peel',
+                catalogId: 'banana_peel',
+                confidence: 0.93,
+                item: foodById['banana_peel'],
+                category: FoodCategory.green,
+                amount: 'handful',
+                estGrams: 110,
+                // Roughly centred, so a bounding-box overlay has something
+                // plausible to draw on a portrait photo.
+                box: [180, 260, 760, 720],
+              ),
+            ],
+    );
+    _pending.add(drop);
+    return drop;
   }
 
   // --- Trunc ------------------------------------------------------------------

@@ -326,6 +326,7 @@ class CameraDrop {
     required this.guesses,
     required this.geminiOk,
     required this.latencyMs,
+    this.source = 'camera',
     this.model = '',
     this.error,
     this.thumbnailJpeg,
@@ -337,7 +338,15 @@ class CameraDrop {
   final DateTime time;
   final DropStatus status;
 
-  /// Empty when the camera saw something move but could not name it.
+  /// 'camera' when the bin noticed it, 'photo' when the user submitted one.
+  /// The same sheet handles both, but a photo the user framed deserves
+  /// different wording from something the bin spotted on its own.
+  final String source;
+
+  bool get fromPhoto => source == 'photo';
+
+  /// Empty when the camera saw something move but could not name it, or when
+  /// identification failed on a submitted photo. Either way the user names it.
   final List<DropGuess> guesses;
 
   /// False when Gemini was unavailable and the rules-based fallback answered.

@@ -1,3 +1,5 @@
+import 'dart:typed_data' show Uint8List;
+
 import '../domain/drop.dart';
 import '../domain/models.dart';
 
@@ -59,6 +61,18 @@ abstract class CalmpostRepository {
   /// POST /drops/{id}/dismiss: nothing was added, the trigger was false. Kept
   /// for the accuracy stat.
   Future<void> dismissDrop(int dropId);
+
+  /// POST /bins/{id}/drops/photo: identify one photo the user took.
+  ///
+  /// The camera decides for itself that something arrived; this is the user
+  /// pointing a phone at something and asking what it is. The result is an
+  /// ordinary pending [CameraDrop] with `source` 'photo', so [confirmDrop] and
+  /// [dismissDrop] finish it exactly as they finish a camera detection.
+  ///
+  /// Downscale to about 1024 px before calling: the backend rejects anything
+  /// over ~1.5 MB rather than truncating it. An identification failure is not
+  /// an error -- the drop comes back with no guesses for the user to name.
+  Future<CameraDrop> submitPhoto(Uint8List jpeg);
 
   // --- Trunc, the compost assistant -----------------------------------------
 

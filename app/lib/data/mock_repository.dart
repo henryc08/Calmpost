@@ -6,7 +6,7 @@ import '../domain/models.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
 
-/// Demo scenarios. Switch from the hidden debug panel (long-press Wren).
+/// Demo scenarios. Switch from the hidden debug panel (long-press the health score).
 enum Scenario { healthy, tooWet, tooDry, curing, ready }
 
 extension ScenarioLabel on Scenario {

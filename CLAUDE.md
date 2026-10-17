@@ -1,6 +1,6 @@
 # Calmpost
 
-> A sensor-equipped compost bin + a gamified Android app. **The bin tells you what it needs; the app makes looking after it fun.**
+> A sensor-equipped compost bin + a gamified Android app. **The bin tells you what it needs; the app makes looking after it rewarding.**
 > Hack the Valley 11 · Climate Action & Sustainability track · Tiger Data sponsor track
 
 This file is the source of truth for how we build Calmpost. Read it before you write code, and update it when a decision changes.
@@ -9,10 +9,10 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 
 ## The key ideas (don't break these)
 
-1. **Reward balance, never volume.** Logging a food scrap earns **0 XP** on its own. XP comes only from *care*: following a suggestion, keeping layers in their healthy range, balancing greens and browns, finishing quests, harvesting. If a mechanic would reward dumping more food in the bin, it's wrong.
+1. **Reward balance, never volume.** Logging a food scrap earns **0 XP** on its own. XP and Loam come only from *care*: following the next best action, keeping layers in their healthy range, balancing greens and browns, finishing quests, harvesting. If a mechanic would reward dumping more food in the bin, it's wrong.
 2. **Same scrap, different answer.** Advice is always based on the bin's *current* readings. This is our demo moment, so protect it.
 3. **Honest about accuracy.** Moisture is our most reliable signal; temperature and CO₂ add context. Stage and "ready" are guides from sensor trends, not lab results. Copy should never overclaim.
-4. **It must not look vibe-coded.** It's a designed product: Flora's calm, illustrated softness + Duolingo's game structure and tactile UI. See *Design system*.
+4. **Sleek, minimal, grown-up.** Calm editorial design: lots of whitespace, one strong hero, hairlines instead of shadows, a soft serif for big numbers. **No mascot, no cartoons, no childish bounce.** Rewards are satisfying but quiet. See *Design system*.
 5. **Frontend first.** The app runs fully on mock data through a repository interface. The backend plugs in later with no UI changes.
 
 ---
@@ -22,12 +22,12 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 | Layer | Tech | Notes |
 |---|---|---|
 | **Mobile app** | **Flutter (Dart)**, Android-first | min SDK 24, edge-to-edge, predictive back |
-| State | `flutter_riverpod` 2.x (`Notifier`, `StreamProvider`) | providers only, no `setState` for shared state |
-| Navigation | plain `Navigator` + custom routes in `app/routes.dart` | no router package needed yet |
-| Models | plain immutable Dart classes in `domain/models.dart` | no codegen, nothing to build |
-| UI | Nunito (bundled in `assets/fonts`), `phosphor_flutter`, `flutter_animate`, `fl_chart` | all art is hand-drawn `CustomPainter` (Wren, plants, bin, badges) |
-| Feedback | `audioplayers` (sfx in `assets/sfx`, synthesised by us), `HapticFeedback` | |
-| Device | `flutter_local_notifications` (compost ready), `shared_preferences` (onboarding seen) | |
+| State | `flutter_riverpod` 2.x (`Notifier`, `StreamProvider`, `FutureProvider.family`) | providers only, no `setState` for shared state |
+| Navigation | `tabProvider` (`AppTab`) + plain `Navigator` | no router package |
+| Models | plain immutable Dart classes in `domain/models.dart` | no codegen |
+| UI | **Fraunces** (serif) + **Manrope** (sans), bundled in `assets/fonts`; `phosphor_flutter` (Regular/Fill); `flutter_animate`; `fl_chart` (Layers charts) | |
+| Feedback | `HapticFeedback.selectionClick` on every tap; `audioplayers` reserved for reward moments | |
+| Device | `flutter_local_notifications` (compost ready) | |
 | **Backend** (phase 2) | **Python 3.12 + FastAPI + asyncpg** | thin API: keeps DB + Gemini keys off the phone |
 | **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions |
 | AI | **Gemini API** (`google-genai`), JSON-schema structured output | rule-based fallback always on |
@@ -48,23 +48,24 @@ ESP32 ──POST /ingest──▶ FastAPI ──▶ Tiger Cloud
 ```
 calmpost/
   CLAUDE.md
-  app/                      # Flutter app (frontend, built)
+  app/                      # Flutter app
     lib/
-      main.dart             # theme, onboarding gate, web phone frame
-      app/                  # shell (tabs + game event loop), routes, stats bar, toasts, notifications, dev hooks
-      ui/                   # DESIGN SYSTEM: tokens, type, theme, sfx, components/, art/ (Wren, plants, bin, badges)
+      main.dart             # theme, web phone frame
+      app/                  # shell (5-tab nav + event loop), toast, notifications, ComingNext placeholder
+      ui/                   # DESIGN SYSTEM: tokens.dart, type.dart, theme.dart, components.dart
       domain/               # pure Dart: models, health_score, xp_rules, advice_rules
       data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), food_catalog
-      state/                # Riverpod: providers (bin, health, standings), game (XP/streak/quests/shop), celebrations
-      features/             # home/ layer/ log/ journey/ leagues/ profile/ streak/ shop/ celebrations/ onboarding/ debug/
+      state/                # Riverpod: providers (bin, health, trends, tab), game (XP/streak/quests/economy), celebrations
+      features/home/        # ✅ designed: header, health hero, layer strip, next action, streak calendar, today, impact
+      features/<tab>/       # layers/ log/ social/ profile/ rewards/ greenhouse/ (to design)
     assets/                 # fonts/, sfx/
-    test/                   # domain_test (rules), flow_test (full user flow + 360dp large-text overflow check)
+    test/                   # domain_test (rules), home_test (flows + 360dp large-text overflow check, real fonts loaded)
   backend/                  # FastAPI + SQL migrations (phase 2)
   firmware/                 # ESP32 sketch (phase 2)
 ```
 
 **Rules:**
-- Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Cross-feature navigation goes through `app/routes.dart`.
+- Features never import each other. Shared things go in `ui/`, `domain/`, `state/` or `app/`. Switch tabs with `ref.read(tabProvider.notifier).state = AppTab.x`.
 - Screens never call HTTP or mocks directly; they go through `repositoryProvider`.
 - Game and health logic lives in `domain/` as **pure, unit-tested functions**. No logic in widgets.
 
@@ -72,108 +73,180 @@ calmpost/
 
 ## Design system
 
-Everything visual comes from `lib/ui/`. **Never use raw Material widgets with default styling** (`AppBar`, `Card`, `ElevatedButton`, default `BottomNavigationBar`).
+Everything visual comes from `lib/ui/`. **Never use raw Material widgets with default styling** (`AppBar`, `Card`, `ElevatedButton`, `BottomNavigationBar`, `Chip`).
 
-**Colour tokens**
+**Colour tokens** (`ui/tokens.dart`)
 
 | Token | Hex | Use |
 |---|---|---|
-| `bg` | `#FBF7EF` | warm cream app background |
-| `surface` | `#FFFFFF` | cards |
-| `border` | `#EEE7DA` | 2px card/button borders |
-| `ink` / `muted` | `#2B2A26` / `#8A8578` | text |
-| `leaf` / `leafLip` | `#58B85C` / `#3F8F43` | primary + its 3D lip |
-| `soil` | `#8B5E3C` | browns, bin illustration |
-| `sky` | `#4FB3E8` | moisture |
-| `sun` | `#FFC83D` | XP |
-| `flame` | `#FF8A1F` | streak |
-| `coral` | `#FF6B5E` | warnings / avoid |
-| `moss` | `#2FAE9B` | leagues, CO₂ |
+| `paper` | `#F4F2EC` | warm app background |
+| `surface` | `#FFFFFF` | panels |
+| `sunk` | `#ECE9E1` | tracks, wells |
+| `line` | `#E3DFD5` | 1px hairline borders and dividers |
+| `ink` / `ink2` / `muted` / `faint` | `#17201B` / `#46504A` / `#8B918C` / `#BCC0BA` | text hierarchy |
+| `forest` / `forest2` | `#1F3A2E` / `#2B4D3E` | the hero surface, primary buttons, Log button |
+| `onForest` / `onForestMuted` | `#EDEFE6` / `#9DB3A6` | text on forest |
+| `sprout` | `#B9DD7B` | positive accent on forest |
+| `leaf` + `leafSoft` | `#3F8A5F` / `#E3EEE2` | positive on light, "in range" |
+| `amber` + `amberSoft` | `#E39B3A` / `#F6E6CC` | streak, "too dry" |
+| `water` + `waterSoft` | `#4F8FC9` / `#E1ECF6` | moisture, "too wet" |
+| `clay` + `claySoft` | `#C65A3E` / `#F5E0D9` | warnings, avoid, notification badges |
+| `loam` | `#8A5A3B` | the currency |
 
-Each accent is a `Tone` trio in `ui/tokens.dart`: `face`, `lip` (the darker 3D edge) and `tint` (~12% for chip and card fills). **No purple, no gradients, no glass/blur.**
-League tiers: Seedling `#A7D88A` · Sprout leaf · Fern moss · Sapling sun · Oak flame · Sequoia `#E0533D`.
+Rarity colours: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623F` · Legendary `#D9A426`.
+**No purple, no gradients, no glass/blur, no drop shadows.**
 
-- **Type:** Nunito, weights 600/800/900 only. Scale is 34 / 28 / 22 / 17 / 15 / 13. Numbers use tabular figures.
-- **Spacing:** 4/8 grid. **Radii:** 12 chips · 16 buttons · 24 cards · 32 sheets.
-- **Depth:** no drop shadows. Use a 2px border + 4px darker bottom "lip" (the Duolingo look).
-- **Icons:** Phosphor (fill/duotone) only. **No emoji as icons.** Emoji in copy is OK, sparingly.
-- **Motion:** `flutter_animate`, 250 ms ease-out entrances with a 40 ms stagger, count-up numbers, springy tap scale. Every reward gets sfx + haptic.
+- **Type** (`ui/type.dart`): **Fraunces** (soft serif, weights 400/500) for the hero number (84), screen greetings (32), card titles (23) and stats (24). **Manrope** (500–800) for everything else: heading 16, body 14.5, label 13, small 12, caps 11 with 1.2 letter-spacing. Numbers use tabular figures. Fraunces has no `₂`, so never put "CO₂" in a serif style.
+- **Spacing:** 4/8 grid, 20 px side gutter. **Radii:** 10 chips · 16 tiles · 22 panels · 28 hero · pills fully round.
+- **Surfaces:** white `Panel` with a 1 px `line` border. One dark `forest` hero per screen at most.
+- **Icons:** Phosphor **Regular** for UI, **Fill** for the active nav tab and small status marks. No emoji anywhere in the UI.
+- **Motion:** `flutter_animate` fade + 4% slide-up on entry, 50 ms stagger, curve `M.ease` (0.2, 0.8, 0.2, 1). Numbers count up. Presses scale to 0.98 with a selection haptic. Nothing bounces or wobbles.
 
-**Core components** (`ui/components/`): `ChunkyButton` / `ChunkyCircle` (press → face drops into the lip, haptic + tap sound), `Pressable` (squish on tap), `Slab` (the card), `Tag`, `IconBlob`, `ProgressBar` (with highlight stripe), `ProgressRing`, `CountUp`, `TabBarCalm`, `showCalmSheet`, `LeafBurst` (leaf/petal confetti).
-
-**Art** (`ui/art/`, all `CustomPainter`, no image assets): `Wren`, `Plant` (8 species, sway + wilt + grow-in), `BinScene` (cutaway bin with live zones, probe, ESP32), `Flame`, `LeagueBadge`, `Chest`, `AcornIcon`.
-
-**Mascot: Wren the worm.** Six moods driven by the health score (thriving / happy / okay / thirsty / soggy / sick), blinks, sways, wears hats bought with acorns. Wren voices all advice and notifications. The launcher icon and splash are Wren too.
+**Components** (`ui/components.dart`): `Pressable`, `Panel`, `PillButton`, `Chip2` (outline chip), `Badge2` (tinted label), `ThinBar` (4 px progress), `CountUp`, `Sparkline` (24 h line + healthy band), `LiveDot`, `LoamCoin`, `SectionTitle`, `Hairline`.
 
 **Before you open a PR, check:**
 - [ ] Only tokens and `ui/` components (no hard-coded colours or sizes)
-- [ ] Empty, loading (brand shimmer) and error states designed
-- [ ] Real copy (no lorem ipsum), Wren's voice where it fits
-- [ ] Looks right at 360dp and 412dp wide, and at font scale 1.3
+- [ ] Empty, loading and error states designed
+- [ ] Real, plain copy (no lorem ipsum, no cutesy voice)
+- [ ] Looks right at 360dp and 412dp wide, and at font scale 1.3 (`flutter test` checks Home)
 - [ ] Runs on a real Android phone
 
 ---
 
 ## App structure
 
-**Bottom nav (custom `TabBarCalm`):** Home · Journey · **[ + Log ]** (raised centre button) · Leagues · Profile.
-**Top bar on main screens** (`app/stats_bar.dart`): health score · streak flame (grey until you care for the bin today) · acorns. Each opens a sheet.
+**Bottom nav (5 tabs):** Home · Layers · **Log** (forest pill in the middle) · Social · Profile.
+**Off-tab screens** (opened from buttons, not tabs): **Rewards inbox** (gift button on Home: crates, packets, celebrations), **Greenhouse** (Loam pill on Home: Seed Packet gacha + collection), health breakdown, settings.
 
-| Screen | What's on it |
-|---|---|
-| Home | Wren in a cutaway bin (air gap / top / bottom tinted by state), health ring, 3 daily quests, "Wren suggests" card |
-| Layer detail | moisture / temp / CO₂ trend charts with the healthy band shaded |
-| Log | search + camera → verdict sheet (add / add with browns / avoid), Wren's reason, XP earned. **Demo moment** |
-| Journey | Duolingo-style path for the current batch |
-| Leagues | tier banner, reset countdown, ranked list with promotion/demotion zones, Weekly / Friends tabs |
-| Profile | level, Garden, achievements, impact stats, friends |
-| Celebrations | streak milestone, quest complete, league result, compost ready, level up |
-| Onboarding | meet Wren → "care earns XP, volume never does" → garden → pair bin (first launch only) |
-| Sheets | health breakdown, streak calendar + Lid Locks, shop (Lid Locks + Wren hats), demo controls |
+| Screen | Status | What's on it |
+|---|---|---|
+| **Home** | ✅ designed | date + greeting · Loam balance · rewards inbox (badge = unopened items) · **forest health hero** (score, state pill, one-line status, 4 factor bars, live dot) · 3 layer tiles (top / bottom / air, value + 24 h sparkline) · **Next best action** (title, why, suggested items, +15 XP, "Log an item") · **streak calendar** (month grid, streak runs joined, Lid Lock days, "done today") · **Today** quests (claim for XP + Loam) · impact line |
+| Layers | to design | per-zone live values, 24 h / 7 d charts with healthy band, what it means |
+| Log | to design | search + camera → verdict (great / careful / avoid), reason, pair-with items, XP. **Demo moment** |
+| Social | to design | weekly league table with promotion/demotion zones, friends, co-op friend quests |
+| Profile | to design | level + title, stats, achievements (with their crate rewards), collection, impact, settings |
+| Rewards inbox | to design | unopened crates and packets, open animation, history of celebrations |
+| Greenhouse | to design | Seed Packet pulls (1× / 10×), odds, pity counter, collection by rarity |
+
+The **Duolingo-style journey path is gone**. Life-cycle stage shows as a line in the hero and on Layers.
+The **mascot is gone**. The bin speaks through plain copy ("The top layer is 76% wet…").
 
 ---
 
-## Gamification rules
+## Gamification & economy
 
-**Bin Health Score (0–100)** is the hero number and drives Wren's mood:
+**Bin Health Score (0–100)** is the hero number:
 ```
 health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
 ```
 - `moisture`: per layer, 100 inside the 40–60% band, falling linearly to 0 at ±25%. Weighted highest because it's our most reliable sensor.
 - `balance`: 7-day greens:browns ≈ 1:2–1:3.
-- It lives in `domain/health_score.dart`, and the breakdown sheet explains the score ("why is my score 72?").
+- State pill (`BinMood`): Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
 
-**Core loop:** open → see Wren + health → do today's quests → earn XP / acorns → streak ticks → garden grows → league rank moves.
+**Core loop:** open → check health → do the next best action → streak day fills in → quests pay XP + Loam → achievements drop crates → crates and Loam open Seed Packets → collection grows → league rank moves.
+
+### XP, streaks, quests
 
 | Mechanic | Rule |
 |---|---|
-| Streak | consecutive days with ≥1 care action (check-in / followed suggestion / balance fix). Milestones at 3/7/14/30/100 |
-| Lid Lock | streak freeze; hold max 2; 60 acorns |
-| XP | followed suggestion +15 · check-in +5 · healthy layer-day +10 per layer · avoided bad add +5 · daily quest +10–20 · weekly balance +30 · harvest +100 · **log = 0**. Action XP capped at 60/day |
-| Acorns | soft currency from quests/harvests → Lid Locks, Wren hats. **Never real money** |
-| Daily Quests | 3 per day, always care-based ("Follow 1 of Wren's suggestions"), never "add N scraps" |
-| Batch Journey | Duolingo-style path: Started → Active → Hot → Curing → Ready → Harvested, driven by sensors, not taps |
-| Garden | health ≥ 70 for a day → a plant grows. Harvest → rare species. Neglect → plants **wilt**, then recover |
-| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia. Top 7 up, bottom 5 down, Sunday reset |
+| XP | followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100 · **log = 0**. Action XP capped at 60/day |
+| Streak | consecutive days with ≥1 care action (open Layers, follow the next action, fix balance). Shown as a calendar on Home; consecutive days join into one amber run |
+| Lid Lock | streak freeze, covers one missed day automatically; hold max 2; 60 Loam (shown as a shield on the calendar) |
+| Daily quests | 3 per day, care-based only: "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
+| Levels | lifetime XP → Lvl 1–50, level n needs 30·n·(n−1) XP; titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
+| Leagues | weekly 30-person cohorts: Seedling → Sprout → Fern → Sapling → Oak → Sequoia. Top 7 up, bottom 5 down, Sunday reset. League XP only from care, so a bigger bin can't win |
 | Friends | friends leaderboard, co-op Friend Quests, nudges |
-| Levels | lifetime XP → Lvl 1–50 with titles (Scrap Saver → Soil Whisperer → Humus Hero) |
-| Achievements | 9 badges with bronze/silver/gold tiers (Wildfire, Landfill Dodger, Harvester, Moisture Master, Green Thumb, Quest Seeker, Perfect Balance, Rare Collector, Climber). Level-ups toast |
-| Impact | kg diverted from landfill, CO₂e avoided, $ fertilizer saved, as a shareable card |
-| Notifications | in Wren's voice, state-triggered, **max 2/day** |
 
-All of the above is built on mock data. Still to do: streak-at-risk notification (needs scheduled notifications), weekly recap, real friends.
+### Currency: Loam
+
+**Loam** is the one soft currency (coin: `LoamCoin`). **Never sold for real money**, and nothing in the game can be bought with money.
+
+| Earn | Loam |
+|---|---|
+| Daily quests | 10–25 each |
+| Streak milestones (3 / 7 / 14 / 30 / 100 days) | 25 / 50 / 100 / 200 / 500 |
+| Harvest | 100 |
+| Weekly league finish | promoted 150 · safe 60 · demoted 20 |
+| Crates | see below |
+| Duplicate collectibles | refunded (see gacha) |
+
+| Spend | Loam |
+|---|---|
+| Seed Packet (1 pull) | 100 |
+| 10 Seed Packets | 900 (one Rare+ guaranteed) |
+| Lid Lock | 60 |
+
+### Crates (achievement and milestone rewards)
+
+| Crate | Contains |
+|---|---|
+| **Sprout Crate** | 40–80 Loam + 1 Seed Packet |
+| **Grove Crate** | 120–200 Loam + 3 Seed Packets (one guaranteed Rare or better) |
+| **Canopy Crate** | 300–500 Loam + 5 Seed Packets (one guaranteed Epic or better) |
+
+Crates and packets land in the **Rewards inbox** (gift button on Home, badge = unopened count). Opening one is a short, quiet reveal: the lid lifts, items fade up one by one, rarity colour on each card, a single soft chime.
+
+### Achievements → rewards
+
+Each achievement has three tiers; every tier pays a crate.
+
+| Achievement | Tier goals | Rewards per tier |
+|---|---|---|
+| **First Harvest** | 1 harvest | Grove |
+| **Harvester** | 3 / 10 / 25 harvests | Sprout / Grove / Canopy |
+| **Hot Streak** | 7 / 30 / 100-day streak | Sprout / Grove / Canopy |
+| **In the Zone** | 7 / 30 / 90 days with both layers in range | Sprout / Grove / Canopy |
+| **Balanced Diet** | 1 / 4 / 12 balanced weeks (greens:browns in 1:2–1:3) | Sprout / Grove / Canopy |
+| **Good Listener** | 10 / 50 / 200 next-best-actions followed | Sprout / Grove / Canopy |
+| **Landfill Dodger** | 5 / 25 / 100 kg kept from landfill | Sprout / Grove / Canopy |
+| **Quest Keeper** | 25 / 100 / 365 quests claimed | Sprout / Grove / Canopy |
+| **Climber** | 1 / 3 / 5 league promotions | Grove / Grove / Canopy |
+| **Good Neighbour** | 1 / 5 / 20 friend quests completed | Sprout / Grove / Canopy |
+| **Collector** | 10 / 30 / all collectibles | Sprout / Grove / Canopy |
+
+### Gacha: Seed Packets (in the Greenhouse)
+
+A Seed Packet reveals one **collectible**. Collectibles are **cosmetic only**: they never change XP, health or league standing.
+
+| Collectible type | Examples | Where it shows |
+|---|---|---|
+| **Specimens** (plants) | Fern, Tulip, Lavender, Toadstool, Sunflower… up to Ghost Orchid, Golden Pumpkin | Greenhouse collection, profile showcase |
+| **Bin finishes** | Slate, Terracotta, Birch, Moss, Copper | colour of the Home health hero |
+| **Profile frames + titles** | "Night Composter", "Mycelium Mind" | profile and league rows |
+
+| Rarity | Odds | Duplicate refund |
+|---|---|---|
+| Common | 60% | 5 Loam |
+| Uncommon | 25% | 10 Loam |
+| Rare | 11% | 25 Loam |
+| Epic | 3.5% | 60 Loam |
+| Legendary | 0.5% | 150 Loam |
+
+- **Pity:** an Epic or better is guaranteed within 30 pulls, a Legendary within 80. Both counters show in the Greenhouse.
+- **Odds are always visible** next to the pull button.
+- Seasonal **featured specimen** each month (higher share of the Legendary rate), tied to real composting seasons.
+
+### Other
+
+| Mechanic | Rule |
+|---|---|
+| Impact | kg kept from landfill, kg CO₂e avoided (0.55 kg per kg), $ fertilizer saved; shown on Home and Profile, labelled as estimates |
+| Notifications | plain, state-triggered, **max 2/day**: compost ready (built), streak at risk, crate earned |
+| Celebrations | short full-screen moments for streak milestones, level-ups, crates and harvests; afterwards they live in the Rewards inbox history |
 
 ---
 
 ## Mock data & demo scenarios
 
-`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following a tip visibly raises the health score. Switch scenarios from the hidden demo panel (**long-press Wren**).
+`MockRepository` supports these scenarios: `healthy`, `tooWet`, `tooDry`, `curing`, `ready`. It also comes with a seeded league of 29 fake users, and it *reacts* to what you log (browns dry the top layer out over ~10 s, wet greens add water), so following the next action visibly raises the health score. Switch scenarios from the hidden demo picker: **long-press the health hero** on Home.
+
+Seed state for the demo: 6-day streak (best 21) that extends to 7 on the first care action, 1 Lid Lock, 240 Loam, 2 unopened crates (Sprout, Grove) + 1 Seed Packet, Level 9.
 
 Verdicts in the app are `great` / `careful` / `avoid`; `careful` covers the backend's `add_with_browns` and `add_with_greens` (the `pairWith` list says which). The rule engine lives in `domain/advice_rules.dart`.
 
-**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-3`, `?scenario=tooWet`, `?open=log&item=banana_peel`, `?open=layer&zone=top|bottom|air`, `?open=health|streak|shop|debug`, `?celebrate=streak|quest|level|ready|harvest|promo`, `?onboarding=1`, `?checkin=1`. On a wide window the app renders in a phone-sized frame.
+**Web preview deep links** (`flutter run -d chrome`, or a web build): `?tab=0-4`, `?scenario=tooWet`, `?checkin=1`. On a wide window the app renders in a phone-sized frame.
 
-**Demo script:** log "banana peel" in `too_dry` → add. Switch to `too_wet` → "add browns first". Switch to `ready` → notification + celebration. Then show the streak, league rank and garden.
+**Demo script:** Home in `tooDry` → next action says "Add fresh scraps" → log banana peel → "great". Switch to `tooWet` → same peel → "careful, add browns first". Open Layers → today's calendar day fills in, quest claimable → claim → Loam ticks up → open a crate in the Rewards inbox → pull a Seed Packet.
 
 ---
 
@@ -194,7 +267,7 @@ Endpoint shapes mirror `CalmpostRepository` methods, so `ApiRepository` is a mec
 
 ## Gemini features
 
-Gemini is Wren's voice, not Wren's judgement. **Rules decide, Gemini explains.** The deterministic logic in `domain/` (mirrored in the backend) works out *what the bin needs*; Gemini turns that into friendly, specific advice and summaries. If Gemini is slow, fails, or returns something that disagrees with the rules, the rule-based answer is shown instead and nobody notices.
+Gemini is the bin's voice, not its judgement. **Rules decide, Gemini explains.** The deterministic logic in `domain/` (mirrored in the backend) works out *what the bin needs*; Gemini turns that into friendly, specific advice and summaries. If Gemini is slow, fails, or returns something that disagrees with the rules, the rule-based answer is shown instead and nobody notices.
 
 **Every call gets the same context snapshot:**
 ```
@@ -205,7 +278,7 @@ Gemini is Wren's voice, not Wren's judgement. **Rules decide, Gemini explains.**
   recent_logs: [last 10 adds],
   need: <computed by rules, see below> }
 ```
-The snapshot is stored with the response in `advice` so we can always show *why* Wren said something.
+The snapshot is stored with the response in `advice` so we can always show *why* the app said something.
 
 ### 1. Scrap check ("Can I add this?") — demo moment
 - Input: scrap name (typed) **or** a photo from the Log camera (Gemini vision identifies it, the user confirms).
@@ -228,14 +301,14 @@ Proposes what the bin needs next, including **whether it needs more browns or mo
 - Gemini output: `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence: low | medium | high}`. `amount` is plain-language ("a handful", "two egg cartons"), never grams.
 - `suggest_add` prefers items the user has logged before, so advice fits their kitchen.
 - **`nothing` is a valid, good answer.** Never suggest food just to have a suggestion (key idea 1).
-- Shown in the "Wren suggests" card on Home. Following it earns the +15 XP.
+- Shown in the "Next best action" card on Home. Following it earns the +15 XP.
 
 ### 3. Summaries
-All summaries are short (≤ 3 sentences or ≤ 4 bullets), in Wren's voice, and only reference numbers from the snapshot. No invented stats.
+All summaries are short (≤ 3 sentences or ≤ 4 bullets), in a calm, plain voice, and only reference numbers from the snapshot. No invented stats.
 
 | Summary | Where | What it covers |
 |---|---|---|
-| **Daily note** | Home, under Wren | Today's state in one or two lines + the one thing to do |
+| **Daily note** | Home, in the health hero status line | Today's state in one or two lines + the one thing to do |
 | **Score explainer** | Health score breakdown sheet | "Why is my score 72?": the biggest drag on the score and how to fix it |
 | **Layer trend** | Layer detail | What moisture / temp / CO₂ did this week, in plain words |
 | **Weekly recap** | Sunday, alongside the league reset | Health trend, greens:browns balance, care actions, XP, streak; one win and one thing to try next week |
@@ -274,13 +347,12 @@ python scripts/simulator.py --scenario too_wet
 
 ## Build order
 
-1. ~~M0 Foundation~~ done
-2. ~~M1 Home + Log~~ done: "same scrap, different answer" works on mocks
-3. ~~M2 Game core~~ done
-4. ~~M3 Leagues + Journey~~ done
-5. ~~M4 Profile / Garden / Achievements / Impact, onboarding, notifications~~ done
-6. **M5 Polish:** test on a real phone, tune motion and sound, Gemini summaries in the UI (daily note, layer trend).
-7. **Phase 2:** backend + Tiger Data + Gemini + firmware, then write `ApiRepository` and swap it in `state/providers.dart` (one line).
+1. **Redesign v2 (sleek):** ✅ design system + **Home** (this commit). Other tabs show a "Designing next" placeholder.
+2. **Log** tab (demo moment) and **Layers** tab.
+3. **Rewards inbox** + crate opening, **Greenhouse** (Seed Packets, collection).
+4. **Social** (leagues, friends) and **Profile** (achievements with crate rewards, collection showcase).
+5. **Polish:** real phone testing, motion tuning, reward sounds.
+6. **Phase 2:** backend + Tiger Data + Gemini + firmware, then write `ApiRepository` and swap it in `state/providers.dart` (one line).
 
 ---
 
@@ -291,4 +363,4 @@ python scripts/simulator.py --scenario too_wet
 - One owner per feature folder to avoid merge conflicts. Announce in the team chat before touching `ui/` or `domain/`, because everyone depends on them.
 - If you change a design token, rule or mechanic, **update this file in the same commit**.
 
-**Owners** (fill in names): Design system & art (Wren) — ___ · Home/Log — ___ · Game (quests, streak, leagues) — ___ · Backend/Tiger/Gemini — ___ · Firmware/hardware — ___
+**Owners** (fill in names): Design system — ___ · Home/Log — ___ · Game (quests, streak, leagues) — ___ · Backend/Tiger/Gemini — ___ · Firmware/hardware — ___

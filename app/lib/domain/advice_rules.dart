@@ -76,7 +76,7 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
   if (s.bottomStage == Stage.ready) {
     return Suggestion(
       balance: Balance.balanced,
-      line: 'The bottom layer is ready! Time to harvest your compost.',
+      line: 'The bottom layer has finished curing and is ready to harvest.',
       add: pick(['veg_peels', 'cardboard']),
       avoid: avoid,
     );
@@ -85,7 +85,9 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
     case Balance.needsBrowns:
       return Suggestion(
         balance: Balance.needsBrowns,
-        line: s.topMoisture > 64 ? 'I\'m wading up here! Some cardboard would soak this right up.' : 'Lots of greens lately. I could use some browns.',
+        line: s.topMoisture > 64
+            ? 'The top layer is ${s.topMoisture.round()}% wet. Dry browns will soak it up and let air back in.'
+            : 'Greens have outpaced browns this week. Balance them out with something dry.',
         add: pick(['cardboard', 'dry_leaves', 'newspaper']),
         avoid: [
           ...pick(['lettuce', 'grass']),
@@ -95,7 +97,9 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
     case Balance.needsGreens:
       return Suggestion(
         balance: Balance.needsGreens,
-        line: s.topMoisture < 36 ? 'It\'s dusty in here. Got any juicy peels?' : 'I\'m running low on greens. Feed me some scraps!',
+        line: s.topMoisture < 36
+            ? 'The top layer is down to ${s.topMoisture.round()}% moisture. Wet greens will get it going again.'
+            : 'The bin is running low on nitrogen. A few fresh scraps will help.',
         add: pick(['veg_peels', 'coffee_grounds', 'banana_peel']),
         avoid: [
           ...pick(['sawdust']),
@@ -105,7 +109,7 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
     case Balance.balanced:
       return Suggestion(
         balance: Balance.balanced,
-        line: 'Everything\'s cozy. Keep alternating greens and browns.',
+        line: 'Moisture and balance are on target. Keep alternating greens and browns.',
         add: pick(['veg_peels', 'eggshells', 'dry_leaves']),
         avoid: avoid,
       );

@@ -15,7 +15,6 @@ dependencies:
   flutter_local_notifications: ^22.3.2
   flutter_riverpod: ^2.6.1
   phosphor_flutter: ^2.1.0
-  shared_preferences: ^2.5.6
 
 dev_dependencies:
   flutter_test:
@@ -27,13 +26,19 @@ flutter:
   assets:
     - assets/sfx/
   fonts:
-    - family: Nunito
+    - family: Fraunces
       fonts:
-        - asset: assets/fonts/Nunito-600.ttf
+        - asset: assets/fonts/Fraunces-400.ttf
+          weight: 400
+        - asset: assets/fonts/Fraunces-500.ttf
+          weight: 500
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-500.ttf
+          weight: 500
+        - asset: assets/fonts/Manrope-600.ttf
           weight: 600
-        - asset: assets/fonts/Nunito-700.ttf
+        - asset: assets/fonts/Manrope-700.ttf
           weight: 700
-        - asset: assets/fonts/Nunito-800.ttf
+        - asset: assets/fonts/Manrope-800.ttf
           weight: 800
-        - asset: assets/fonts/Nunito-900.ttf
-          weight: 900

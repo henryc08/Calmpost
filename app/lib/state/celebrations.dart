@@ -30,10 +30,10 @@ class ReadyCelebration extends Celebration {
 }
 
 class HarvestCelebration extends Celebration {
-  const HarvestCelebration(this.plant, this.xp, this.acorns, this.kg);
+  const HarvestCelebration(this.plant, this.xp, this.loam, this.kg);
   final GardenPlant plant;
   final int xp;
-  final int acorns;
+  final int loam;
   final double kg;
 }
 

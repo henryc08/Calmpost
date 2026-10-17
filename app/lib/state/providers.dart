@@ -19,7 +19,7 @@ class BinHealth {
   const BinHealth(this.snapshot, this.breakdown, this.mood);
   final BinSnapshot snapshot;
   final HealthBreakdown breakdown;
-  final WrenMood mood;
+  final BinMood mood;
   int get score => breakdown.total;
 }
 
@@ -56,3 +56,14 @@ final standingsProvider = Provider<Standing>((ref) {
     });
   return Standing(all, all.indexWhere((m) => m.isYou) + 1, leagueTiers[GameState.tierIndex]);
 });
+
+/// 24 h trend for one zone + metric (sparklines, layer charts).
+final trendProvider = FutureProvider.family<List<TrendPoint>, (Zone, Metric)>((ref, key) {
+  ref.watch(scenarioProvider);
+  return ref.watch(repositoryProvider).trends(key.$1, key.$2);
+});
+
+/// Bottom-nav tabs.
+enum AppTab { home, layers, log, social, profile }
+
+final tabProvider = StateProvider<AppTab>((ref) => AppTab.home);

@@ -61,22 +61,22 @@ Balance balanceOf(BinSnapshot s) {
   return Balance.balanced;
 }
 
-WrenMood moodFor(BinSnapshot s, int health) {
-  if (s.topMoisture > 66) return WrenMood.soggy;
-  if (s.topMoisture < 33) return WrenMood.thirsty;
-  if (health >= 85) return WrenMood.thriving;
-  if (health >= 70) return WrenMood.happy;
-  if (health >= 50) return WrenMood.okay;
-  return WrenMood.sick;
+BinMood moodFor(BinSnapshot s, int health) {
+  if (s.topMoisture > 66) return BinMood.wet;
+  if (s.topMoisture < 33) return BinMood.dry;
+  if (health >= 85) return BinMood.thriving;
+  if (health >= 70) return BinMood.healthy;
+  if (health >= 50) return BinMood.fair;
+  return BinMood.struggling;
 }
 
-String moodLabel(WrenMood m) => switch (m) {
-  WrenMood.thriving => 'Thriving',
-  WrenMood.happy => 'Happy',
-  WrenMood.okay => 'Doing okay',
-  WrenMood.thirsty => 'Thirsty',
-  WrenMood.soggy => 'Soggy',
-  WrenMood.sick => 'Needs care',
+String moodLabel(BinMood m) => switch (m) {
+  BinMood.thriving => 'Thriving',
+  BinMood.healthy => 'Healthy',
+  BinMood.fair => 'Fair',
+  BinMood.dry => 'Too dry',
+  BinMood.wet => 'Too wet',
+  BinMood.struggling => 'Needs care',
 };
 
 /// Health state of a single zone, for tinting the bin illustration.

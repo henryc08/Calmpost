@@ -3,7 +3,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../domain/models.dart';
 import '../domain/xp_rules.dart';
-import '../ui/art/wren.dart' show WrenHat;
 import 'celebrations.dart';
 
 /// Everything the game layer tracks. In-memory for the demo; the backend's
@@ -12,14 +11,17 @@ class GameState {
   const GameState({
     required this.weekXp,
     required this.totalXp,
-    required this.acorns,
+    required this.loam,
     required this.streak,
     required this.quests,
     required this.garden,
     required this.logs,
     required this.actionXpToday,
-    required this.hat,
-    required this.ownedHats,
+    required this.careDays,
+    required this.lockDays,
+    required this.bestStreak,
+    required this.crates,
+    required this.packets,
     required this.harvests,
     required this.kgDiverted,
     required this.questsClaimedAllTime,
@@ -31,14 +33,23 @@ class GameState {
 
   final int weekXp;
   final int totalXp;
-  final int acorns;
+  final int loam;
   final StreakState streak;
   final List<Quest> quests;
   final List<GardenPlant> garden;
   final List<LogEntry> logs;
   final int actionXpToday;
-  final WrenHat hat;
-  final Set<WrenHat> ownedHats;
+
+  /// Days the bin was cared for (for the streak calendar).
+  final Set<DateTime> careDays;
+
+  /// Missed days covered by a Lid Lock.
+  final Set<DateTime> lockDays;
+  final int bestStreak;
+
+  /// Unopened reward crates and Seed Packets (the rewards inbox).
+  final List<CrateTier> crates;
+  final int packets;
   final int harvests;
   final double kgDiverted;
   final int questsClaimedAllTime;
@@ -52,14 +63,17 @@ class GameState {
   GameState copyWith({
     int? weekXp,
     int? totalXp,
-    int? acorns,
+    int? loam,
     StreakState? streak,
     List<Quest>? quests,
     List<GardenPlant>? garden,
     List<LogEntry>? logs,
     int? actionXpToday,
-    WrenHat? hat,
-    Set<WrenHat>? ownedHats,
+    Set<DateTime>? careDays,
+    Set<DateTime>? lockDays,
+    int? bestStreak,
+    List<CrateTier>? crates,
+    int? packets,
     int? harvests,
     double? kgDiverted,
     int? questsClaimedAllTime,
@@ -67,14 +81,17 @@ class GameState {
   }) => GameState(
     weekXp: weekXp ?? this.weekXp,
     totalXp: totalXp ?? this.totalXp,
-    acorns: acorns ?? this.acorns,
+    loam: loam ?? this.loam,
     streak: streak ?? this.streak,
     quests: quests ?? this.quests,
     garden: garden ?? this.garden,
     logs: logs ?? this.logs,
     actionXpToday: actionXpToday ?? this.actionXpToday,
-    hat: hat ?? this.hat,
-    ownedHats: ownedHats ?? this.ownedHats,
+    careDays: careDays ?? this.careDays,
+    lockDays: lockDays ?? this.lockDays,
+    bestStreak: bestStreak ?? this.bestStreak,
+    crates: crates ?? this.crates,
+    packets: packets ?? this.packets,
     harvests: harvests ?? this.harvests,
     kgDiverted: kgDiverted ?? this.kgDiverted,
     questsClaimedAllTime: questsClaimedAllTime ?? this.questsClaimedAllTime,
@@ -174,18 +191,25 @@ GameState _initial() {
   return GameState(
     weekXp: 185,
     totalXp: 2340,
-    acorns: 240,
+    loam: 240,
     streak: StreakState(days: 6, lidLocks: 1, lastCareDay: today.subtract(const Duration(days: 1))),
     quests: const [
-      Quest(id: 'checkin', title: 'Check in on Wren', icon: PhosphorIconsFill.handWaving, goal: 1, xp: 10, acorns: 5),
-      Quest(id: 'follow', title: 'Follow one of Wren\'s suggestions', icon: PhosphorIconsFill.lightbulb, goal: 1, xp: 20, acorns: 15),
-      Quest(id: 'healthy', title: 'Keep both layers in range for 6 h', icon: PhosphorIconsFill.drop, goal: 6, xp: 15, acorns: 10, unit: 'h'),
+      Quest(id: 'checkin', title: 'Check on your layers', icon: PhosphorIconsRegular.stack, goal: 1, xp: 10, loam: 10),
+      Quest(id: 'follow', title: 'Follow the next best action', icon: PhosphorIconsRegular.lightbulb, goal: 1, xp: 20, loam: 25),
+      Quest(id: 'healthy', title: 'Both layers in range for 6h', icon: PhosphorIconsRegular.drop, goal: 6, xp: 15, loam: 15, unit: 'h'),
     ],
     garden: garden,
     logs: const [],
     actionXpToday: 0,
-    hat: WrenHat.sprout,
-    ownedHats: const {WrenHat.none, WrenHat.sprout},
+    // Streak history: cared Oct 1–8 (4th covered by a Lid Lock), missed the 9th,
+    // then six days in a row up to yesterday. Relative to today for the demo.
+    careDays: {
+      for (final d in const [16, 15, 14, 13, 11, 10, 9, 6, 5, 4, 3, 2, 1]) today.subtract(Duration(days: d)),
+    },
+    lockDays: {today.subtract(const Duration(days: 12))},
+    bestStreak: 21,
+    crates: const [CrateTier.sprout, CrateTier.grove],
+    packets: 1,
     harvests: 2,
     kgDiverted: 14.6,
     questsClaimedAllTime: 34,
@@ -200,7 +224,6 @@ class LogOutcome {
   final bool capped;
 }
 
-const hatPrices = {WrenHat.none: 0, WrenHat.sprout: 0, WrenHat.straw: 120, WrenHat.beanie: 180, WrenHat.flowers: 300};
 const lidLockPrice = 60;
 const maxLidLocks = 2;
 
@@ -237,7 +260,11 @@ class GameController extends Notifier<GameState> {
 
   void _care() {
     final up = applyCareAction(state.streak, DateTime.now());
-    state = state.copyWith(streak: up.state);
+    state = state.copyWith(
+      streak: up.state,
+      careDays: {...state.careDays, dayOf(DateTime.now())},
+      bestStreak: up.state.days > state.bestStreak ? up.state.days : state.bestStreak,
+    );
     if (up.extended && !up.reset) {
       _party.push(StreakCelebration(up.state.days, lockUsed: up.locksUsed > 0));
     }
@@ -252,7 +279,7 @@ class GameController extends Notifier<GameState> {
     }
   }
 
-  /// Tapping Wren or opening a layer counts as checking in.
+  /// Opening the Layers tab counts as checking on the bin.
   void checkIn() => _act(_checkIn);
 
   void _checkIn() {
@@ -262,7 +289,7 @@ class GameController extends Notifier<GameState> {
     state = state.copyWith(actionXpToday: state.actionXpToday + xp);
     _progressQuest('checkin', 1);
     _addXp(xp);
-    _toast.show('Checked in on Wren', xp: xp);
+    _toast.show('Checked on the bin', xp: xp);
     _care();
   }
 
@@ -302,7 +329,7 @@ class GameController extends Notifier<GameState> {
     final q = state.quests.firstWhere((q) => q.id == id);
     if (!q.done || q.claimed) return;
     final quests = [for (final x in state.quests) x.id == id ? x.copyWith(claimed: true) : x];
-    state = state.copyWith(quests: quests, acorns: state.acorns + q.acorns, questsClaimedAllTime: state.questsClaimedAllTime + 1);
+    state = state.copyWith(quests: quests, loam: state.loam + q.loam, questsClaimedAllTime: state.questsClaimedAllTime + 1);
     _party.push(QuestCelebration(q, allDone: quests.every((x) => x.claimed)));
     _addXp(q.xp);
   }
@@ -311,32 +338,21 @@ class GameController extends Notifier<GameState> {
 
   void _harvest() {
     const xp = Xp.harvest;
-    const acorns = 50;
+    const loam = 50;
     final plant = GardenPlant(species: PlantSpecies.pumpkin, day: DateTime.now(), rare: true);
     final kg = 4.2;
-    state = state.copyWith(harvests: state.harvests + 1, acorns: state.acorns + acorns, garden: [...state.garden, plant]);
-    _party.push(HarvestCelebration(plant, xp, acorns, kg));
+    state = state.copyWith(harvests: state.harvests + 1, loam: state.loam + loam, garden: [...state.garden, plant]);
+    _party.push(HarvestCelebration(plant, xp, loam, kg));
     _addXp(xp);
   }
 
   bool buyLidLock() {
-    if (state.acorns < lidLockPrice || state.streak.lidLocks >= maxLidLocks) return false;
+    if (state.loam < lidLockPrice || state.streak.lidLocks >= maxLidLocks) return false;
     final s = state.streak;
     state = state.copyWith(
-      acorns: state.acorns - lidLockPrice,
+      loam: state.loam - lidLockPrice,
       streak: StreakState(days: s.days, lidLocks: s.lidLocks + 1, lastCareDay: s.lastCareDay),
     );
-    return true;
-  }
-
-  bool buyOrEquipHat(WrenHat hat) {
-    if (state.ownedHats.contains(hat)) {
-      state = state.copyWith(hat: hat);
-      return true;
-    }
-    final price = hatPrices[hat] ?? 0;
-    if (state.acorns < price) return false;
-    state = state.copyWith(acorns: state.acorns - price, ownedHats: {...state.ownedHats, hat}, hat: hat);
     return true;
   }
 

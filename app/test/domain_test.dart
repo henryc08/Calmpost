@@ -42,9 +42,9 @@ void main() {
     });
 
     test('mood follows moisture first', () {
-      expect(moodFor(snap(topM: 75), 90), WrenMood.soggy);
-      expect(moodFor(snap(topM: 20), 90), WrenMood.thirsty);
-      expect(moodFor(snap(), 90), WrenMood.thriving);
+      expect(moodFor(snap(topM: 75), 90), BinMood.wet);
+      expect(moodFor(snap(topM: 20), 90), BinMood.dry);
+      expect(moodFor(snap(), 90), BinMood.thriving);
     });
   });
 

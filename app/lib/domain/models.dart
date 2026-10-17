@@ -14,8 +14,8 @@ enum Verdict { great, careful, avoid }
 
 enum Balance { needsGreens, needsBrowns, balanced }
 
-/// Wren's moods, driven by the bin health score.
-enum WrenMood { thriving, happy, okay, thirsty, soggy, sick }
+/// The bin's overall state, driven by the health score and moisture.
+enum BinMood { thriving, healthy, fair, dry, wet, struggling }
 
 /// One reading from the ESP32: two layers + the air gap.
 class BinSnapshot {
@@ -81,7 +81,7 @@ class FoodItem {
   /// Typical weight of one "add", used for landfill-diverted stats.
   final double grams;
 
-  /// Why it's a green/brown/avoid, in Wren's words.
+  /// Why it's a green/brown/avoid, in plain words.
   final String note;
 
   /// Adds a lot of water (fruit, peels, coffee grounds).
@@ -97,7 +97,7 @@ class Advice {
   final List<FoodItem> pairWith;
 }
 
-/// What Wren thinks the bin needs right now.
+/// What the bin needs right now.
 class Suggestion {
   const Suggestion({required this.balance, required this.line, required this.add, required this.avoid});
   final Balance balance;
@@ -113,7 +113,7 @@ class Quest {
     required this.icon,
     required this.goal,
     required this.xp,
-    required this.acorns,
+    required this.loam,
     this.progress = 0,
     this.claimed = false,
     this.unit = '',
@@ -125,7 +125,7 @@ class Quest {
   final double goal;
   final double progress;
   final int xp;
-  final int acorns;
+  final int loam;
   final bool claimed;
   final String unit;
 
@@ -137,7 +137,7 @@ class Quest {
     icon: icon,
     goal: goal,
     xp: xp,
-    acorns: acorns,
+    loam: loam,
     unit: unit,
     progress: progress ?? this.progress,
     claimed: claimed ?? this.claimed,
@@ -197,3 +197,9 @@ class LogEntry {
   /// False when the user checked an item and kept it out.
   final bool added;
 }
+
+/// Reward crates, earned from achievements and milestones.
+enum CrateTier { sprout, grove, canopy }
+
+/// Gacha rarities for Seed Packet pulls.
+enum Rarity { common, uncommon, rare, epic, legendary }

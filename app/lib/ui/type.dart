@@ -2,25 +2,36 @@ import 'package:flutter/widgets.dart';
 
 import 'tokens.dart';
 
-/// Type scale. Nunito, weights 600–900 only.
+/// Type scale. Fraunces (soft serif) for headline numbers and titles,
+/// Manrope for everything else.
 abstract final class T {
-  static const _f = 'Nunito';
+  static const _serif = 'Fraunces';
+  static const _sans = 'Manrope';
   static const _tab = [FontFeature.tabularFigures()];
 
-  static const display = TextStyle(fontFamily: _f, fontSize: 34, height: 1.1, fontWeight: FontWeight.w900, color: C.ink, letterSpacing: -0.5);
-  static const h1 = TextStyle(fontFamily: _f, fontSize: 28, height: 1.15, fontWeight: FontWeight.w900, color: C.ink, letterSpacing: -0.3);
-  static const h2 = TextStyle(fontFamily: _f, fontSize: 22, height: 1.2, fontWeight: FontWeight.w800, color: C.ink);
-  static const title = TextStyle(fontFamily: _f, fontSize: 17, height: 1.25, fontWeight: FontWeight.w800, color: C.ink);
-  static const body = TextStyle(fontFamily: _f, fontSize: 15, height: 1.4, fontWeight: FontWeight.w600, color: C.inkSoft);
-  static const bodyStrong = TextStyle(fontFamily: _f, fontSize: 15, height: 1.4, fontWeight: FontWeight.w800, color: C.ink);
-  static const small = TextStyle(fontFamily: _f, fontSize: 13, height: 1.35, fontWeight: FontWeight.w700, color: C.muted);
+  // Serif
+  static const hero = TextStyle(fontFamily: _serif, fontSize: 84, height: 0.95, fontWeight: FontWeight.w400, color: C.ink, letterSpacing: -3);
+  static const display = TextStyle(fontFamily: _serif, fontSize: 32, height: 1.1, fontWeight: FontWeight.w400, color: C.ink, letterSpacing: -0.8);
+  static const title = TextStyle(fontFamily: _serif, fontSize: 23, height: 1.15, fontWeight: FontWeight.w500, color: C.ink, letterSpacing: -0.4);
+  static const stat = TextStyle(fontFamily: _serif, fontSize: 24, height: 1.1, fontWeight: FontWeight.w500, color: C.ink, letterSpacing: -0.5);
 
-  /// Duolingo-style caps label for buttons and eyebrows.
-  static const label = TextStyle(fontFamily: _f, fontSize: 15, height: 1, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: C.ink);
-  static const eyebrow = TextStyle(fontFamily: _f, fontSize: 12, height: 1, fontWeight: FontWeight.w900, letterSpacing: 1.1, color: C.muted);
+  // Sans
+  static const heading = TextStyle(fontFamily: _sans, fontSize: 16, height: 1.3, fontWeight: FontWeight.w700, color: C.ink, letterSpacing: -0.1);
+  static const body = TextStyle(fontFamily: _sans, fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w500, color: C.ink2);
+  static const label = TextStyle(fontFamily: _sans, fontSize: 13, height: 1.3, fontWeight: FontWeight.w600, color: C.muted);
+  static const small = TextStyle(fontFamily: _sans, fontSize: 12, height: 1.3, fontWeight: FontWeight.w600, color: C.muted);
+  static const caps = TextStyle(fontFamily: _sans, fontSize: 11, height: 1.2, fontWeight: FontWeight.w700, color: C.muted, letterSpacing: 1.2);
+  static const button = TextStyle(fontFamily: _sans, fontSize: 14.5, height: 1.2, fontWeight: FontWeight.w700, color: C.ink);
 
-  /// Numbers: tabular so count-ups don't jitter.
-  static const numXL = TextStyle(fontFamily: _f, fontSize: 44, height: 1, fontWeight: FontWeight.w900, color: C.ink, fontFeatures: _tab, letterSpacing: -1);
-  static const numL = TextStyle(fontFamily: _f, fontSize: 28, height: 1, fontWeight: FontWeight.w900, color: C.ink, fontFeatures: _tab);
-  static const numM = TextStyle(fontFamily: _f, fontSize: 17, height: 1, fontWeight: FontWeight.w900, color: C.ink, fontFeatures: _tab);
+  // Numbers
+  static const value = TextStyle(
+    fontFamily: _sans,
+    fontSize: 22,
+    height: 1.1,
+    fontWeight: FontWeight.w700,
+    color: C.ink,
+    fontFeatures: _tab,
+    letterSpacing: -0.5,
+  );
+  static const num = TextStyle(fontFamily: _sans, fontSize: 13, height: 1.2, fontWeight: FontWeight.w700, color: C.ink, fontFeatures: _tab);
 }

@@ -7,10 +7,10 @@ import '../domain/models.dart' show Rarity;
 /// No gradients, no glass, no purple.
 abstract final class C {
   // Surfaces
-  static const paper = Color(0xFFF2F8EC);
+  static const paper = Color(0xFFE1EBD8);
   static const surface = Color(0xFFFFFFFF);
-  static const sunk = Color(0xFFE0ECD6);
-  static const line = Color(0xFFD4E4C9);
+  static const sunk = Color(0xFFCFDDC3);
+  static const line = Color(0xFFC6D7B9);
 
   // Text
   static const ink = Color(0xFF11251A);
@@ -19,8 +19,8 @@ abstract final class C {
   static const faint = Color(0xFFA6BBAC);
 
   // Brand: the vivid band at the top of Home (and future hero moments)
-  static const brand = Color(0xFF34B868);
-  static const brandDeep = Color(0xFF26A057);
+  static const brand = Color(0xFF40C274);
+  static const brandDeep = Color(0xFF31AE63);
   static const onBrand = Color(0xFFFFFFFF);
   static const onBrandMuted = Color(0xCCFFFFFF);
 

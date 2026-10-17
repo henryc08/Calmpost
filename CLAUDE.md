@@ -310,9 +310,9 @@ Everything visual comes from `lib/ui/`. **Never use raw Material widgets with de
 
 | Token | Hex | Use |
 |---|---|---|
-| `paper` | `#F2F8EC` | bright mint-white app background, with faint topographic contour lines (`ui/backdrop.dart`, `TopoBackdrop`) |
-| `brand` / `brandDeep` / `onBrand` | `#34B868` / `#26A057` / `#FFFFFF` | **the signature Calmpost green band** at the top of Home (HUD, Bin World, score), with a two-layer hill along its bottom edge; white text and a white gauge on it |
-| `surface` / `sunk` / `line` | `#FFFFFF` / `#E0ECD6` / `#D4E4C9` | sheets, nav bar / tracks / hairlines |
+| `paper` | `#E1EBD8` | soft green-grey app background, with faint topographic contour lines (`ui/backdrop.dart`, `TopoBackdrop`) |
+| `brand` / `brandDeep` / `onBrand` | `#40C274` / `#31AE63` / `#FFFFFF` | **the signature Calmpost green band** at the top of Home (HUD, Bin World, score), with a two-layer hill along its bottom edge; white text and a white gauge on it |
+| `surface` / `sunk` / `line` | `#FFFFFF` / `#CFDDC3` / `#C6D7B9` | sheets, nav bar / tracks / hairlines |
 | `ink` / `ink2` / `muted` / `faint` | `#11251A` / `#2D4637` / `#6A8273` / `#A6BBAC` | text hierarchy (deep greens, all readable on the green paper) |
 | `forest` / `forest2` / `onForest` | `#1F3A2E` / `#2B4D3E` / `#EDEFE6` | primary actions, dark surfaces |
 | `sprout` | `#B9DD7B` | positive accent on forest |

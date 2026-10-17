@@ -230,11 +230,17 @@ async def ask(
                 body["contents"][-1]["parts"] = _parts(snapshot, recent, [], message)
                 answer = await _call(body)
             except Exception:
-                log.exception("trunc: text-only retry failed too; using the rules summary")
+                log.warning("trunc: text-only retry failed too; using the rules summary")
                 return _fallback(snapshot), "rules-fallback"
         else:
-            log.exception("trunc: gemini call failed; falling back to the rules summary")
+            log.warning("trunc: gemini call failed; falling back to the rules summary")
             return _fallback(snapshot), "rules-fallback"
+
+    if (not isinstance(answer, dict)
+            or not isinstance(answer.get("reply"), str)
+            or any(key in answer and not isinstance(answer[key], bool)
+                   for key in ("on_topic", "used_readings"))):
+        return _fallback(snapshot), "rules-fallback"
 
     if not answer.get("on_topic", True):
         # Our line, not the model's, so the refusal reads the same every time.
@@ -303,7 +309,7 @@ async def _call(body: dict) -> dict:
     url = ENDPOINT.format(model=settings.gemini_model)
     # Longer than the verdict sheet's 20 s: photos make the request bigger.
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, params={"key": settings.gemini_api_key}, json=body)
+        resp = await client.post(url, headers={"x-goog-api-key": settings.gemini_api_key}, json=body)
         resp.raise_for_status()
         data = resp.json()
     return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])

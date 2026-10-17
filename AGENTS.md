@@ -264,6 +264,7 @@ The snapshot is stored with each response (`advice` table), so we can always sho
 
 **Guardrails**
 - **Validate everything:** responses must match the schema; `verdict` and `need` must match the rules; hard-avoid items can never appear in `suggest_add`; drop `catalog_id` must be in the catalog or `unknown`. Otherwise, fall back.
+- Backend advice validates required fields, list elements and enums before use. Photo parsing failures keep the photo pending for manual review; malformed Trunc replies use its rules summary. Invalid model responses must not become 500s or expose raw provider errors.
 - **Honest:** stage and "ready" are described as guides ("looks ready"); low-confidence answers say so.
 - **Fallback templates** live in `domain/advice_rules.dart` (and the Python mirror), so the app works offline and on mock data.
 - **Settings:** `temperature 0` for vision and verdicts, a low thinking budget, `media_resolution` medium for frames.

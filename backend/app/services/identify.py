@@ -97,6 +97,8 @@ def parse(raw: dict) -> list[dict]:
     final say, so a label the rules call avoid is avoid however the photo was
     labelled. That is also why the prompt forbids the model from judging.
     """
+    if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+        raise ValueError("Photo identification must contain an items list")
     out: list[dict] = []
     for it in (raw.get("items") or [])[:4]:
         if not isinstance(it, dict):
@@ -156,6 +158,7 @@ async def identify(jpeg: bytes) -> tuple[list[dict], str, str | None]:
 
     try:
         raw = await _call(body)
+        items = parse(raw)
     except Exception:
         # Provider exceptions can contain credentials, request URLs or body
         # data. Never persist them in drop_events, return them to the app, or
@@ -163,7 +166,7 @@ async def identify(jpeg: bytes) -> tuple[list[dict], str, str | None]:
         log.warning("identify: Gemini request failed; using manual identification")
         return [], "rules-fallback", "Photo identification is unavailable. Please identify the items manually."
 
-    return parse(raw), settings.gemini_model, None
+    return items, settings.gemini_model, None
 
 
 async def _call(body: dict) -> dict:

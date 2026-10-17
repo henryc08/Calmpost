@@ -17,11 +17,29 @@ import json
 import logging
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import get_settings
+from ..models import Balance, Stage, Verdict
 from ..rules import compost
 
 log = logging.getLogger(__name__)
+
+
+class AdviceText(BaseModel):
+    """Validate model output before filtering it or storing it as advice."""
+    model_config = ConfigDict(strict=True)
+    verdict: Verdict
+    headline: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    suggest_add: list[str]
+    suggest_avoid: list[str]
+    pair_with: list[str] = Field(default_factory=list)
+    balance: Balance
+    stage_top: Stage
+    stage_bottom: Stage
+    bottom_ready: bool
+    tip: str = ""
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -141,10 +159,11 @@ async def advise(snapshot: dict, item: str | None, recent: list[dict] | None = N
     }
 
     try:
-        answer = await _ask_gemini(body)
+        answer = AdviceText.model_validate(await _ask_gemini(body)).model_dump()
     except Exception:
         # A judge should see advice, not a stack trace.
-        log.exception("gemini call failed; using rules fallback")
+        # Validation/provider errors may echo raw input or credentials.
+        log.warning("Gemini advice unavailable or invalid; using rules fallback")
         return fallback(snapshot, item), "rules-fallback"
 
     # Rule 1 again, defensively: strip never-add items out of the model's own
@@ -178,7 +197,7 @@ async def _ask_gemini(body: dict) -> dict:
     settings = get_settings()
     url = ENDPOINT.format(model=settings.gemini_model)
     async with httpx.AsyncClient(timeout=4) as client:
-        resp = await client.post(url, params={"key": settings.gemini_api_key}, json=body)
+        resp = await client.post(url, headers={"x-goog-api-key": settings.gemini_api_key}, json=body)
         resp.raise_for_status()
         data = resp.json()
     return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])

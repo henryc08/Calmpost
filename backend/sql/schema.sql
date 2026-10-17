@@ -19,14 +19,18 @@ CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit;
 -- moisture is 45% of the health score, so a wrong curve poisons everything
 -- downstream. calibrated=false means the defaults are still in place and the
 -- app should say so rather than present a confident number.
+--
+-- Defaults assume the 10-BIT ADC the sketch sets with
+-- analogReadResolution(10), so raw counts run 0-1023. These are only a
+-- plausible starting curve -- calibrate per probe.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bins (
     bin_id           text PRIMARY KEY,
     display_name     text        NOT NULL DEFAULT 'Compost Bin',
     token_sha256     text        NOT NULL,
     owner_id         text        NOT NULL DEFAULT 'demo-user',
-    moisture_raw_dry integer     NOT NULL DEFAULT 3000,
-    moisture_raw_wet integer     NOT NULL DEFAULT 1000,
+    moisture_raw_dry integer     NOT NULL DEFAULT 620,
+    moisture_raw_wet integer     NOT NULL DEFAULT 310,
     calibrated       boolean     NOT NULL DEFAULT false,
     created_at       timestamptz NOT NULL DEFAULT now(),
     last_seen_at     timestamptz,

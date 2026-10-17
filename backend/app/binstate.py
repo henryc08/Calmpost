@@ -157,7 +157,10 @@ async def snapshot(bin_id: str) -> dict | None:
     tw_moisture = await time_weighted_moisture(bin_id)
     in_band = await hours_in_healthy_band(bin_id)
 
-    co2_ok = (latest["co2_status"] or 0) == 0
+    # The sketch prints co2_status: null when the sensor read itself failed,
+    # and co2_ppm: null alongside it -- so a null status is NOT healthy.
+    # CO2 is usable only when there is a value and no error flag.
+    co2_ok = latest["co2_ppm"] is not None and latest["co2_status"] in (0, None)
     probe_layer = latest["probe_layer"]
     pct = latest["moisture_pct"]
 

@@ -8,6 +8,7 @@ import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
+import '../../ui/piece_counter.dart';
 import 'drop_photo.dart';
 
 /// "Is this right?": always asked, even when the camera is sure, because
@@ -113,7 +114,7 @@ class _DropReviewState extends State<DropReview> {
     };
     final saveLabel = widget.tier == DropTier.confident && !_edited ? 'Yes, that\'s right' : 'Save';
     final valid = _lines.isNotEmpty && _lines.every((l) => l.item.name != 'Something else' && (!l.keepOut || l.removed));
-    final grams = _lines.where((l) => !l.keepOut && !l.removed).fold<double>(0, (sum, l) => sum + amountGrams[l.amount]!);
+    final grams = _lines.where((l) => !l.keepOut && !l.removed).fold<double>(0, (sum, l) => sum + l.grams);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -125,10 +126,7 @@ class _DropReviewState extends State<DropReview> {
         Text(body, style: T.body),
         const SizedBox(height: S.x4),
         DropPhoto(drop: widget.drop),
-        if (widget.drop.items.isNotEmpty) ...[
-          const SizedBox(height: S.x2),
-          Text('Camera’s original guess: ${widget.drop.items.map((i) => i.label).join(', ')}', style: T.small),
-        ],
+        if (widget.drop.items.isNotEmpty) ...[const SizedBox(height: S.x2), Text('Camera’s original guess: ${widget.drop.items.map((i) => i.label).join(', ')}', style: T.small)],
         const SizedBox(height: S.x4),
         if (_lines.isNotEmpty) ...[
           for (final (i, l) in _lines.indexed) ...[
@@ -139,7 +137,9 @@ class _DropReviewState extends State<DropReview> {
               showCheck: !unclear,
               open: _editing == i,
               onTap: () {
-                if (!widget.saving) setState(() => _editing = _editing == i ? null : i);
+                if (!widget.saving) {
+                  setState(() => _editing = _editing == i ? null : i);
+                }
               },
               onRemovedChanged: (v) => _replace(i, l.copyWith(removed: v)),
             ),
@@ -246,7 +246,7 @@ class _LineRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '$type · $amount ≈ ${amountGrams[line.amount]!.round()} g$sure',
+                        '${line.pieceCount} × · $type · $amount ≈ ${line.grams.round()} g$sure',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: T.small.copyWith(color: line.keepOut ? C.clay : C.muted),
@@ -367,9 +367,7 @@ class _EditorState extends State<_Editor> {
                     icon: PhosphorIconsRegular.pencilSimple,
                     onTap: () {
                       _query.clear();
-                      widget.onChanged(
-                        l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)),
-                      );
+                      widget.onChanged(l.copyWith(item: customFood(q, l.item.category == FoodCategory.avoid ? FoodCategory.avoid : FoodCategory.green, l.amount)));
                     },
                   ),
               ],
@@ -391,7 +389,12 @@ class _EditorState extends State<_Editor> {
             ),
           ],
           const SizedBox(height: S.x4),
-          Text('HOW MUCH', style: T.caps.copyWith(fontSize: 10.5)),
+          PieceCounter(
+            value: l.pieceCount,
+            onChanged: (count) => widget.onChanged(l.copyWith(pieceCount: count)),
+          ),
+          const SizedBox(height: S.x4),
+          Text('TOTAL AMOUNT', style: T.caps.copyWith(fontSize: 10.5)),
           const SizedBox(height: S.x2),
           PaperSegments<Amount>(
             values: Amount.values,
@@ -402,6 +405,16 @@ class _EditorState extends State<_Editor> {
               Amount.large => 'Large',
             },
             onChanged: (a) => widget.onChanged(l.copyWith(amount: a, item: l.isCustom ? customFood(l.item.name, l.item.category, a) : null)),
+          ),
+          const SizedBox(height: S.x2),
+          TextButton(
+            onPressed: () async {
+              final grams = await editCompostWeight(context, l.grams);
+              if (grams != null && mounted) {
+                widget.onChanged(widget.line.copyWith(quantityG: grams));
+              }
+            },
+            child: Text('≈ ${l.grams.round()} g total · Edit weight', style: T.small),
           ),
           const SizedBox(height: S.x3),
           Pressable(

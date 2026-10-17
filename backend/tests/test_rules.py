@@ -131,4 +131,4 @@ def test_statement_splitter_handles_quotes_and_do_blocks():
 def test_schema_files_apply_in_order():
     names = [p.name for p in db.schema_files()]
     assert names == sorted(names)
-    assert names[0].startswith("000_") and names[-1].startswith("095_")
+    assert names[0].startswith("000_") and names[-1].startswith("096_")

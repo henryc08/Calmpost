@@ -87,6 +87,8 @@ class ProfileScreen extends ConsumerWidget {
         _Rewards(g: g),
         const SectionBreak(),
         _Impact(g: g),
+        const SizedBox(height: S.x3),
+        PillButton(label: 'Compost inventory', icon: PhosphorIconsRegular.leaf, onTap: () => Routes.inventory(context)),
         const SectionBreak(),
         SectionLabel('ACHIEVEMENTS', trailing: Text('Every tier pays a crate', style: T.small.copyWith(fontSize: 11))),
         const SizedBox(height: S.x2),

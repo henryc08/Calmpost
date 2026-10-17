@@ -18,6 +18,7 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import '../../ui/info_dot.dart';
+import '../../ui/piece_counter.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -47,9 +48,11 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
   String? _error;
   bool _saving = false;
   late Amount _amount = amountFor(widget.item.grams);
+  int _pieceCount = 1;
+  double? _weight;
   String _requestId = _newRequestId();
   static String _newRequestId() => 'manual-${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
-  ({Advice advice, bool added, double grams, bool advised})? _submission;
+  ({Advice advice, bool added, double grams, int pieces, bool advised})? _submission;
 
   @override
   void initState() {
@@ -64,6 +67,8 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
       _advice = null;
       _error = null;
       _amount = amountFor(item.grams);
+      _pieceCount = 1;
+      _weight = null;
       _requestId = _newRequestId();
     });
     try {
@@ -72,7 +77,9 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
       advice.verdict == Verdict.great ? HapticFeedback.mediumImpact() : HapticFeedback.lightImpact();
       setState(() => _advice = advice);
     } catch (_) {
-      if (mounted && _item == item) setState(() => _error = 'Could not check the bin. Nothing has been logged.');
+      if (mounted && _item == item) {
+        setState(() => _error = 'Could not check the bin. Nothing has been logged.');
+      }
     }
   }
 
@@ -84,7 +91,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
     });
     final advice = _advice!;
     final tips = ref.read(suggestionProvider)?.add.map((f) => f.id) ?? const <String>[];
-    final submission = _submission ??= (advice: advice, added: added, grams: amountGrams[_amount]!, advised: tips.contains(advice.item.id));
+    final submission = _submission ??= (advice: advice, added: added, grams: _weight ?? amountGrams[_amount]!, pieces: _pieceCount, advised: tips.contains(advice.item.id));
     final repo = ref.read(repositoryProvider);
     final game = ref.read(gameProvider.notifier);
     try {
@@ -100,9 +107,11 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
                   'catalog_id': submission.advice.item.id,
                   'action': submission.added ? 'added' : 'skipped',
                   'quantity_g': submission.added ? submission.grams.round() : 0,
+                  'piece_count': submission.pieces,
                   'request_id': _requestId,
                 })
                 as Json;
+        ref.invalidate(inventoryProvider);
         await game.refreshLive();
         if (!mounted) return;
         showToast(ref, 'Care saved to your profile', xp: result['xp_awarded'] as int);
@@ -113,10 +122,12 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
         submission.advice.item,
         added: submission.added,
         quantityG: submission.grams,
+        pieceCount: submission.pieces,
         requestId: _requestId,
         wasAdvised: submission.advised,
       );
-      final xp = repo.serverGame ? paid ?? 0 : game.recordLog(advice, added: added, suggestedIds: tips, quantityG: amountGrams[_amount]).xp;
+      final xp = repo.serverGame ? paid ?? 0 : game.recordLog(advice, added: added, suggestedIds: tips, quantityG: submission.grams).xp;
+      ref.invalidate(inventoryProvider);
       if (repo.serverGame) await game.refreshLive();
       if (!mounted) return;
       showToast(ref, added ? '${advice.item.name} logged' : 'Kept ${advice.item.name.toLowerCase()} out', xp: xp);
@@ -153,12 +164,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
             if (a == null) PillButton(label: 'Try again', onTap: () => _check(_item)),
             const SizedBox(height: S.x3),
           ],
-          AnimatedSize(
-            duration: M.base,
-            curve: M.ease,
-            alignment: Alignment.topCenter,
-            child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a),
-          ),
+          AnimatedSize(duration: M.base, curve: M.ease, alignment: Alignment.topCenter, child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a)),
         ],
       ),
     );
@@ -249,31 +255,41 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
         ),
         const SizedBox(height: S.x5),
         if (!avoid) ...[
-          Text('AMOUNT · ESTIMATED', style: T.caps),
+          PieceCounter(value: _pieceCount, onChanged: _saving || _submission != null ? null : (count) => setState(() => _pieceCount = count)),
+          const SizedBox(height: S.x3),
+          Text('TOTAL AMOUNT · ESTIMATED', style: T.caps),
           const SizedBox(height: S.x2),
           PaperSegments<Amount>(
             values: Amount.values,
             selected: _amount,
             label: (a) => '${a.name} ${amountGrams[a]!.round()} g',
             onChanged: (a) {
-              if (!_saving && _submission == null) setState(() => _amount = a);
+              if (!_saving && _submission == null) {
+                setState(() {
+                  _amount = a;
+                  _weight = null;
+                });
+              }
             },
+          ),
+          TextButton(
+            onPressed: _saving || _submission != null
+                ? null
+                : () async {
+                    final grams = await editCompostWeight(context, _weight ?? amountGrams[_amount]!);
+                    if (grams != null && mounted) {
+                      setState(() => _weight = grams);
+                    }
+                  },
+            child: Text('≈ ${(_weight ?? amountGrams[_amount]!).round()} g total · Edit weight', style: T.small),
           ),
           const SizedBox(height: S.x4),
         ],
         SizedBox(
           width: double.infinity,
           child: avoid
-              ? PillButton(
-                  label: _saving ? 'Saving…' : 'Keep it out',
-                  color: C.clay,
-                  textColor: Colors.white,
-                  onTap: _saving ? null : () => _commit(added: false),
-                )
-              : PillButton(
-                  label: _saving ? 'Saving…' : (a.verdict == Verdict.great ? 'Add it' : 'Add it carefully'),
-                  onTap: _saving ? null : () => _commit(added: true),
-                ),
+              ? PillButton(label: _saving ? 'Saving…' : 'Keep it out', color: C.clay, textColor: Colors.white, onTap: _saving ? null : () => _commit(added: false))
+              : PillButton(label: _saving ? 'Saving…' : (a.verdict == Verdict.great ? 'Add it' : 'Add it carefully'), onTap: _saving ? null : () => _commit(added: true)),
         ),
         const SizedBox(height: S.x2),
         Center(

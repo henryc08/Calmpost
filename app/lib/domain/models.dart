@@ -287,6 +287,7 @@ class DropGuess {
     this.category,
     this.amount,
     this.estGrams,
+    this.pieceCount,
     this.box,
   });
 
@@ -309,6 +310,7 @@ class DropGuess {
   final String? amount;
 
   final double? estGrams;
+  final int? pieceCount;
 
   /// [ymin, xmin, ymax, xmax] on a 0-1000 grid, as Gemini returns boxes.
   /// Scale by the displayed image size to draw it.
@@ -366,6 +368,8 @@ class DropConfirmation {
   const DropConfirmation({
     required this.label,
     this.catalogId = 'unknown',
+    this.pieceCount,
+    this.quantityG,
     this.category,
     this.amount,
     this.removed = false,
@@ -375,6 +379,8 @@ class DropConfirmation {
 
   final String label;
   final String catalogId;
+  final int? pieceCount;
+  final double? quantityG;
   final FoodCategory? category;
   final String? amount;
 

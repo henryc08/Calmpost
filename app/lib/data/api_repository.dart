@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
+import '../domain/inventory.dart';
 import 'api_config.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -21,8 +22,11 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)})
-    : _http = client ?? http.Client();
+  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)}) : _http = client ?? http.Client();
+
+  @override
+  Future<CompostInventory> inventory({String period = 'all'}) async =>
+      CompostInventory.fromJson(await _get('/bins/${config.binId}/inventory', {'period': period}) as Map<String, dynamic>);
 
   final ApiConfig config;
   final Duration pollEvery;
@@ -86,11 +90,7 @@ class ApiRepository implements CalmpostRepository {
 
   void close() => _http.close();
 
-  Map<String, String> get _headers => {
-    'X-API-Key': config.apiKey,
-    'Content-Type': 'application/json',
-    if (config.token != null) 'Authorization': 'Bearer ${config.token}',
-  };
+  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json', if (config.token != null) 'Authorization': 'Bearer ${config.token}'};
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('${config.baseUrl}$path').replace(queryParameters: query);
 
@@ -106,7 +106,9 @@ class ApiRepository implements CalmpostRepository {
   }
 
   dynamic _decode(String request, http.Response res) {
-    if (res.statusCode >= 400) throw ApiException(request, res.statusCode, res.body);
+    if (res.statusCode >= 400) {
+      throw ApiException(request, res.statusCode, res.body);
+    }
     return jsonDecode(utf8.decode(res.bodyBytes));
   }
 
@@ -160,7 +162,7 @@ class ApiRepository implements CalmpostRepository {
   }
 
   @override
-  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, String? requestId, bool wasAdvised = false}) async {
+  Future<int?> logItem(FoodItem item, {bool added = true, double? quantityG, int? pieceCount, String? requestId, bool wasAdvised = false}) async {
     final j =
         await _post('/bins/${config.binId}/logs', {
               'item': item.name,
@@ -168,6 +170,7 @@ class ApiRepository implements CalmpostRepository {
               'category': item.category.name,
               'action': added ? 'added' : 'skipped',
               'quantity_g': (quantityG ?? item.grams).round(),
+              'piece_count': ?pieceCount,
               'request_id': requestId,
               'was_advised': wasAdvised,
             })
@@ -235,6 +238,8 @@ class ApiRepository implements CalmpostRepository {
                     'catalog_id': l.isCustom ? 'unknown' : l.item.id,
                     'category': l.item.category.name,
                     'amount': l.amount.name,
+                    'piece_count': l.pieceCount,
+                    'quantity_g': l.grams.round(),
                     'removed': l.removed,
                     'was_advised': advisedIds.contains(l.item.id),
                   },
@@ -247,13 +252,7 @@ class ApiRepository implements CalmpostRepository {
         if (i < items.length && items[i]['verdict'] is Map<String, dynamic>)
           adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>, xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
         else if (l.removed)
-          Advice(
-            item: l.item,
-            verdict: Verdict.avoid,
-            headline: 'Kept it out',
-            reason: 'Thanks for taking it back out.',
-            xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0,
-          )
+          Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.', xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
         else
           // No readings to judge against yet: the add is still logged.
           Advice(
@@ -332,6 +331,8 @@ class ApiRepository implements CalmpostRepository {
                     // lets it decide rather than asserting a category we guessed.
                     'category': i.category?.name ?? 'unknown',
                     if (i.amount != null) 'amount': i.amount,
+                    if (i.pieceCount != null) 'piece_count': i.pieceCount,
+                    if (i.quantityG != null) 'quantity_g': i.quantityG!.round(),
                     'removed': i.removed,
                     'was_advised': i.wasAdvised,
                     if (i.adviceId != null) 'advice_id': i.adviceId,
@@ -360,9 +361,7 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<CameraDrop> submitPhoto(Uint8List jpeg) async {
-    final j = await _post('/bins/${config.binId}/drops/photo', {
-      'image_jpeg_b64': base64Encode(jpeg),
-    }) as Map<String, dynamic>;
+    final j = await _post('/bins/${config.binId}/drops/photo', {'image_jpeg_b64': base64Encode(jpeg)}) as Map<String, dynamic>;
     return dropFromJson(j);
   }
 
@@ -474,6 +473,8 @@ Drop reviewedDropFromJson(Map<String, dynamic> j) {
           category: FoodCategory.values.where((c) => c.name == i['category']).firstOrNull,
           amount: Amount.values.where((a) => a.name == i['amount']).firstOrNull,
           confidence: _d(i['confidence']) ?? 0,
+          pieceCount: (i['piece_count'] as num?)?.toInt(),
+          estimatedGrams: _d(i['est_grams']),
           box: (i['box_2d'] as List?)?.map((v) => (v as num).toDouble()).toList(),
         ),
     ],
@@ -509,6 +510,7 @@ CameraDrop dropFromJson(Map<String, dynamic> j) {
         category: FoodCategory.values.where((c) => c.name == g['category']).firstOrNull,
         amount: g['amount'] as String?,
         estGrams: _d(g['est_grams']),
+        pieceCount: (g['piece_count'] as num?)?.toInt(),
         box: (g['box_2d'] as List?)?.cast<num>().map((n) => n.toInt()).toList(),
       ),
     );

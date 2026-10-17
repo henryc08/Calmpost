@@ -23,9 +23,10 @@ class Session:
 
 class Backend:
     def __init__(self, base_url: str = settings.backend_url, bin_id: str = settings.bin_id,
-                 api_key: str = settings.api_key, client: httpx.Client | None = None):
+                 api_key: str = settings.api_key, client: httpx.Client | None = None,
+                 device_token: str = settings.device_token):
         self.bin_id = bin_id
-        headers = {"X-API-Key": api_key} if api_key else {}
+        headers = {"X-Device-Token": device_token} if device_token else ({"X-API-Key": api_key} if api_key else {})
         self.http = client or httpx.Client(base_url=base_url, headers=headers, timeout=5.0)
 
     def active_session(self) -> Session | None:

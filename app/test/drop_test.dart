@@ -121,8 +121,8 @@ void main() {
       final lines = [DropLine(item: foodById['mixed_scraps']!, amount: Amount.large), DropLine(item: foodById['meat']!, amount: Amount.small, removed: true)];
       final v = await r.confirmReviewedDrop(const Drop(id: 7, items: []), lines, advisedIds: {'mixed_scraps'});
       expect(sent['items'], [
-        {'label': 'Mixed food scraps', 'catalog_id': 'mixed_scraps', 'category': 'green', 'amount': 'large', 'removed': false, 'was_advised': true},
-        {'label': 'Meat scraps', 'catalog_id': 'meat', 'category': 'avoid', 'amount': 'small', 'removed': true, 'was_advised': false},
+        {'label': 'Mixed food scraps', 'catalog_id': 'mixed_scraps', 'category': 'green', 'amount': 'large', 'piece_count': 1, 'quantity_g': 250, 'removed': false, 'was_advised': true},
+        {'label': 'Meat scraps', 'catalog_id': 'meat', 'category': 'avoid', 'amount': 'small', 'piece_count': 1, 'quantity_g': 40, 'removed': true, 'was_advised': false},
       ]);
       expect(v.map((a) => a.verdict), [Verdict.great, Verdict.avoid]);
 

@@ -104,7 +104,9 @@ curl -X POST http://127.0.0.1:8000/bins/bin-001/calibration \
 | Caller                       | Header           | Value                     |
 | ---------------------------- | ---------------- | ------------------------- |
 | Bridge / board               | `X-Device-Token` | the token from `init_db`  |
-| Flutter app, `vision/`       | `X-API-Key`      | `APP_API_KEY` from `.env` |
+| Demo app / vision            | `X-API-Key`      | `APP_API_KEY` from `.env` |
+| Registered player            | `Authorization: Bearer` | the signed-in session |
+| Vision for a player-owned bin | `X-Device-Token` | that bin's device token |
 
 - **Hashed tokens:** only the device token's SHA-256 is stored, and re-registering a bin revokes the old token.
 - **Bound to one bin:** a token only posts for its own bin, and a mismatch returns 403.
@@ -184,7 +186,7 @@ The verdict is `great`, `careful` or `avoid`, matching the app's Log sheet.
 
 ### Camera drop-in (`vision/`)
 
-The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Every route needs `X-API-Key`.
+The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Demo routes use `X-API-Key`. Registered owners use bearer sessions; vision reports to their bins using scoped `X-Device-Token` authentication.
 
 ```
 App     POST /bins/{id}/drops/session               arm the camera for 60 s
@@ -365,3 +367,26 @@ The bridge:
 - timestamps samples before queueing and retries oldest-first, even if no more serial data arrives
 - buffers up to 500 queued samples plus one in flight in memory; a full queue warns and drops incoming samples. Unsent data is lost on exit (also warned), not persisted to disk
 - exits on an auth failure rather than retrying with a revoked token
+
+## Confirmed compost inventory
+
+`GET /bins/{id}/inventory?period=all|week` returns grouped confirmed compostable
+inputs, estimated `grams`, `pieces`, `entries`, `uncounted_entries`, and the
+server ledger's `total_xp`, `volume_xp` and `care_xp`. Week boundaries are Sunday
+00:00 UTC. Item rows include catalog id, label, category, `vision_entries` and
+`last_added_at`. Group rankings expose aggregate grams/pieces and the XP breakdown;
+they do not expose private ingredient lists.
+
+Manual log bodies and `/social/care-log` accept optional `piece_count` (1–999).
+Drop reports and vision/photo identification carry optional `piece_count`;
+confirmation also accepts exact **total** `quantity_g` (1–5000). Count never
+multiplies the mass. Old logs have unknown counts, rather than an invented one.
+The inventory excludes skips, keep-out materials, pending/dismissed detections
+and zero-weight entries. Saved inputs remain in the history after harvesting;
+they are not measurements of remaining or finished compost.
+
+Migration `096_compost_inventory.sql` runs at boot. No historical XP is re-awarded.
+Amount XP remains 1 per 20 g rounded cumulatively each day, sharing the 60/day
+action cap with care actions. Registered owners use their bearer session for
+camera review; the vision service uses the bin's `DEVICE_TOKEN` for detection
+reporting. That device token cannot confirm, award XP, or read inventories.

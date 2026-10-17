@@ -166,6 +166,7 @@ class LogCreate(BaseModel):
     # "skipped" records trusting an avoid verdict, which is what earns XP.
     action: Literal["added", "skipped"] = "added"
     quantity_g: int | None = Field(default=None, ge=0, le=5000)
+    piece_count: int | None = Field(default=None, ge=1, le=999, strict=True)
     source: Literal["manual", "photo", "seed", "camera"] = "manual"
     was_advised: bool = False
     advice_id: int | None = None
@@ -181,6 +182,7 @@ class LogEntry(BaseModel):
     category: Category
     action: Literal["added", "skipped"]
     quantity_g: int | None = None
+    piece_count: int | None = None
     source: str
     was_advised: bool
     notes: str | None = None

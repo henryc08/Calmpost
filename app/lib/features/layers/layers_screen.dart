@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/health_score.dart';
+import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../state/game.dart';
 import '../../state/providers.dart';
@@ -178,6 +179,11 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
           style: T.body.copyWith(fontSize: 15),
         ),
         if (!s.calibrated(_zone) && _zone != Zone.air) Text('This probe is uncalibrated: treat its moisture percentage as an estimate.', style: T.small),
+        if (_zone != Zone.air)
+          TextButton(
+            onPressed: () => Routes.calibration(context),
+            child: Text('Calibrate probes', style: T.button),
+          ),
         if (_zone != Zone.air && !unmeasured) ...[
           const SectionBreak(),
           SectionLabel('LIFE CYCLE', trailing: Text('Guide from sensor trends', style: T.small.copyWith(fontSize: 11))),

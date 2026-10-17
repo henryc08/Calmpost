@@ -69,6 +69,7 @@ class LayerLive(BaseModel):
     # False when no probe reports this layer yet -- the app should show it as
     # unmeasured rather than as 0.
     measured: bool
+    moisture_calibrated: bool = False
     moisture_pct: float | None = None
     moisture_raw: int | None = None
     moisture_state: MoistureState = "unknown"

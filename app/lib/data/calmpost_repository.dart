@@ -4,12 +4,14 @@ import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
 import '../domain/drop_history.dart';
+import '../domain/calibration.dart';
 
 /// Everything the app needs from the outside world. Screens only ever talk to
 /// this interface: MockRepository (demo scenarios) or ApiRepository (the real
 /// bin, through FastAPI + Tiger Data). Method shapes mirror the backend
 /// endpoints in AGENTS.md section 5.
 abstract class CalmpostRepository {
+  Future<CalibrationResult> calibrateProbe({required int probe, required int dry, required int wet, bool backfill = false});
   Future<DropHistoryPage> dropHistory({String? before, int limit = 20});
 
   /// Authenticated JPEG read. Null means missing/expired, not a network error.

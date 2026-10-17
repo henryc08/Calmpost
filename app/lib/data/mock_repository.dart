@@ -7,6 +7,7 @@ import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
 import '../domain/drop_history.dart';
+import '../domain/calibration.dart';
 import '../domain/xp_rules.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -44,6 +45,15 @@ const _bases = {
 };
 
 class MockRepository implements CalmpostRepository {
+  final _calibrations = <int, CalibrationResult>{};
+  @override
+  Future<CalibrationResult> calibrateProbe({required int probe, required int dry, required int wet, bool backfill = false}) async {
+    final error = calibrationError(probe, dry, wet);
+    if (error != null) throw ArgumentError(error);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    return _calibrations[probe] = CalibrationResult(probe: probe, dry: dry, wet: wet);
+  }
+
   final _history = <int, PastDrop>{};
   final _photos = <int, Uint8List>{};
   @override
@@ -145,6 +155,7 @@ class MockRepository implements CalmpostRepository {
       topStage: b.top,
       bottomStage: b.bottom,
       healthyHoursToday: b.healthyHours,
+      bottomMoistureCalibrated: _calibrations.containsKey(2),
     );
   }
 

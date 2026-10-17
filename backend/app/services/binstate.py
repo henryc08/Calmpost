@@ -29,7 +29,7 @@ async def bin_row(bin_id: str):
     return await db.fetchrow(
         """
         SELECT bin_id, display_name, owner_id, moisture_raw_dry,
-               moisture_raw_wet, calibrated, last_seen_at
+               moisture_raw_wet, calibrated, calibrated_2, last_seen_at
         FROM bins WHERE bin_id = $1
         """,
         bin_id,

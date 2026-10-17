@@ -93,6 +93,7 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
                     "/users/{user_id}/collection", "/users/{user_id}/daily-goal",
                     "/quests/today", "/leagues/current"}
         writable = {"/bins/{bin_id}/drops/session", "/bins/{bin_id}/drops/photo",
+                    "/bins/{bin_id}/calibration",
                     "/bins/{bin_id}/drops/session/{session_id}/close",
                     "/drops/{drop_id}/confirm", "/drops/{drop_id}/dismiss",
                     "/bins/{bin_id}/advice/check", "/bins/{bin_id}/chat",

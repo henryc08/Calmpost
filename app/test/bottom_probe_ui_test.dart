@@ -90,6 +90,8 @@ void main() {
     await t.tap(find.text('Retry trend'));
     await t.pumpAndSettle();
     expect(find.text('Retry trend'), findsNothing);
+    await t.pump(const Duration(seconds: 2));
+    await t.pumpAndSettle();
     expect(t.takeException(), isNull);
   });
 }

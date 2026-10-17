@@ -9,6 +9,7 @@ import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
 import '../domain/drop_history.dart';
+import '../domain/calibration.dart';
 import 'api_config.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -32,9 +33,18 @@ class ApiRepository implements CalmpostRepository {
 
   final ApiConfig config;
   @override
-  Future<DropHistoryPage> dropHistory({String? before, int limit = 20}) async => DropHistoryPage.fromJson(
-        await _get('/bins/${config.binId}/drops/history', {'limit': '$limit', 'before': ?before}) as Map<String, dynamic>,
-  );
+  Future<CalibrationResult> calibrateProbe({required int probe, required int dry, required int wet, bool backfill = false}) async {
+    final error = calibrationError(probe, dry, wet);
+    if (error != null) throw ArgumentError(error);
+    return CalibrationResult.fromJson(
+      await _post('/bins/${config.binId}/calibration', {'probe': probe, 'moisture_raw_dry': dry, 'moisture_raw_wet': wet, 'backfill': backfill})
+          as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<DropHistoryPage> dropHistory({String? before, int limit = 20}) async =>
+      DropHistoryPage.fromJson(await _get('/bins/${config.binId}/drops/history', {'limit': '$limit', 'before': ?before}) as Map<String, dynamic>);
 
   @override
   Future<Uint8List?> dropPhoto(int id) async {
@@ -459,6 +469,8 @@ BinSnapshot snapshotFromJson(Map<String, dynamic> j) {
     ambientMeasured: air['ambient_temp_c'] != null,
     moistureCalibrated: j['moisture_calibrated'] == true,
     bottomMoistureCalibrated: bottom['moisture_calibrated'] == true,
+    topMoistureRaw: (top['moisture_raw'] as num?)?.toInt(),
+    bottomMoistureRaw: (bottom['moisture_raw'] as num?)?.toInt(),
   );
 }
 

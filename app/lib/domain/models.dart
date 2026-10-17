@@ -46,6 +46,8 @@ class BinSnapshot {
     this.ambientMeasured = true,
     this.moistureCalibrated = true,
     this.bottomMoistureCalibrated = false,
+    this.topMoistureRaw,
+    this.bottomMoistureRaw,
   });
 
   final DateTime time;
@@ -83,6 +85,7 @@ class BinSnapshot {
   final bool topMeasured, topTemperatureMeasured, bottomTemperatureMeasured;
   final bool airMeasured, ambientMeasured, moistureCalibrated;
   final bool bottomMoistureCalibrated;
+  final int? topMoistureRaw, bottomMoistureRaw;
 
   bool calibrated(Zone zone) => zone == Zone.bottom ? bottomMoistureCalibrated : moistureCalibrated;
 

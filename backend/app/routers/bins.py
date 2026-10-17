@@ -212,6 +212,7 @@ async def live(bin_id: str) -> LiveResponse:
             layer=layer,
             label=LAYER_LABELS[layer],
             measured=snap["layers"][layer]["measured"],
+            moisture_calibrated=binr["calibrated_2" if layer == "bottom" else "calibrated"],
             moisture_pct=(
                 round(snap["layers"][layer]["moisture_pct"], 1)
                 if snap["layers"][layer]["moisture_pct"] is not None

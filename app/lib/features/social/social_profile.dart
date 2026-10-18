@@ -64,23 +64,7 @@ class _PersonScreenState extends ConsumerState<PersonScreen>
                   label: 'Connect my bin',
                   color: C.sunk,
                   textColor: C.ink,
-                  onTap: busy
-                      ? null
-                      : () => run(() async {
-                          final token = await askText(
-                            context,
-                            'Connect your bin',
-                            'Device token',
-                            hint: 'Use the token from your bin setup',
-                            secret: true,
-                            maxLength: 200,
-                          );
-                          if (token != null && mounted) {
-                            await ref
-                                .read(socialSessionProvider.notifier)
-                                .pair(token);
-                          }
-                        }),
+                  onTap: busy ? null : () => Routes.connectBin(context),
                 ),
               ],
             ),

@@ -106,6 +106,12 @@ class _PhotoScreenState extends ConsumerState<PhotoScreen> {
           icon: const Icon(PhosphorIconsRegular.arrowLeft, color: C.onBrand),
         ),
         children: [
+          if (ref.watch(needsBinProvider)) ...[
+            Text('Connect a bin to this account before submitting a photo.', style: T.body),
+            const SizedBox(height: S.x3),
+            PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
+            const SectionBreak(),
+          ],
           Text(
             'Take or choose a photo of the scraps. We resize it before sending it to the server for identification. Nothing counts as compost until you confirm what was actually added.',
             style: T.body,
@@ -115,8 +121,8 @@ class _PhotoScreenState extends ConsumerState<PhotoScreen> {
             spacing: S.x3,
             runSpacing: S.x3,
             children: [
-              PillButton(label: 'Take photo', icon: PhosphorIconsRegular.camera, onTap: _busy ? null : () => _pick(true)),
-              PillButton(label: 'Choose photo', icon: PhosphorIconsRegular.image, onTap: _busy ? null : () => _pick(false)),
+              PillButton(label: 'Take photo', icon: PhosphorIconsRegular.camera, onTap: _busy || ref.watch(needsBinProvider) ? null : () => _pick(true)),
+              PillButton(label: 'Choose photo', icon: PhosphorIconsRegular.image, onTap: _busy || ref.watch(needsBinProvider) ? null : () => _pick(false)),
             ],
           ),
           if (_jpeg != null) ...[
@@ -133,7 +139,7 @@ class _PhotoScreenState extends ConsumerState<PhotoScreen> {
               style: T.small,
             ),
             const SizedBox(height: S.x4),
-            PillButton(label: 'Identify and review', onTap: _busy ? null : _identify),
+            PillButton(label: 'Identify and review', onTap: _busy || ref.watch(needsBinProvider) ? null : _identify),
           ],
           if (_busy) ...[
             const SizedBox(height: S.x4),

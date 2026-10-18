@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../domain/inventory.dart';
+import '../../app/routes.dart';
 import '../../state/providers.dart';
 import '../../state/social.dart';
 import '../../ui/brand.dart';
@@ -25,6 +26,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     _search.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(inventoryProvider(_period));
@@ -46,7 +48,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           children: [
             Text(inventory == null ? '—' : compostMass(inventory.grams), style: T.display.copyWith(color: C.onBrand)),
             Text('estimated material added', style: T.body.copyWith(color: C.onBrand)),
-            if (inventory != null) Text('${inventory.pieces} counted pieces / portions · ${inventory.entries} additions', style: T.small.copyWith(color: C.onBrand)),
+            if (inventory != null)
+              Text('${inventory.pieces} counted pieces / portions · ${inventory.entries} additions', style: T.small.copyWith(color: C.onBrand)),
           ],
         ),
         children: [
@@ -66,7 +69,9 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           ),
           if (needsBin) ...[
             const SectionBreak(),
-            Text('Connect your bin in Social to track your compost.', style: T.body),
+            Text('Connect a bin to this account to track your compost.', style: T.body),
+            const SizedBox(height: S.x3),
+            PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
           ] else ...[
             if (data.isLoading && inventory == null)
               const Padding(
@@ -101,7 +106,10 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
       ],
       const SizedBox(height: S.x4),
       if (inventory.items.isEmpty)
-        Text('Nothing confirmed yet. Review a camera drop or log an item to start your inventory. Keep-out items and dismissed detections are excluded.', style: T.body)
+        Text(
+          'Nothing confirmed yet. Review a camera drop or log an item to start your inventory. Keep-out items and dismissed detections are excluded.',
+          style: T.body,
+        )
       else ...[
         TextField(
           controller: _search,

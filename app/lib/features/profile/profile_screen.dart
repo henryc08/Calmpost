@@ -120,6 +120,8 @@ class ProfileScreen extends ConsumerWidget {
         _RarityStrip(owned: g.owned),
         const SectionBreak(),
         const SectionLabel('SETTINGS'),
+        const SizedBox(height: S.x3),
+        PillButton(label: 'Your bin', icon: PhosphorIconsRegular.plugsConnected, onTap: () => Routes.connectBin(context)),
         const SizedBox(height: S.x2),
         const _SettingRow(PhosphorIconsRegular.trash, 'Kitchen bin', 'Connected · ESP32'),
         PillButton(label: 'Calibrate probes', icon: PhosphorIconsRegular.slidersHorizontal, onTap: () => Routes.calibration(context)),

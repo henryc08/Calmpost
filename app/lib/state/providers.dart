@@ -28,8 +28,18 @@ final inventoryProvider = FutureProvider.autoDispose.family<CompostInventory, St
 enum DataSource { live, mock }
 
 final dataSourceProvider = StateProvider<DataSource>((ref) {
+  final identity = ref.watch(
+    socialSessionProvider.select((s) {
+      final a = s.valueOrNull;
+      return a == null ? null : (a.server, a.userId, a.token);
+    }),
+  );
+  return identity != null || ApiConfig.configured ? DataSource.live : DataSource.mock;
+});
+
+final needsBinProvider = Provider<bool>((ref) {
   final account = ref.watch(socialSessionProvider).valueOrNull;
-  return account != null || ApiConfig.configured ? DataSource.live : DataSource.mock;
+  return ref.watch(dataSourceProvider) == DataSource.live && account != null && (account.binId?.isEmpty ?? true);
 });
 
 final repositoryProvider = Provider<CalmpostRepository>((ref) {

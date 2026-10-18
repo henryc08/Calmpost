@@ -4,6 +4,7 @@ import '../domain/drop.dart';
 import '../features/photo/photo_screen.dart';
 import '../features/history/drop_history_screen.dart';
 import '../features/calibration/calibration_screen.dart';
+import '../features/connection/bin_connection_screen.dart';
 
 import '../features/drop/drop_sheet.dart';
 import '../features/inventory/inventory_screen.dart';
@@ -16,6 +17,7 @@ import '../features/trunc/trunc_screen.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  static Future<void> connectBin(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BinConnectionScreen()));
   static Future<void> calibration(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CalibrationScreen()));
   static Future<void> dropHistory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DropHistoryScreen()));
   static Future<void> photo(BuildContext context, {Uint8List? recovered}) =>

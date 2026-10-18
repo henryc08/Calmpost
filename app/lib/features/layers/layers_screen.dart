@@ -36,7 +36,13 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
       return BrandPage(
         title: 'Sensors',
         children: [
-          if (reading.hasError) ...[
+          if (ref.watch(needsBinProvider)) ...[
+            Text('No bin connected to this account', style: T.heading),
+            const SizedBox(height: S.x3),
+            Text('Connect your bin to load its moisture and temperature graphs.', style: T.body),
+            const SizedBox(height: S.x3),
+            PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
+          ] else if (reading.hasError) ...[
             Text("Can't reach the bin.", style: T.heading),
             TextButton(
               onPressed: () => ref.invalidate(binProvider),

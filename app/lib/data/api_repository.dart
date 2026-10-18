@@ -148,7 +148,7 @@ class ApiRepository implements CalmpostRepository {
   @override
   Stream<BinSnapshot> watchBin() async* {
     if (config.binId.isEmpty) {
-      throw StateError('Connect your bin in Social to see live readings.');
+      throw StateError('No bin connected to this account. Open Your bin to connect it.');
     }
     while (true) {
       try {

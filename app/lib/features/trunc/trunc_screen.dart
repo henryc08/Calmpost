@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../domain/models.dart';
+import '../../app/routes.dart';
 import '../../state/providers.dart';
 import '../../state/trunc_chat.dart';
 import '../../ui/brand.dart';
@@ -114,10 +115,11 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                   ),
                 if (chat.failed) ...[
                   Text(
-                    'Could not reach Trunc. Your question is kept here; retry when connected. If your account has no bin, pair one in Social first.',
+                    'Could not reach Trunc. Your question is kept here; retry when connected. Trunc needs a bin linked to this account.',
                     style: T.small.copyWith(color: C.clay),
                   ),
                   const SizedBox(height: S.x3),
+                  if (ref.watch(needsBinProvider)) PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: PillButton(label: 'Retry question', onTap: () => ref.read(truncChatProvider.notifier).retry()),

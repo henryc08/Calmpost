@@ -53,6 +53,7 @@ $$;
 CREATE OR REPLACE VIEW readings_15m AS
 SELECT time_bucket('15 minutes', time) AS bucket, bin_id,
        avg(moisture_pct) AS moisture_pct_avg, avg(probe_temp_c) AS probe_temp_c_avg,
+       avg(moisture_pct_2) AS moisture_pct_2_avg, avg(probe_temp_c_2) AS probe_temp_c_2_avg,
        max(probe_temp_c) AS probe_temp_c_max, avg(co2_ppm) AS co2_ppm_avg,
        avg(air_temp_c) AS air_temp_c_avg, avg(air_humidity_pct) AS air_humidity_pct_avg,
        count(*) AS samples
@@ -62,6 +63,8 @@ CREATE OR REPLACE VIEW readings_1d AS
 SELECT time_bucket('1 day', time) AS bucket, bin_id,
        avg(moisture_pct) AS moisture_pct_avg, min(moisture_pct) AS moisture_pct_min,
        max(moisture_pct) AS moisture_pct_max, avg(probe_temp_c) AS probe_temp_c_avg,
+       avg(moisture_pct_2) AS moisture_pct_2_avg, min(moisture_pct_2) AS moisture_pct_2_min,
+       max(moisture_pct_2) AS moisture_pct_2_max, avg(probe_temp_c_2) AS probe_temp_c_2_avg,
        max(probe_temp_c) AS probe_temp_c_max, avg(co2_ppm) AS co2_ppm_avg, count(*) AS samples
 FROM readings GROUP BY 1, 2;
 

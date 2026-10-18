@@ -292,14 +292,18 @@ DEFAULT_METRICS: list[Metric] = ["moisture", "temperature", "co2"]
 AGG_COLUMNS = {
     "15m": {
         "moisture": "moisture_pct_avg",
+        "moisture_2": "moisture_pct_2_avg",
         "temperature": "probe_temp_c_avg",
+        "temperature_2": "probe_temp_c_2_avg",
         "co2": "co2_ppm_avg",
         "air_temp": "air_temp_c_avg",
         "air_humidity": "air_humidity_pct_avg",
     },
     "1d": {
         "moisture": "moisture_pct_avg",
+        "moisture_2": "moisture_pct_2_avg",
         "temperature": "probe_temp_c_avg",
+        "temperature_2": "probe_temp_c_2_avg",
         "co2": "co2_ppm_avg",
     },
 }

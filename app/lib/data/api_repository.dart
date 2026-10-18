@@ -163,15 +163,21 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<List<TrendPoint>> trends(Zone zone, Metric metric) async {
-    // The bottom layer now reports live (second probe), but the continuous
-    // aggregates behind /trends still carry probe 1 only, so asking for a
-    // bottom series would chart the TOP probe's history under a bottom label.
-    // Empty until readings_15m/readings_1d gain the second probe -- see
-    // backend/sql/007_second_probe.sql.
-    if (zone == Zone.bottom) return const [];
+    // One row carries both probes, so the layer picks the series rather than
+    // being a parameter: moisture is the top probe, moisture_2 the bottom one
+    // (008_bottom_trends.sql). The bottom layer used to return nothing here,
+    // because asking for 'moisture' would have charted the TOP probe's
+    // history under a bottom label.
+    //
+    // temperature_2 exists for symmetry but has no data yet: the second probe
+    // measures moisture only, so probe_temp_c_2 is null in every reading. The
+    // series comes back empty, which the chart already handles.
+    final bottom = zone == Zone.bottom;
     final name = switch (metric) {
-      Metric.moisture => 'moisture',
-      Metric.temperature => zone == Zone.air ? 'air_temp' : 'temperature',
+      Metric.moisture => bottom ? 'moisture_2' : 'moisture',
+      Metric.temperature => zone == Zone.air
+          ? 'air_temp'
+          : (bottom ? 'temperature_2' : 'temperature'),
       Metric.co2 => 'co2',
     };
     final j =

@@ -14,7 +14,9 @@ Verdict = Literal["great", "careful", "avoid"]
 Balance = Literal["needs_greens", "needs_browns", "balanced"]
 Stage = Literal["started", "active", "hot", "cooling", "curing", "ready", "harvested"]
 MoistureState = Literal["dry", "ok", "wet", "unknown"]
-Metric = Literal["moisture", "temperature", "co2", "air_temp", "air_humidity"]
+#: moisture_2 is the bottom probe; moisture is the top one. Separate series
+#: rather than a layer parameter, because one row carries both probes.
+Metric = Literal["moisture", "moisture_2", "temperature", "temperature_2", "co2", "air_temp", "air_humidity"]
 
 
 # --- ingest (ESP32 -> backend) ---------------------------------------------

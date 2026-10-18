@@ -61,6 +61,7 @@ class ApiRepository implements CalmpostRepository {
   final Duration dropPollEvery;
   final http.Client _http;
   List<int> _crateIds = [];
+  int _gameReadVersion = 0;
 
   @override
   // Both player sessions and legacy demo accounts use server-owned progress.
@@ -68,6 +69,7 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<Map<String, dynamic>> loadGame() async {
+    final version = ++_gameReadVersion;
     final user = '/users/${config.userId}';
     // Profile settles earned rewards before the dependent reads.
     final profile = await _get('$user/game');
@@ -83,7 +85,7 @@ class ApiRepository implements CalmpostRepository {
     } on ApiException catch (e) {
       if (e.statusCode != 404) rethrow;
     }
-    _crateIds = [for (final c in data[0]['crates']) c['id'] as int];
+    if (version == _gameReadVersion) _crateIds = [for (final c in data[0]['crates']) c['id'] as int];
     return {'profile': profile, 'rewards': data[0], 'collection': data[1], 'quests': data[2], 'logs': data[3], 'league': league};
   }
 

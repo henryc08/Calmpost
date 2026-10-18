@@ -71,6 +71,75 @@ class RewardRepo extends MockRepository {
 Future<void> flush() => Future<void>.delayed(Duration.zero);
 
 void main() {
+  test('late older refresh cannot undo claimed quest or balance', () async {
+    final repo = RewardRepo();
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+    addTearDown(c.dispose);
+    final game = c.read(gameProvider.notifier);
+    await flush();
+    repo.delayReads = true;
+    final older = game.refreshLive();
+    final newer = game.refreshLive();
+    repo.reads[1].complete(rewardBundle(loam: 110, claimed: true));
+    await newer;
+    repo.reads[0].complete(rewardBundle());
+    await older;
+    expect(c.read(gameProvider).loam, 110);
+    expect(c.read(gameProvider).quests.firstWhere((q) => q.id == 'checkin').claimed, true);
+  });
+
+  test('late older failure cannot report an error after newer sync succeeded', () async {
+    final repo = RewardRepo();
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+    addTearDown(c.dispose);
+    final game = c.read(gameProvider.notifier);
+    await flush();
+    repo.delayReads = true;
+    final older = game.refreshLive();
+    final newer = game.refreshLive();
+    repo.reads[1].complete(rewardBundle(loam: 110));
+    await newer;
+    repo.reads[0].completeError(StateError('old network error'));
+    await older;
+    expect(c.read(toastProvider), isNull);
+    expect(c.read(gameProvider).loam, 110);
+  });
+
+  test('a reward write invalidates pre-write reads, including while its POST is pending', () async {
+    final repo = RewardRepo();
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+    addTearDown(c.dispose);
+    final game = c.read(gameProvider.notifier);
+    await flush();
+    repo.delayReads = true;
+    final old = game.refreshLive();
+    final quest = game.claimQuestAsync('checkin');
+    await flush();
+    repo.reads.single.complete(rewardBundle(loam: 5));
+    await old;
+    expect(c.read(gameProvider).loam, 100);
+    repo.writes.single.complete({'xp_awarded': 10, 'loam_awarded': 10});
+    await flush();
+    repo.reads.last.complete(rewardBundle(loam: 110, claimed: true));
+    await quest;
+    expect(c.read(gameProvider).loam, 110);
+    expect(c.read(gameProvider).quests.firstWhere((q) => q.id == 'checkin').claimed, true);
+  });
+
+  test('a second crate index cannot queue behind an opening that will shift indexes', () async {
+    final repo = RewardRepo();
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+    addTearDown(c.dispose);
+    final game = c.read(gameProvider.notifier);
+    await flush();
+    final first = game.openCrateAsync(0);
+    expect(await game.openCrateAsync(1), isNull);
+    await flush();
+    expect(repo.actions, ['crate']);
+    repo.writes.single.complete({'tier': 'sprout', 'loam': 60, 'packets': 1});
+    expect(await first, isNotNull);
+  });
+
   test('a quest and a purchase wait for check-in instead of losing taps; duplicate quest sends once', () async {
     final repo = RewardRepo();
     final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);

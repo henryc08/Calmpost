@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:calmpost/data/api_config.dart';
 import 'package:calmpost/data/api_repository.dart';
 import 'package:calmpost/data/social_repository.dart';
@@ -20,6 +21,51 @@ class MemorySession implements SessionStore {
 }
 
 void main() {
+  test('out-of-order game loads cannot restore obsolete crate IDs', () async {
+    final oldRewards = Completer<http.Response>();
+    var rewards = 0;
+    String? openedPath;
+    final repo = ApiRepository(
+      const ApiConfig(baseUrl: 'http://bin.test', apiKey: '', token: 'player-token', userId: 'player_test', binId: ''),
+      client: MockClient((request) async {
+        if (request.method == 'POST') {
+          openedPath = request.url.path;
+          return http.Response('{}', 200);
+        }
+        if (request.url.path.endsWith('/rewards')) {
+          if (++rewards == 1) return oldRewards.future;
+          return http.Response(
+            jsonEncode({
+              'crates': [
+                {'id': 22},
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/leagues/current') return http.Response('{}', 404);
+        return http.Response('{}', 200);
+      }),
+    );
+    addTearDown(repo.close);
+    final older = repo.loadGame();
+    await Future<void>.delayed(Duration.zero);
+    await repo.loadGame();
+    oldRewards.complete(
+      http.Response(
+        jsonEncode({
+          'crates': [
+            {'id': 11},
+          ],
+        }),
+        200,
+      ),
+    );
+    await older;
+    await repo.gameAction('crate', {'index': 0});
+    expect(openedPath, '/users/player_test/crates/22/open');
+  });
+
   test('paired and unpaired accounts select a server game, never seeded progress', () async {
     for (final bin in <String?>['bin-001', null]) {
       final c = ProviderContainer(overrides: [sessionStoreProvider.overrideWithValue(MemorySession(bin))]);
@@ -43,20 +89,45 @@ void main() {
         switch (r.url.path) {
           case '/users/player_test/game':
             response = {
-              'total_xp': 12, 'week_xp': 12, 'loam': 0, 'streak_days': 0, 'lid_locks': 0,
-              'best_streak': 0, 'care_days': [], 'lock_days': [], 'achievements': [],
-              'daily_goal': {'xp_today': 12, 'goals': []}, 'packets': 0,
-              'impact': {'kg_diverted': .25}, 'grams_today': 250,
-              'equipped_seed': 'sprout', 'level_claimed': [1],
+              'total_xp': 12,
+              'week_xp': 12,
+              'loam': 0,
+              'streak_days': 0,
+              'lid_locks': 0,
+              'best_streak': 0,
+              'care_days': [],
+              'lock_days': [],
+              'achievements': [],
+              'daily_goal': {'xp_today': 12, 'goals': []},
+              'packets': 0,
+              'impact': {'kg_diverted': .25},
+              'grams_today': 250,
+              'equipped_seed': 'sprout',
+              'level_claimed': [1],
             };
           case '/users/player_test/rewards':
             response = {'crates': []};
           case '/users/player_test/collection':
-            response = {'items': [{'id': 'sprout', 'copies': 1}], 'pity': {'since_epic': 0, 'since_legendary': 0}};
+            response = {
+              'items': [
+                {'id': 'sprout', 'copies': 1},
+              ],
+              'pity': {'since_epic': 0, 'since_legendary': 0},
+            };
           case '/quests/today':
             response = {'quests': []};
           case '/bins/bin-001/logs':
-            response = [{'catalog_id': 'banana_peel', 'category': 'green', 'item': 'Banana peel', 'time': DateTime.now().toUtc().toIso8601String(), 'action': 'added', 'quantity_g': 250, 'xp_awarded': 12}];
+            response = [
+              {
+                'catalog_id': 'banana_peel',
+                'category': 'green',
+                'item': 'Banana peel',
+                'time': DateTime.now().toUtc().toIso8601String(),
+                'action': 'added',
+                'quantity_g': 250,
+                'xp_awarded': 12,
+              },
+            ];
           case '/leagues/current':
             return http.Response('{}', 404);
           case '/social/check-in':
@@ -76,6 +147,9 @@ void main() {
     expect(initial.logs, isEmpty);
     expect(initial.loam, 0);
     expect(initial.kgDiverted, 0);
+    // Let the scheduled startup load begin before explicitly requesting a
+    // newer refresh. Only the newest request is allowed to publish state.
+    await Future<void>.delayed(Duration.zero);
     await c.read(gameProvider.notifier).refreshLive();
     final loaded = c.read(gameProvider);
     expect(loaded.logs.single.item.id, 'banana_peel');

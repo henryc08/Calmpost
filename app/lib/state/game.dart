@@ -361,6 +361,7 @@ final gameActionsProvider = StateProvider<Set<String>>((ref) {
 class GameController extends Notifier<GameState> {
   int _lifecycle = 0;
   bool _alive = false;
+  int _refreshVersion = 0;
   Future<void> _actionTail = Future.value();
   @override
   GameState build() {
@@ -410,11 +411,13 @@ class GameController extends Notifier<GameState> {
     final lifecycle = _lifecycle;
     final repo = ref.read(repositoryProvider);
     if (!repo.serverGame) return;
+    final version = ++_refreshVersion;
+    bool current() => _alive && lifecycle == _lifecycle && version == _refreshVersion && ref.read(repositoryProvider) == repo;
     try {
       final bundle = await repo.loadGame();
-      if (_alive && lifecycle == _lifecycle && ref.read(repositoryProvider) == repo) state = serverGame(bundle, _initial());
+      if (current()) state = serverGame(bundle, _initial());
     } catch (_) {
-      if (_alive && lifecycle == _lifecycle) _toast.show('Game sync unavailable. Your saved rewards are on the server.');
+      if (current()) _toast.show('Game sync unavailable. Your saved rewards are on the server.');
     }
   }
 
@@ -424,7 +427,10 @@ class GameController extends Notifier<GameState> {
     bool current() => _alive && lifecycle == _lifecycle && ref.read(repositoryProvider) == repo;
     final key = switch (action) {
       'quest' => 'quest:${args['id']}',
-      'daily' || 'crate' => '$action:${args['index']}',
+      'daily' => 'daily:${args['index']}',
+      // Opening one crate changes all later indexes. Do not queue a second
+      // index-based open behind it; let the refreshed inbox supply the target.
+      'crate' => 'crate',
       'level' => 'level:${args['level']}',
       _ => action,
     };
@@ -441,6 +447,8 @@ class GameController extends Notifier<GameState> {
       // Keep distinct taps, but serialize writes and their reward refreshes.
       await previous;
       if (!current()) return null;
+      // A read started before this write cannot restore pre-claim balances.
+      ++_refreshVersion;
       final result = await repo.gameAction(action, args);
       if (!current()) return null;
       await refreshLive();

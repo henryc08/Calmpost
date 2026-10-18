@@ -24,7 +24,7 @@ import 'routes.dart';
 import '../features/greenhouse/pull_reveal.dart';
 import 'toast.dart';
 
-/// Five tabs: Home · Layers · Log · Social · Profile.
+/// Five tabs: Home · Sensors · Log · Social · Profile.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -103,7 +103,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
     final tab = ref.watch(tabProvider);
 
-    // Opening Layers counts as checking on the bin.
+    // Opening Sensors counts as checking on the bin (stable internal tab id).
     ref.listen(tabProvider, (prev, next) {
       if (next == AppTab.layers) {
         ref.read(gameProvider.notifier).checkInAsync();
@@ -143,7 +143,7 @@ class _NavBar extends StatelessWidget {
 
   static const _items = {
     AppTab.home: ('Home', PhosphorIconsRegular.house, PhosphorIconsFill.house),
-    AppTab.layers: ('Layers', PhosphorIconsRegular.stack, PhosphorIconsFill.stack),
+    AppTab.layers: ('Sensors', PhosphorIconsRegular.stack, PhosphorIconsFill.stack),
     AppTab.log: ('Log', PhosphorIconsRegular.plus, PhosphorIconsBold.plus),
     AppTab.social: ('Social', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree),
     AppTab.profile: ('Profile', PhosphorIconsRegular.userCircle, PhosphorIconsFill.userCircle),

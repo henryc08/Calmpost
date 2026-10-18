@@ -27,8 +27,9 @@ enum InfoTip {
   ),
   chart(
     'Reading the chart',
-    'The shaded band is the healthy range. Dashed pink lines mark when you added something, '
-        'so you can see what each scrap did over the next hours.',
+    'Moisture charts shade the app’s 40–60 guide on the probe’s relative scale, not water by weight. '
+        'Dashed pink lines mark additions; timing alone does not prove an addition caused a change. '
+        'Choose a probe to see its own history. Temperature and CO₂ have no shaded target band.',
   ),
   verdict(
     'Why this answer',
@@ -40,10 +41,7 @@ enum InfoTip {
     'You\'re racing 29 others on XP earned this week. The top 7 move up a tier and the bottom 5 move down. '
         'It resets Sunday at 00:00 UTC.',
   ),
-  impact(
-    'These are estimates',
-    'Worked out from what you\'ve logged and typical weights, not measured. They show the direction, not exact numbers.',
-  );
+  impact('These are estimates', 'Worked out from what you\'ve logged and typical weights, not measured. They show the direction, not exact numbers.');
 
   const InfoTip(this.title, this.body);
   final String title;
@@ -89,7 +87,11 @@ class InfoDot extends ConsumerWidget {
                 Positioned(
                   top: 7,
                   right: 7,
-                  child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: C.pink, shape: BoxShape.circle)),
+                  child: Container(
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(color: C.pink, shape: BoxShape.circle),
+                  ),
                 ),
             ],
           ),

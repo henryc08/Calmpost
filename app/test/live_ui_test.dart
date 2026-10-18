@@ -84,9 +84,9 @@ void main() {
     expect(find.text('   SEEN 20 MIN AGO'), findsOneWidget);
     expect(find.text('LIVE'), findsNothing);
 
-    await tester.scrollUntilVisible(find.text('BOTTOM'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(find.text('MOISTURE'), 300, scrollable: find.byType(Scrollable).first);
     await _settle(tester, 300);
-    expect(find.text('not measured'), findsOneWidget);
+    expect(find.text('47% / —'), findsOneWidget);
 
     for (final tab in AppTab.values) {
       container.read(tabProvider.notifier).state = tab;
@@ -103,10 +103,8 @@ void main() {
     await _settle(tester, 600);
     await tester.drag(find.byType(Scrollable).hitTestable().first, const Offset(0, 3000), warnIfMissed: false);
     await _settle(tester, 300);
-    await tester.tap(find.text('Bottom layer').first);
-    await _settle(tester, 600);
-    expect(find.text('NOT MEASURED'), findsOneWidget);
-    expect(find.textContaining('no probe here yet'), findsOneWidget);
+    expect(find.text('Not measured'), findsWidgets);
+    expect(find.textContaining('last reading 20 min ago'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 5));

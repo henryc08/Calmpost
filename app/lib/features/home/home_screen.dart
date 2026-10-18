@@ -145,7 +145,13 @@ class HomeScreen extends ConsumerWidget {
                 const SectionBreak(),
                 const SectionLabel('LIVE READINGS'),
                 const SizedBox(height: S.x3),
-                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
+                ReadingsRow(
+                  s: s,
+                  onOpen: (metric) {
+                    ref.read(sensorMetricProvider.notifier).state = metric;
+                    goTo(AppTab.layers);
+                  },
+                ),
               ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
             ),
           ),

@@ -315,6 +315,7 @@ GameState _initial() {
     logs: [
       LogEntry(item: foodById['cardboard']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 2, minutes: 10)), xp: 15, added: true),
       LogEntry(item: foodById['veg_peels']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 5, minutes: 40)), xp: 0, added: true),
+      LogEntry(item: foodById['banana_peel']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 9, minutes: 15)), xp: 0, added: true, source: LogSource.camera),
       LogEntry(item: foodById['cheese']!, verdict: Verdict.avoid, time: now.subtract(const Duration(hours: 21)), xp: 5, added: false),
       LogEntry(item: foodById['coffee_grounds']!, verdict: Verdict.great, time: now.subtract(const Duration(hours: 26)), xp: 0, added: true),
     ],
@@ -573,10 +574,11 @@ class GameController extends Notifier<GameState> {
   }
 
   /// Confirmed compostable grams earn volume XP plus any care bonus.
-  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG}) =>
-      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds, quantityG: quantityG));
+  /// [source] marks camera drops so Layers can label them.
+  LogOutcome recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG, LogSource source = LogSource.manual}) =>
+      _act(() => _recordLog(advice, added: added, suggestedIds: suggestedIds, quantityG: quantityG, source: source));
 
-  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG}) {
+  LogOutcome _recordLog(Advice advice, {required bool added, required Iterable<String> suggestedIds, double? quantityG, required LogSource source}) {
     final followed = added && advice.verdict != Verdict.avoid && suggestedIds.contains(advice.item.id);
     final keptOut = !added && advice.verdict == Verdict.avoid;
     final grams = added && advice.item.category != FoodCategory.avoid ? (quantityG ?? advice.item.grams).clamp(0, 5000).toDouble() : 0.0;
@@ -585,7 +587,7 @@ class GameController extends Notifier<GameState> {
         : (keptOut ? seedXp(Xp.avoidedBadAdd, 'avoided_bad_add', state.activeSeed) : 0);
     final base = volumeXp(grams, alreadyLogged: state.volumeGramsToday) + care;
     final xp = xpForAction(base: base, earnedToday: state.actionXpToday);
-    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added, quantityG: quantityG ?? advice.item.grams);
+    final entry = LogEntry(item: advice.item, verdict: advice.verdict, time: DateTime.now(), xp: xp, added: added, quantityG: quantityG ?? advice.item.grams, source: source);
     state = state.copyWith(
       logs: [entry, ...state.logs],
       actionXpToday: state.actionXpToday + xp,
@@ -603,7 +605,7 @@ class GameController extends Notifier<GameState> {
 
   /// A reviewed camera drop earns volume and care XP, and counts toward Sharp Eye.
   List<LogOutcome> recordDrop(List<Advice> verdicts, {required List<bool> added, required Iterable<String> suggestedIds, List<double>? quantities}) => _act(() {
-    final out = [for (final (i, a) in verdicts.indexed) _recordLog(a, added: added[i], suggestedIds: suggestedIds, quantityG: quantities?[i])];
+    final out = [for (final (i, a) in verdicts.indexed) _recordLog(a, added: added[i], suggestedIds: suggestedIds, quantityG: quantities?[i], source: LogSource.camera)];
     state = state.copyWith(cameraDrops: state.cameraDrops + 1);
     return out;
   });

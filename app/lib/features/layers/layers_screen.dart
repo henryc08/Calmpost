@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../domain/health_score.dart';
 import '../../app/routes.dart';
@@ -289,7 +290,7 @@ class _Chart extends StatelessWidget {
         ),
         extraLinesData: ExtraLinesData(
           verticalLines: [
-            for (final l in marks) VerticalLine(x: l.time.difference(first).inMinutes / 60, color: C.pink, strokeWidth: 1.5, dashArray: [3, 4]),
+            for (final l in marks) _marker(l, l.time.difference(first).inMinutes / 60),
           ],
         ),
         gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (_) => const FlLine(color: C.line, strokeWidth: 1)),
@@ -384,6 +385,32 @@ class _Stats extends StatelessWidget {
   }
 }
 
+/// A pink dashed line where something went in. Camera drops also carry a
+/// label ("Banana peel · 2:14 pm") so you can see what each drop did.
+VerticalLine _marker(LogEntry l, double x) {
+  final camera = l.source == LogSource.camera;
+  return VerticalLine(
+    x: x,
+    color: C.pink,
+    strokeWidth: camera ? 2 : 1.5,
+    dashArray: [3, 4],
+    label: VerticalLineLabel(
+      show: camera,
+      // Flip to the left of the line near the right edge so the text isn't clipped.
+      alignment: x > 15 ? Alignment.topLeft : Alignment.topRight,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      style: T.small.copyWith(fontSize: 10.5, color: C.pinkDeep, fontWeight: FontWeight.w700),
+      labelResolver: (_) => '${l.item.name} · ${clockTime(l.time)}',
+    ),
+  );
+}
+
+/// "2:14 pm"
+String clockTime(DateTime t) {
+  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  return '$h:${t.minute.toString().padLeft(2, '0')} ${t.hour < 12 ? 'am' : 'pm'}';
+}
+
 class _LogRow extends StatelessWidget {
   const _LogRow(this.l);
   final LogEntry l;
@@ -408,7 +435,20 @@ class _LogRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(l.item.name, style: T.heading.copyWith(fontSize: 14.5, fontWeight: FontWeight.w600)),
-                Text(l.added ? 'Added · $when' : 'Kept out · $when', style: T.small),
+                Row(
+                  children: [
+                    if (l.source == LogSource.camera) ...[
+                      Icon(PhosphorIconsRegular.camera, size: 13, color: C.muted),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        '${l.added ? 'Added' : 'Kept out'}${l.source == LogSource.camera ? ' by camera' : ''} · $when',
+                        style: T.small,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

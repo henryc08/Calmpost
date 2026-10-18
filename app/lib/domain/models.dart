@@ -241,8 +241,19 @@ class Achievement {
   CrateTier get nextReward => rewards[maxed ? rewards.length - 1 : tier];
 }
 
+/// How an add was recorded: typed in the Log tab, or seen by the bin camera.
+enum LogSource { manual, camera }
+
 class LogEntry {
-  const LogEntry({required this.item, required this.verdict, required this.time, required this.xp, required this.added, this.quantityG});
+  const LogEntry({
+    required this.item,
+    required this.verdict,
+    required this.time,
+    required this.xp,
+    required this.added,
+    this.quantityG,
+    this.source = LogSource.manual,
+  });
   final FoodItem item;
   final Verdict verdict;
   final DateTime time;
@@ -251,6 +262,8 @@ class LogEntry {
   /// False when the user checked an item and kept it out.
   final bool added;
   final double? quantityG;
+
+  final LogSource source;
 }
 
 /// Reward crates, earned from achievements and milestones.

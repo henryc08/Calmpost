@@ -1,0 +1,276 @@
+[
+  {
+    "category": "Green Bin",
+    "item": "banana",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0399",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "vegetables",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1509",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "fruit core",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1391",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "fruit peels",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1392",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "avocado peel & pit",
+    "image": "avocado.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A2125",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "coffee grounds",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1344",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "paper tea bags",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1505",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "eggshells",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1376",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "food scraps",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1385",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "meat (raw and cooked)",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1422",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "fish (raw and cooked)",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1380",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "meat bones/chicken bones",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1318",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "cheese",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1334",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "bread",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1319",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "food leftovers",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1415",
+    "instructions": [
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "paper towels",
+    "image": "unnamed.jpg",
+    "popular": true,
+    "find_out": "",
+    "id": "A1447",
+    "instructions": [
+      "Place this item in the Green Bin.",
+      "If soiled with chemicals such as cleaning products, place in the Garbage Bin."
+    ]
+  },
+  {
+    "category": "Green Bin",
+    "item": "pizza boxes (food-soiled)",
+    "image": "pizza_boxes.jpg",
+    "popular": true,
+    "find_out": "",
+    "id": "A1461",
+    "instructions": [
+      "Remove any plastic pieces and place those in the Garbage Bin.",
+      "Place this item in the Green Bin."
+    ]
+  },
+  {
+    "category": "Garbage Bin",
+    "item": "compostable cutlery/utensils",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0688",
+    "instructions": [
+      "The City does not accept this item in its Blue Bin Recycling or Green Bin Organics programs, even if it is labelled recyclable, compostable or biodegradable.",
+      "Place this item in the Garbage Bin."
+    ]
+  },
+  {
+    "category": "Garbage Bin",
+    "item": "compostable coffee cups",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0687",
+    "instructions": [
+      "The City does not accept this item in its Blue Bin Recycling or Green Bin Organics programs, even if it is labelled recyclable, compostable or biodegradable.",
+      "Place this item in the Garbage Bin."
+    ]
+  },
+  {
+    "category": "Blue Bin",
+    "item": "paper egg cartons",
+    "image": "paper_egg_cartons.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0304",
+    "instructions": [
+      "If item is soiled with food/beverage, place it in the Green Bin.",
+      "Otherwise, place this empty, unsoiled item in the Blue Bin."
+    ]
+  },
+  {
+    "category": "Blue Bin",
+    "item": "newspapers",
+    "image": "newsprint.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0311",
+    "instructions": [
+      "Remove any plastic wrapping/bag and place plastic and paper items separately in the Blue Bin."
+    ]
+  },
+  {
+    "category": "Blue Bin",
+    "item": "cardboard (unwaxed)",
+    "image": "unwaxed_cardboard.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A0246",
+    "instructions": [
+      "Remove as much tape and labels as possible and put those in the Garbage Bin.",
+      "Flatten/break down and place in the Blue Bin.",
+      "Any extra cardboard should be flattened, cut into pieces that could fit into an empty recycling bin and bundled with string or twine, then placed beside the Blue Bin."
+    ]
+  },
+  {
+    "category": "Yard Waste",
+    "item": "leaves",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A2085",
+    "instructions": [
+      "Place this item in a kraft paper yard waste bag, yard waste bin, or any open top, rigid, reusable container with handles.",
+      "Leave grass clippings on your lawn; yard waste containing grass clippings or sod will not be collected.",
+      "Place poisonous and invasive plants in your Garbage Bin."
+    ]
+  },
+  {
+    "category": "Not Accepted",
+    "item": "grass clippings",
+    "image": "unnamed.jpg",
+    "popular": false,
+    "find_out": "",
+    "id": "A1914",
+    "instructions": [
+      "Leave grass clippings on your lawn; yard waste containing grass clippings or sod will not be collected.",
+      "Do not place this item in the Garbage Bin, Green Bin or Blue Bin, and do not bring this item to the City's Drop-Off Depots."
+    ]
+  }
+]

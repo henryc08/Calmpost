@@ -41,6 +41,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | ✅ vision + backend + app (sheet, "Is this right?" review, mixed drops) |
 | 2.10 | **Confirmed compost inventory** (counts, estimated mass, score breakdown) | ✅ backend + mock/live app + private group totals |
+| 2.12 | **Toronto Challenge** (City-data sorting guide, learning badge, civic actions) | ✅ offline reviewed data + app · local learning, no XP |
 | 2.11 | **Materials & help exchange** (private group requests/offers) | ✅ app + authenticated backend + two-party rewards |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
@@ -164,6 +165,49 @@ Why this design:
 - Inventory uses `CalmpostRepository.inventory` in mock and API mode, refreshes after
   successful saves, every 20 seconds while visible, and on manual refresh. Demo inventory
   lasts for the repository session and does not represent a signed-in account's score.
+
+### 2.12 Toronto Challenge
+
+- Open **Toronto Challenge** from Home (also available before pairing a bin) or Log.
+  This extends scrap knowledge and everyday compost habits with Toronto civic information;
+  it does not replace the bin, Trunc, sensing, existing rewards or confirmation flows.
+- `TorontoRepository` loads `assets/data/toronto_waste.json` in mock/live modes and offline.
+  The reviewed subset contains **24 materials from 2,206 official Waste Wizard records**,
+  retaining original City IDs, titles, categories and instructions plus a resource hash.
+  The source resource was refreshed **December 12, 2023**; current summaries were checked
+  **October 18, 2026** against the City Green Bin/yard-waste guides and Circular Materials'
+  Toronto residential guidance. Display both dates; never call this a live City feed.
+  `tools/toronto/curation.json` and its importer preserve provenance and reject changed
+  source bytes until a new review. The catalogue's licence field is **License not specified**;
+  do not claim an Open Government Licence for this resource. See `TORONTO_CHALLENGE.md`.
+- The City-data snapshot supplies **2025 overall diversion rates: 26.3% multi-residential,
+  60.3% single-family**, and the City's **about 40%** Green-Bin-compatible share of garbage.
+  Rates cover City-serviced residential waste and include recycling/other diversion,
+  including estimated Blue Bin tonnage; they are not composting rates, household readings,
+  evidence of the causes of the gap, or a score our prototype has changed.
+- Search the reviewed materials, including compostable-plastic packaging. Each route has
+  condition/packaging instructions and a copyable current source. Unknown/free-text items
+  have no inferred municipal category and point to Waste Wizard. Municipal routing is a
+  separate deterministic mapping from Calmpost's `green/brown/avoid` safety rules.
+  Cheese/meat/bones can be accepted by Toronto while remaining keep-out in this bin.
+  Log verdict sheets show both contexts, even if bin checking fails; camera/photo review
+  offers Toronto guidance for identified keep-outs without changing removal/save rules.
+- **Three first-attempt questions → three lessons → three different transfer questions**
+  earns a local **Toronto sorter** learning badge. Original answers are immutable on repeat
+  visits. The before/after scores are practice results, not validated learning/impact claims.
+  Explicit recovery resets corrupted local learning only. Normal quiz use never resets it.
+- Explicit **I used this disposal route** saves one self-reported practice per material.
+  Learning/actions are persisted locally per server + account, with a separate guest record;
+  they do not sync across devices. Account restoration, corruption and failed saves are
+  surfaced. Nothing here writes compost logs, inventory, sensor balance, XP, Loam,
+  streaks, private leaderboards or environmental impact estimates. The badge is not a
+  seed/plant reward. Existing care still earns existing rewards through existing flows.
+- The civic section explains the municipal waste strategy and offers a copyable building
+  organics request and a neutral question for 2026 election discussions, with official sources.
+  No message is sent. Sorting guidance does not assert collection exists in a building.
+- Preview: `?toronto=1` in mock web mode. Verification: `flutter analyze`, `flutter test`;
+  `flutter test test/toronto_ui_test.dart --dart-define=CAPTURE_REVIEW=true` renders phone
+  previews to `artifacts/toronto/`. Real Android camera/hardware validation remains separate.
 
 ### 2.11 Materials & help exchange
 

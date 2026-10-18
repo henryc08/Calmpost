@@ -1,0 +1,401 @@
+{
+  "reviewed_at": "2026-10-18",
+  "sources": {
+    "green": {
+      "title": "City of Toronto · Green Bin guide",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/houses/what-goes-in-my-green-bin/"
+    },
+    "recycling": {
+      "title": "Circular Materials · Toronto residential recycling",
+      "url": "https://www.circularmaterials.ca/resident-communities/toronto/"
+    },
+    "yard": {
+      "title": "City of Toronto · Yard waste",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/houses/yard-waste/"
+    },
+    "reports": {
+      "title": "City of Toronto · 2025 diversion rates",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/solid-waste-reports/"
+    },
+    "strategy": {
+      "title": "City of Toronto · Waste Strategy",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/waste-management/waste-strategy/"
+    },
+    "wizard": {
+      "title": "City of Toronto · Waste Wizard",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/waste-wizard/"
+    },
+    "apartments": {
+      "title": "City of Toronto · Apartment collection support",
+      "url": "https://www.toronto.ca/services-payments/recycling-organics-garbage/apartments-condos-co-ops/waste-collection-program-for-apartments-condos-co-ops/"
+    },
+    "election": {
+      "title": "City of Toronto · Municipal election",
+      "url": "https://www.toronto.ca/city-government/elections/"
+    }
+  },
+  "stats": {
+    "year": 2025,
+    "multi_residential_diversion_pct": 26.3,
+    "single_family_diversion_pct": 60.3,
+    "green_bin_share_of_garbage_pct": 40,
+    "diversion_source": "reports",
+    "organics_source": "green",
+    "scope": "City-serviced residential waste; diversion includes recycling and other diverted materials. Blue Bin tonnes include estimates. These figures do not measure composting participation or explain the causes of the gap."
+  },
+  "items": [
+    {
+      "id": "A0399",
+      "name": "Banana peel",
+      "route": "green",
+      "catalog_ids": [
+        "banana_peel"
+      ],
+      "aliases": [
+        "banana"
+      ],
+      "action": "Remove stickers and separate any packaging. Put the peel in your building’s organics bin or your household Green Bin.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1509",
+      "name": "Vegetable scraps",
+      "route": "green",
+      "catalog_ids": [
+        "veg_peels",
+        "lettuce",
+        "pepper"
+      ],
+      "aliases": [
+        "vegetable peels",
+        "lettuce leaves",
+        "pepper tops"
+      ],
+      "action": "Separate packaging and produce stickers. Vegetable scraps belong in the Green Bin.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1391",
+      "name": "Fruit cores",
+      "route": "green",
+      "catalog_ids": [
+        "apple_core"
+      ],
+      "aliases": [
+        "apple core"
+      ],
+      "action": "Fruit cores and pits belong in the Green Bin. Remove any stickers or packaging.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1392",
+      "name": "Fruit peels",
+      "route": "green",
+      "catalog_ids": [
+        "citrus"
+      ],
+      "aliases": [
+        "orange peel",
+        "citrus peel"
+      ],
+      "action": "Fruit peels belong in the Green Bin. Remove produce stickers first.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A2125",
+      "name": "Avocado peel & pit",
+      "route": "green",
+      "catalog_ids": [
+        "avocado"
+      ],
+      "aliases": [
+        "avocado skin"
+      ],
+      "action": "The skin and pit can go in the Green Bin, even though a pit breaks down slowly in a small home composter.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1344",
+      "name": "Coffee grounds",
+      "route": "green",
+      "catalog_ids": [
+        "coffee_grounds"
+      ],
+      "aliases": [
+        "ground coffee"
+      ],
+      "action": "Coffee grounds and paper filters belong in the Green Bin. Coffee pods are a different item: check Waste Wizard.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1505",
+      "name": "Paper tea bag",
+      "route": "green",
+      "catalog_ids": [
+        "tea_bag"
+      ],
+      "aliases": [
+        "tea bag",
+        "teabag"
+      ],
+      "action": "Paper tea bags can go in the Green Bin. For nylon or silk bags, empty the tea into organics and put the bag in garbage.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1376",
+      "name": "Eggshells",
+      "route": "green",
+      "catalog_ids": [
+        "eggshells"
+      ],
+      "aliases": [
+        "egg shells"
+      ],
+      "action": "Eggshells belong in the Green Bin. An egg carton is a separate item.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1385",
+      "name": "Mixed food scraps",
+      "route": "green",
+      "catalog_ids": [
+        "mixed_scraps"
+      ],
+      "aliases": [
+        "plate scrapings",
+        "food scraps"
+      ],
+      "action": "Separate all packaging. Food scraps, including cooked food, can go in Toronto’s Green Bin. Keep meat, dairy and oily food out of the Calmpost compost bin.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1422",
+      "name": "Meat scraps",
+      "route": "green",
+      "catalog_ids": [
+        "meat"
+      ],
+      "aliases": [
+        "raw meat",
+        "cooked meat",
+        "chicken"
+      ],
+      "action": "Keep meat out of your small Calmpost compost bin. Toronto’s Green Bin accepts meat; remove all packaging first.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1380",
+      "name": "Fish",
+      "route": "green",
+      "catalog_ids": [
+        "fish"
+      ],
+      "aliases": [
+        "raw fish",
+        "cooked fish"
+      ],
+      "action": "Keep fish out of your small compost bin. Toronto’s Green Bin accepts fish and shellfish, including bones and shells.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1318",
+      "name": "Chicken & meat bones",
+      "route": "green",
+      "catalog_ids": [
+        "bones"
+      ],
+      "aliases": [
+        "bones",
+        "chicken bones"
+      ],
+      "action": "Keep bones out of your small compost bin. Toronto’s Green Bin accepts meat and fish bones.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1334",
+      "name": "Cheese & dairy",
+      "route": "green",
+      "catalog_ids": [
+        "cheese"
+      ],
+      "aliases": [
+        "cheese rind",
+        "yogurt",
+        "milk"
+      ],
+      "action": "Keep dairy out of your small compost bin. Remove packaging and place the food in Toronto’s Green Bin.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1319",
+      "name": "Bread",
+      "route": "green",
+      "catalog_ids": [
+        "bread"
+      ],
+      "aliases": [
+        "bread crusts"
+      ],
+      "action": "Toronto’s Green Bin accepts bread and baked goods. Calmpost keeps bread out of its small compost bin to limit pests.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1415",
+      "name": "Oily food leftovers",
+      "route": "green",
+      "catalog_ids": [
+        "oily_food"
+      ],
+      "aliases": [
+        "oily leftovers",
+        "cooked leftovers"
+      ],
+      "action": "Food leftovers belong in the Green Bin after removing packaging. This advice is for food, not a container of liquid cooking oil. Check Waste Wizard for oil disposal.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1447",
+      "name": "Paper towel",
+      "route": "green",
+      "catalog_ids": [
+        "paper_towel"
+      ],
+      "aliases": [
+        "paper towels",
+        "food soiled paper towel"
+      ],
+      "action": "Food-soiled paper towels can go in the Green Bin. If soiled with cleaning chemicals, use garbage instead.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A1461",
+      "name": "Food-soiled pizza box",
+      "route": "green",
+      "catalog_ids": [],
+      "aliases": [
+        "greasy pizza box",
+        "pizza box"
+      ],
+      "action": "Remove plastic pieces. Food-soiled, uncoated pizza cardboard can go in the Green Bin; clean cardboard is recycled.",
+      "source": "green",
+      "expected_category": "Green Bin"
+    },
+    {
+      "id": "A0688",
+      "name": "Compostable plastic cutlery",
+      "route": "garbage",
+      "catalog_ids": [],
+      "aliases": [
+        "compostable fork",
+        "biodegradable cutlery",
+        "compostable utensils"
+      ],
+      "action": "A compostable label does not make plastic cutlery suitable for Toronto’s Green Bin. Put it in garbage. Choose reusable cutlery next time.",
+      "source": "green",
+      "expected_category": "Garbage Bin"
+    },
+    {
+      "id": "A0687",
+      "name": "Compostable plastic coffee cup",
+      "route": "garbage",
+      "catalog_ids": [],
+      "aliases": [
+        "compostable cup",
+        "biodegradable cup"
+      ],
+      "action": "Cups made of or lined with compostable plastic are not accepted in Toronto’s Green Bin. Put them in garbage; bring a reusable cup next time.",
+      "source": "green",
+      "expected_category": "Garbage Bin"
+    },
+    {
+      "id": "A0304",
+      "name": "Clean paper egg carton",
+      "route": "recycling",
+      "catalog_ids": [
+        "egg_carton"
+      ],
+      "aliases": [
+        "egg carton",
+        "paper egg carton"
+      ],
+      "action": "Empty, clean paper egg cartons belong in residential recycling. Food-soiled paper cartons can go in the Green Bin. Foam and plastic cartons are different items.",
+      "source": "recycling",
+      "expected_category": "Blue Bin"
+    },
+    {
+      "id": "A0311",
+      "name": "Clean newspaper",
+      "route": "recycling",
+      "catalog_ids": [
+        "newspaper"
+      ],
+      "aliases": [
+        "newspapers"
+      ],
+      "action": "Clean newspaper belongs in residential recycling. Separate any plastic wrap and remove elastic bands.",
+      "source": "recycling",
+      "expected_category": "Blue Bin"
+    },
+    {
+      "id": "A0246",
+      "name": "Clean unwaxed cardboard",
+      "route": "recycling",
+      "catalog_ids": [
+        "cardboard"
+      ],
+      "aliases": [
+        "shredded cardboard",
+        "cardboard box"
+      ],
+      "action": "Clean, unwaxed cardboard belongs in recycling. Flatten it and follow your building’s set-out instructions. Food-soiled, uncoated cardboard can go in organics.",
+      "source": "recycling",
+      "expected_category": "Blue Bin"
+    },
+    {
+      "id": "A2085",
+      "name": "Dry leaves",
+      "route": "yard",
+      "catalog_ids": [
+        "dry_leaves"
+      ],
+      "aliases": [
+        "leaves"
+      ],
+      "action": "Leave fallen leaves where practical, or use your yard waste service. Leaves are separate from kitchen organics; ask building management about your building’s arrangements.",
+      "source": "yard",
+      "expected_category": "Yard Waste"
+    },
+    {
+      "id": "A1914",
+      "name": "Grass clippings",
+      "route": "lawn",
+      "catalog_ids": [
+        "grass"
+      ],
+      "aliases": [
+        "grass"
+      ],
+      "action": "Leave clippings on your lawn or use an outdoor composter. Toronto does not collect grass clippings in yard waste, Green Bin or garbage.",
+      "source": "yard",
+      "expected_category": "Not Accepted"
+    }
+  ],
+  "expected_source_sha256": "4844d448c0cddc92c58531edd1cedf1e72ebd6ae217165873a43f2c9f0806c44",
+  "expected_source_records": 2206
+}

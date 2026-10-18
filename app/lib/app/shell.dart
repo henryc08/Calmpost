@@ -72,6 +72,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
     final source = DataSource.values.where((d) => d.name == q['source']).firstOrNull;
     if (source != null) ref.read(dataSourceProvider.notifier).state = source;
+    if (q['toronto'] == '1') Routes.toronto(context);
     if (q['checkin'] == '1') ref.read(gameProvider.notifier).checkIn();
     final item = ref.read(repositoryProvider).food(q['item'] ?? '');
     if (item != null) ref.read(logIntentProvider.notifier).state = item;

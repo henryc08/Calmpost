@@ -30,6 +30,11 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final g = ref.watch(gameProvider);
+    final session = ref.watch(socialSessionProvider).valueOrNull;
+    final me = session == null ? null : ref.watch(socialDataProvider('/me')).valueOrNull;
+    // Never reuse a previous account's identity while a new profile is loading.
+    final name = me is Map && me['user_id'] == session?.userId ? (me['display_name'] as String?)?.trim() : null;
+    final displayName = name != null && name.isNotEmpty ? name : (session == null ? 'Demo gardener' : 'Your profile');
     final level = g.level;
     final from = xpForLevel(level);
     final to = xpForLevel(level + 1);
@@ -46,9 +51,9 @@ class ProfileScreen extends ConsumerWidget {
     Widget vline() => Container(width: 1, height: 30, color: C.onBrand.withValues(alpha: 0.25));
 
     return BrandPage(
-      title: 'You',
+      title: displayName,
       subtitle: 'Level $level · ${g.displayTitle}',
-      trailing: const Avatar('You', size: 56, onBrand: true),
+      trailing: Avatar(displayName, size: 56, onBrand: true),
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -76,6 +81,10 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
       children: [
+        PillButton(label: 'Shop Seed Packets', icon: PhosphorIconsRegular.storefront, onTap: () => Routes.greenhouse(context)),
+        const SizedBox(height: S.x2),
+        Text('Spend your ${g.loam} Loam on seeds and streak protection in the Greenhouse.', style: T.small),
+        const SectionBreak(),
         if (ref.watch(socialSessionProvider).valueOrNull case final account?) ...[
           PillButton(label: 'My shared progress', onTap: () => Routes.socialProfile(context, account.userId)),
           const SizedBox(height: S.x3),

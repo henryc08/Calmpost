@@ -27,7 +27,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -231,7 +231,7 @@ async def stream(bin_id: str) -> StreamingResponse:
 
 
 @router.post("/drops/{drop_id}/confirm", response_model=ConfirmResponse)
-async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
+async def confirm(drop_id: int, body: ConfirmBody, request: Request) -> ConfirmResponse:
     """The user submitted the pop-up. Each item becomes an add_log row and gets a verdict."""
     drop = await _drop_or_404(drop_id)
     final = [i.model_dump() for i in body.items]
@@ -251,10 +251,14 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
         if guess.get("est_grams") is not None and round(guess["est_grams"]) != accepted_grams:
             corrected = True
     snap = await binstate.snapshot(drop["bin_id"])
+    actor = request.state.user_id or await db.fetchval("SELECT owner_id FROM bins WHERE bin_id=$1", drop["bin_id"])
     async with db.pool().acquire() as conn, conn.transaction():
         locked = await conn.fetchrow("SELECT * FROM drop_events WHERE id=$1 FOR UPDATE", drop_id)
         if locked["status"] == "confirmed" and locked["confirmation_body"] == final and locked["confirmation_response"]:
-            return ConfirmResponse(**locked["confirmation_response"])
+            contributor = locked["confirmed_by"] or await conn.fetchval(
+                "SELECT user_id FROM add_log WHERE drop_id=$1 LIMIT 1", drop_id)
+            if contributor == actor:
+                return ConfirmResponse(**locked["confirmation_response"])
         if locked["status"] != "pending":
             raise HTTPException(409, "drop was already handled")
         out = []
@@ -263,7 +267,7 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
             log = await write_log(conn, drop["bin_id"], LogCreate(
                 item=item.label, catalog_id=item.catalog_id if item.catalog_id != "unknown" else None,
                 category=f["category"], action="skipped" if item.removed else "added", quantity_g=grams, piece_count=item.piece_count,
-                source=drop["source"], was_advised=item.was_advised, notes=f"{drop['source']} drop {drop_id}"), snap)
+                source=drop["source"], was_advised=item.was_advised, notes=f"{drop['source']} drop {drop_id}"), snap, actor=actor)
             await conn.execute("UPDATE add_log SET drop_id=$1 WHERE id=$2 AND time=$3", drop_id, log.id, log.time)
             verdict = None
             if snap is not None and not item.removed:
@@ -275,7 +279,7 @@ async def confirm(drop_id: int, body: ConfirmBody) -> ConfirmResponse:
             out.append(ConfirmedItem(log=log, verdict=verdict))
         result = ConfirmResponse(drop_id=drop_id,status="confirmed",corrected=corrected,items=out)
         await conn.execute("""UPDATE drop_events SET status='confirmed',final_items=$2,corrected=$3,resolved_at=now(),
-                           confirmation_body=$2,confirmation_response=$4 WHERE id=$1""", drop_id, final, corrected, result.model_dump(mode="json"))
+                           confirmation_body=$2,confirmation_response=$4,confirmed_by=$5 WHERE id=$1""", drop_id, final, corrected, result.model_dump(mode="json"), actor)
         return result
 
 

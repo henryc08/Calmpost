@@ -110,7 +110,7 @@ async def _settle_daily_awards(user_id: str) -> None:
     """Pay healthy-layer-day and weekly-balance XP if earned (dedupe_keyed)."""
     today = date.today().isoformat()
     week = date.today().isocalendar()
-    bins = await db.fetch("SELECT bin_id FROM bins WHERE owner_id = $1", user_id)
+    bins = await db.fetch("SELECT bin_id FROM bin_access WHERE user_id = $1", user_id)
     async with db.pool().acquire() as conn:
         for b in bins:
             snap = await binstate.snapshot(b["bin_id"])

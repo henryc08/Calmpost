@@ -195,7 +195,7 @@ async def profile_data(viewer: str, target: str):
 @router.get("/me")
 async def me(uid: str = Depends(current_user)):
     result = await profile_data(uid, uid)
-    result["bin_id"] = await db.fetchval("SELECT bin_id FROM bins WHERE owner_id=$1 ORDER BY bin_id LIMIT 1", uid)
+    result["bin_id"] = await db.fetchval("SELECT bin_id FROM bin_access WHERE user_id=$1 ORDER BY bin_id LIMIT 1", uid)
     return result
 
 
@@ -414,11 +414,16 @@ async def pair_bin(body: PairBin, uid: str = Depends(current_user)):
         row = await conn.fetchrow("SELECT bin_id,owner_id FROM bins WHERE token_sha256=$1 FOR UPDATE", hash_token(body.device_token))
         if not row:
             raise HTTPException(404, "Bin token not recognised")
-        if row["owner_id"] != uid and await conn.fetchval("SELECT 1 FROM social_profiles WHERE user_id=$1", row["owner_id"]):
-            raise HTTPException(409, "This bin already belongs to another account")
-        if await conn.fetchval("SELECT 1 FROM bins WHERE owner_id=$1 AND bin_id<>$2", uid, row["bin_id"]):
+        if await conn.fetchval("SELECT 1 FROM bin_access WHERE user_id=$1 AND bin_id<>$2", uid, row["bin_id"]):
             raise HTTPException(409, "Your account already has a bin")
-        await conn.execute("UPDATE bins SET owner_id=$2 WHERE bin_id=$1", row["bin_id"], uid)
+        if row["owner_id"] != uid:
+            if await conn.fetchval("SELECT 1 FROM social_profiles WHERE user_id=$1", row["owner_id"]):
+                guest = await conn.fetchval("SELECT user_id FROM bin_guests WHERE bin_id=$1", row["bin_id"])
+                if guest and guest != uid:
+                    raise HTTPException(409, "This bin already has two accounts connected")
+                await conn.execute("INSERT INTO bin_guests(bin_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING", row["bin_id"], uid)
+            else:
+                await conn.execute("UPDATE bins SET owner_id=$2 WHERE bin_id=$1", row["bin_id"], uid)
     return {"bin_id": row["bin_id"]}
 
 
@@ -431,14 +436,21 @@ async def care_log(body: CareLog, uid: str = Depends(current_user)):
     item = lookup(body.catalog_id)
     if not item:
         raise HTTPException(404, "Unknown item")
-    bid = await db.fetchval("SELECT bin_id FROM bins WHERE owner_id=$1 ORDER BY bin_id LIMIT 1", uid)
+    bid = await db.fetchval("SELECT bin_id FROM bin_access WHERE user_id=$1 ORDER BY bin_id LIMIT 1", uid)
     if not bid:
         raise HTTPException(409, "Connect your bin before sharing sensor-based care")
     snapshot = await binstate.snapshot(bid)
+    owner = await db.fetchval("SELECT owner_id FROM bins WHERE bin_id=$1", bid)
+    # Retain existing owner retry keys; namespace the guest's independent logs.
+    request_id = "social:" + body.request_id
+    if uid != owner or len(request_id) > 100:
+        # Keep the internal LogCreate key within its 100-character limit, even
+        # when the client uses the full public request-id allowance.
+        request_id = "social-actor:" + hashlib.sha256(f"{uid}:{body.request_id}".encode()).hexdigest()
     entry = LogCreate(
         item=item["name"], catalog_id=item["id"], category=item["category"],
         action=body.action, quantity_g=body.quantity_g if body.action == "added" else 0, piece_count=body.piece_count,
-        request_id="social:" + body.request_id, was_advised=True,
+        request_id=request_id, was_advised=True,
     )
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute("SET LOCAL TIME ZONE INTERVAL '+00:00' HOUR TO MINUTE")
@@ -447,7 +459,7 @@ async def care_log(body: CareLog, uid: str = Depends(current_user)):
             "SELECT 1 FROM log_requests WHERE bin_id=$1 AND request_id=$2", bid, entry.request_id))
         # Volume and keep-out logs do not depend on sensors. write_log only
         # awards the advice bonus when a fresh snapshot verifies the action.
-        result = await write_log(conn, bid, entry, snapshot)
+        result = await write_log(conn, bid, entry, snapshot, actor=uid)
     return {"xp_awarded": result.xp_awarded, "duplicate": duplicate}
 
 

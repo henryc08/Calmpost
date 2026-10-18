@@ -186,7 +186,7 @@ The verdict is `great`, `careful` or `avoid`, matching the app's Log sheet.
 
 ### Camera drop-in (`vision/`)
 
-The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Demo routes use `X-API-Key`. Registered owners use bearer sessions; vision reports to their bins using scoped `X-Device-Token` authentication.
+The `vision/` service watches the bin opening and reports what went in. The app shows "Something was added" and the user confirms. Demo routes use `X-API-Key`. Paired accounts use their own bearer sessions; vision reports to their bins using scoped `X-Device-Token` authentication.
 
 ```
 App     POST /bins/{id}/drops/session               arm the camera for 60 s
@@ -409,9 +409,30 @@ they are not measurements of remaining or finished compost.
 
 Migration `096_compost_inventory.sql` runs at boot. No historical XP is re-awarded.
 Amount XP remains 1 per 20 g rounded cumulatively each day, sharing the 60/day
-action cap with care actions. Registered owners use their bearer session for
+action cap with care actions. Paired accounts use their own bearer sessions for
 camera review; the vision service uses the bin's `DEVICE_TOKEN` for detection
 reporting. That device token cannot confirm, award XP, or read inventories.
+
+## Two-account demo bin
+
+Migration `099_shared_bins.sql` (applied automatically on backend startup) adds
+one optional guest per bin. Both accounts pair through `POST /social/bin` with
+the same device token. The existing owner stays owner; the second account joins
+without transferring the bin. A third account is rejected. Each account can
+have only one bin; account/bin locks serialize concurrent pairing attempts.
+
+`bin_access` combines original owners and guests, including existing bins without
+requiring manual migration of owners. `/social/me` restores either connection.
+Readings, advice, logs and camera/photo history are shared. Calibration remains
+owner-only. Inventory, XP, Loam, seed collections, quests and purchases are scoped
+to the authenticated contributor. A shared camera drop can be confirmed once;
+only that contributor receives XP and can retry its original confirmation receipt.
+Both accounts can earn healthy-bin quests from the shared readings. Only one
+camera session can run at a time; rearming replaces the previous session.
+
+This is a two-person hackathon pairing flow, not a general household-management
+system: there is no guest-removal or ownership-transfer UI yet. Treat the device
+token as a credential and share it only with the intended demo participant.
 
 ## Private group exchange
 

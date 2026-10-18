@@ -100,7 +100,7 @@ def test_pairing_and_care_log_are_account_scoped(c):
     alice,a=account(c,'alice'); bob,b=account(c,'bob')
     assert c.post('/social/bin',headers=a,json={'device_token':'incorrect-token'}).status_code==404
     assert c.post('/social/bin',headers=a,json={'device_token':c.device_token}).status_code==200
-    assert c.post('/social/bin',headers=b,json={'device_token':c.device_token}).status_code==409
+    # A friend alone does not get bin access; sharing requires the device token.
     assert c.get('/bins/bin-001/live',headers=b).status_code==403
     assert c.get('/bins/bin-001/live').status_code==403
     assert c.post('/bins',json={'bin_id':'bin-001','owner_id':'demo-user'}).status_code==403

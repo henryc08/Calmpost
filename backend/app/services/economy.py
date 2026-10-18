@@ -37,7 +37,7 @@ async def quest_progress(user_id: str) -> dict[str, float]:
     # "Both layers in range for 6h": hours today inside the band, best bin.
     # With one probe this is the measured layer, which the app labels honestly.
     hours = 0.0
-    for b in await db.fetch("SELECT bin_id FROM bins WHERE owner_id = $1", user_id):
+    for b in await db.fetch("SELECT bin_id FROM bin_access WHERE user_id = $1", user_id):
         h = await binstate.healthy_hours_today(b["bin_id"])
         hours = max(hours, h or 0.0)
 
@@ -210,8 +210,9 @@ async def stats(user_id: str) -> dict:
     )
     drops = await db.fetchval(
         """
-        SELECT count(*)::int FROM drop_events d JOIN bins b ON b.bin_id = d.bin_id
-        WHERE b.owner_id = $1 AND d.status = 'confirmed'
+        SELECT count(*)::int FROM drop_events d
+        WHERE d.status = 'confirmed' AND EXISTS (
+            SELECT 1 FROM add_log a WHERE a.drop_id=d.id AND a.user_id=$1)
         """,
         user_id,
     )

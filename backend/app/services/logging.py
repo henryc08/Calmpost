@@ -8,16 +8,24 @@ from ..rules import compost, game
 from . import ledger
 
 
-async def write_log(conn, bin_id: str, body: LogCreate, snapshot: dict | None) -> LogEntry:
+async def write_log(conn, bin_id: str, body: LogCreate, snapshot: dict | None, *, actor: str | None = None) -> LogEntry:
     owner = await conn.fetchval("SELECT owner_id FROM bins WHERE bin_id = $1", bin_id)
     if owner is None:
         raise HTTPException(404, "unknown bin")
+    # Authenticated callers pass the contributor; legacy demo writes use owner.
+    if actor is not None:
+        if not await conn.fetchval("SELECT 1 FROM bin_access WHERE bin_id=$1 AND user_id=$2", bin_id, actor):
+            raise HTTPException(403, "Connect this account to the bin first")
+        owner = actor
     await ledger.ensure_user(conn, owner)
     await conn.fetchval("SELECT user_id FROM user_state WHERE user_id = $1 FOR UPDATE", owner)
     payload = body.model_dump(mode="json")
     if body.request_id:
         prior = await conn.fetchrow("SELECT body, response FROM log_requests WHERE bin_id=$1 AND request_id=$2", bin_id, body.request_id)
         if prior:
+            contributor = await conn.fetchval("SELECT user_id FROM add_log WHERE bin_id=$1 AND id=$2", bin_id, prior["response"]["id"])
+            if contributor != owner:
+                raise HTTPException(409, "this request belongs to another contributor; use a new request id")
             if prior["body"] != payload:
                 raise HTTPException(409, "this request was already saved with different items")
             return LogEntry(**prior["response"])

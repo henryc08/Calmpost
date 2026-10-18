@@ -53,6 +53,7 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
         return
     from .routers.social import current_user
     uid = await current_user(request) if request.headers.get("Authorization") else None
+    request.state.user_id = uid
     if uid is None and not hmac.compare_digest((x_api_key or "").encode(), get_settings().app_api_key.encode()):
         raise HTTPException(401, "bad api key")
     body = {}
@@ -74,7 +75,16 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
     if bin_id:
         owner = await db.fetchval("SELECT owner_id FROM bins WHERE bin_id=$1", bin_id)
         if owner:
-            targets.add(owner)
+            member = uid and await db.fetchval(
+                "SELECT 1 FROM bin_access WHERE bin_id=$1 AND user_id=$2", bin_id, uid)
+            if member:
+                # Calibration changes the physical device for both people;
+                # keep that administrative action with the original owner.
+                if route == "/bins/{bin_id}/calibration" and uid != owner:
+                    raise HTTPException(403, "Only the bin owner can calibrate its probes")
+                targets.add(uid)
+            else:
+                targets.add(owner)
     for target in targets:
         protected = target.startswith("player_") or await db.fetchval("SELECT 1 FROM social_profiles WHERE user_id=$1", target)
         if (protected and uid != target) or (uid and uid != target):

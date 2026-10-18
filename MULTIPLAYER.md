@@ -84,7 +84,13 @@ Edit your name, bio and privacy setting from your progress page.
 On your social profile, tap **Connect my bin** and enter the device token generated
 when the bin was registered. Keep the sensor bridge running. Pairing changes the bin's
 owner from its demo owner to your account, but does not transfer the demo owner's XP.
-An already paired account's bin cannot be claimed by another account.
+For the hackathon, a second account can enter the **same device token** on
+**Profile → Your bin** (or Home → Connect bin). This joins the bin without changing
+its owner. Two accounts maximum, one bin per account. Both see the same sensors,
+graphs, advice, logs and camera photos, but keep separate XP, Loam, quests, seeds
+and purchases. Inventory shows only your own contributions. Only the first account
+can calibrate the probes. Sharing a friend invite alone does not grant bin access.
+Update/restart the backend to apply `099_shared_bins.sql` before connecting account two.
 
 Home and Layers then read your bin using your account session. Opening Layers records
 one daily check-in. Adding or skipping a catalog item in Log is saved to your account;
@@ -99,7 +105,10 @@ retries return the original award without saving twice; changed retry bodies con
 
 Camera capture supports paired player bins. Set the bin's `DEVICE_TOKEN` in
 `vision/.env`; the camera service can report detections only for that bin.
-The signed-in owner reviews and confirms every detection. Confirmed rows store
+Either paired account can review and confirm a detection, but only the confirming
+account earns its XP and achievement progress. The drop can be confirmed only once;
+retrying from the other account reports that it was already handled. There is still
+one physical camera session, so starting another replaces the current one. Confirmed rows store
 editable pieces/portions and total grams, and appear in **Compost inventory**
 from Log or Profile. Counts do not multiply weight or XP. Private groups show
 aggregate estimated kg, counted pieces/portions, and amount XP + care/reward XP;

@@ -72,7 +72,7 @@ Each feature lists what the user sees, how it works, and its status.
 
 ### 2.4 Camera drop-in: identify and track what goes in ✅ *built*
 
-When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked. This supports mock, legacy demo and player-owned bins. For player-owned bins the app uses the owner's session, while the vision service uses that bin's device token to report detections; it cannot confirm them or claim rewards.
+When you drop something into the bin, a camera sees it, Gemini identifies it, and the app asks you to confirm before it's tracked. This supports mock, legacy demo and player-owned bins. For player-owned bins either of the two paired accounts can use their own session, while the vision service uses that bin's device token to report detections; it cannot confirm them or claim rewards. Only the confirming account receives that drop's XP and achievement progress. A retry by that same account returns its receipt; another account gets a conflict, never a second reward.
 
 **What the user does**
 1. On Home, tap **Drop something in** (forest pill under the score). This first resumes an existing pending drop, or arms the **bin camera** for 60 s and opens a "Watching the bin…" sheet with a countdown. This is not the phone camera. An in-app live preview is **not implemented**; the laptop preview is separate. Closing the waiting sheet cancels the session.
@@ -155,10 +155,10 @@ Why this design:
   Piece count earns no additional XP. Inventory shows the breakdown; private group
   leaderboards include estimated kg, counted pieces/portions and the same breakdown.
   The sensor-based Bin Health Score remains a separate measure.
-- `GET /bins/{id}/inventory?period=all|week` is owner-scoped, including the contributor's
+- `GET /bins/{id}/inventory?period=all|week` is contributor-scoped, including the contributor's
   identity so claiming a demo bin cannot transfer its former owner's compost history.
   Group members see aggregate amounts/scores, never private ingredient inventories.
-- Signed-in owners can arm, review, confirm/dismiss and submit photos for their bin.
+- Both signed-in paired accounts can arm, review, confirm/dismiss and submit photos for their bin.
   Vision uses `DEVICE_TOKEN` (`X-Device-Token`) for that bin's active session, reporting,
   closing and correction hints. It cannot arm sessions, confirm drops or read inventories.
   The legacy `APP_API_KEY` continues to work for demo bins only.
@@ -798,8 +798,18 @@ not used for multiplayer.
 - Feed and profiles read actual `point_events`. Cheers are idempotent and award no XP.
   Scores are never uploaded by the phone. A check-in earns 5 XP once per UTC day,
   serialized to prevent duplicate concurrent rewards.
-- Pairing a bin requires its device token; an existing player-owned bin cannot be claimed
-  by another account. The app then reads that bin with its user session. Checking Sensors
+- **Hackathon shared bin:** pairing requires its device token. The first player becomes
+  owner; one additional account can connect using the same token without transferring
+  ownership. Migration `099_shared_bins.sql` stores the second account in `bin_guests`
+  and exposes owner + guest via `bin_access`. A third account is rejected; each account
+  can connect to only one bin. Pairing locks the account and bin so concurrent requests
+  cannot exceed those limits. Both accounts share readings, graphs, advice, add history
+  and camera photos. There is one physical camera session: rearming replaces it for both.
+  Calibration stays owner-only. Each contributor retains their own inventory, XP, Loam,
+  quests, seeds and purchases; neither gains access to the other's private account.
+  Healthy-bin quests/daily awards use the shared readings for each paired account;
+  manual/camera action XP and drop achievements belong only to the actor. The app reads
+  that bin with its own user session. Checking Sensors
   saves a check-in, and Log saves via `/social/care-log`: server rules determine advised
   additions/avoids, and selected compostable amounts earn 1 XP per 20 g under the same
   cumulative rounding and 60 XP action cap. Non-recommended compostables remain loggable.
@@ -815,16 +825,21 @@ not used for multiplayer.
   not a network-error spinner. `/social/me` refreshes reconcile cached bin IDs without
   rebuilding the data repository when the assignment is unchanged. Failed refreshes and
   friend actions retain pairing; late responses cannot replace a newer account/pairing.
-  Friend/group codes do not grant bin access; multi-account shared-bin access remains
-  separate from the existing single-owner model.
+  Friend/group codes do not grant bin access; the second account must separately pair
+  with the device token. Keep that credential private to the two demo participants.
 - Legacy API-key routes cannot read or mutate registered players' private state or bins.
-  Player sessions can read their owned bin and game, request advice or Trunc chat, and
+  Player sessions can read their paired bin and own game, request advice or Trunc chat, and
   claim earned rewards or spend server balances. Demo harvest/log writes stay blocked;
   player care logs and check-ins still go through Social.
   Demo clients keep access to demo users and bins. Arduino ingestion is unchanged.
 - In live account mode, Home/Greenhouse, Profile and Social share server-owned progression.
   Sensors displays that bin's saved additions, not seeded demo logs. Only explicit mock
   mode uses the local demo garden; those rewards never enter social rankings.
+- Profile uses `/social/me`'s display name and matching avatar initials, never a fixed
+  "You" heading. While loading a different identity it says "Your profile"; signed-out
+  previews say "Demo gardener". Home's hero and the top of Profile include a labeled
+  **Shop Seed Packets** button, opening the existing Greenhouse with a Loam-spending
+  explanation. Home also offers it before a bin is connected; the HUD coin remains a shortcut.
 - UI uses `socialRepositoryProvider` and `socialDataProvider` as the social counterpart of
   `repositoryProvider`: no HTTP in screens. Visible social data refreshes every 20 seconds,
   after successful writes, and with manual refresh. Errors are shown with retry; no fake successes.

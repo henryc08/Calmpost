@@ -83,7 +83,7 @@ class _BinConnectionScreenState extends ConsumerState<BinConnectionScreen> {
               const SectionLabel('CONNECT THIS ACCOUNT'),
               const SizedBox(height: S.x3),
               Text(
-                'Use the device token supplied during bin setup (DEVICE_TOKEN on the laptop running the bridge). This is not a friend invite code. A bin already owned by another account cannot be claimed here.',
+                'Use the device token supplied during bin setup (DEVICE_TOKEN on the laptop running the bridge). This is not a friend invite code. For the demo, two accounts can connect with the same token. Readings and camera history are shared; XP, Loam and seeds stay separate. Only the first account can calibrate probes.',
                 style: T.body,
               ),
               const SizedBox(height: S.x4),

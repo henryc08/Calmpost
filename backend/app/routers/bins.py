@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .. import db
 from ..catalog import food
@@ -417,12 +417,12 @@ async def list_log(bin_id: str, limit: int = Query(50, ge=1, le=200)) -> list[Lo
 
 
 @router.get("/bins/{bin_id}/inventory")
-async def inventory(bin_id: str, period: Literal["week", "all"] = "all") -> dict:
+async def inventory(bin_id: str, request: Request, period: Literal["week", "all"] = "all") -> dict:
     from ..services.inventory import inventory as read_inventory
     binr = await binstate.bin_row(bin_id)
     if binr is None:
         raise HTTPException(404, "unknown bin")
-    return await read_inventory(bin_id, binr["owner_id"], period)
+    return await read_inventory(bin_id, request.state.user_id or binr["owner_id"], period)
 
 
 # --- harvest ---------------------------------------------------------------

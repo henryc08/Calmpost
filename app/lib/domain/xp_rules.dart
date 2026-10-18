@@ -38,6 +38,17 @@ class StreakState {
   bool caredOn(DateTime now) => lastCareDay != null && dayOf(lastCareDay!) == dayOf(now);
 }
 
+/// Evening hour from which an untended streak counts as at risk.
+const streakNudgeHour = 18;
+
+/// True when today's care is still missing late in the day and the streak is
+/// alive (last care was yesterday), so it ends at midnight without action.
+bool streakAtRisk(StreakState s, DateTime now) {
+  if (s.days <= 0 || s.lastCareDay == null || s.caredOn(now)) return false;
+  if (now.hour < streakNudgeHour) return false;
+  return dayOf(s.lastCareDay!) == dayOf(now).subtract(const Duration(days: 1));
+}
+
 class StreakUpdate {
   const StreakUpdate(this.state, {required this.extended, required this.locksUsed, required this.reset});
   final StreakState state;

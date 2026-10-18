@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../data/mock_repository.dart';
 import '../data/photo_input.dart';
 import '../domain/models.dart';
+import '../domain/xp_rules.dart';
 import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
 import '../features/layers/layers_screen.dart';
@@ -32,13 +33,27 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver {
   bool _readyNotified = false;
   Timer? _gameTick;
+  DateTime? _nudgedOn;
+
+  /// Leaving the app in the evening with today's care still missing: nudge
+  /// once a day so the streak isn't lost overnight.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.paused) return;
+    final now = DateTime.now();
+    final streak = ref.read(gameProvider).streak;
+    if (!streakAtRisk(streak, now) || _nudgedOn == dayOf(now)) return;
+    _nudgedOn = dayOf(now);
+    Notifications.streakAtRisk(streak.days);
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _gameTick = Timer.periodic(const Duration(minutes: 1), (_) => ref.read(gameProvider.notifier).tick());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -49,6 +64,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _gameTick?.cancel();
     super.dispose();
   }

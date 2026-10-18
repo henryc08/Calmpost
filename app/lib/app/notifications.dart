@@ -58,6 +58,9 @@ abstract final class Notifications {
     }
   }
 
+  static Future<void> streakAtRisk(int days) =>
+      show(2, 'Your $days-day streak ends at midnight', 'One quick check on your layers keeps it going.');
+
   static Future<void> compostReady() =>
       show(1, 'Your compost looks ready', 'Sensor trends suggest the bottom layer may be ready. Check its texture and smell before harvesting.');
 }

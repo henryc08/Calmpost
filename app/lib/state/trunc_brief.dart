@@ -18,3 +18,12 @@ final truncBriefProvider = FutureProvider.autoDispose<TruncReply?>((ref) async {
 });
 
 bool moistureNeedsInspection(BinSnapshot s) => guidanceFor(s).status == 'inspect';
+
+/// Moods bad enough to point someone at Trunc for help.
+const truncAlertMoods = {BinMood.wet, BinMood.dry, BinMood.struggling};
+
+/// True when fresh readings put the bin in really bad shape. Stale or missing
+/// readings never raise it: an alarm about old data would be wrong.
+bool binNeedsHelp(BinHealth? h) => h != null && !h.snapshot.readingsStale && truncAlertMoods.contains(h.mood);
+
+final binNeedsHelpProvider = Provider<bool>((ref) => binNeedsHelp(ref.watch(healthProvider)));

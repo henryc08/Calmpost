@@ -62,7 +62,7 @@ Each feature lists what the user sees, how it works, and its status.
   `moisture` is per layer: 100 inside 40–60%, falling to 0 at ±25%. `balance` is 7-day greens:browns ≈ 1:2–1:3. State: Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
 
 ### 2.2 Next best action → Trunc on Home
-- **Sees:** an open Trunc text section immediately below Home’s bin hero, before the daily goal. It explains what this bin needs now; the bottom-left **Ask Trunc a specific question** button opens the existing conversation. No generic chat window on Home.
+- **Sees:** an open Trunc text section immediately below Home’s bin hero, before the daily goal. It explains what this bin needs now; the bottom-left **Ask Trunc a specific question** button opens the existing conversation. No generic chat window on Home. When fresh readings put the bin in **Too wet**, **Too dry** or **Needs care** (score < 50), a small clay **!** badge (`AlertBadge`, `binNeedsHelpProvider` in `state/trunc_brief.dart`) sits next to that button and Log's **Ask Trunc** to point toward help. Stale or missing readings never show it.
 - **How:** rules compute `need` ∈ `browns | greens | water | mix | nothing` from moisture, balance, CO₂ and temperature (table in §3). Gemini only words it. **`nothing` is a good answer**; never suggest food just to have a suggestion.
 
 ### 2.3 Scrap check ("Can I add this?")

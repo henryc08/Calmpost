@@ -80,6 +80,27 @@ class Panel extends StatelessWidget {
 }
 
 /// Solid pill button. Forest by default.
+/// A small "!" that points at somewhere to get help.
+class AlertBadge extends StatelessWidget {
+  const AlertBadge({super.key, this.label = 'Needs attention'});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: label,
+    child: ExcludeSemantics(
+      child: Container(
+        key: const ValueKey('alert-badge'),
+        width: 20,
+        height: 20,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(color: C.clay, shape: BoxShape.circle),
+        child: Text('!', style: T.small.copyWith(color: C.onBrand, fontWeight: FontWeight.w800, height: 1)),
+      ),
+    ),
+  );
+}
+
 class PillButton extends StatelessWidget {
   const PillButton({super.key, required this.label, required this.onTap, this.icon, this.color = C.forest, this.textColor = C.onForest, this.dense = false});
   final String label;

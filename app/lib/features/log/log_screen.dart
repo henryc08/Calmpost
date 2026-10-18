@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../state/providers.dart';
+import '../../state/trunc_brief.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
@@ -87,7 +88,13 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         const SectionBreak(),
         PillButton(label: 'Compost inventory', icon: PhosphorIconsRegular.leaf, onTap: () => Routes.inventory(context)),
         const SizedBox(height: S.x3),
-        PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),
+            if (ref.watch(binNeedsHelpProvider)) ...[const SizedBox(width: S.x2), const AlertBadge(label: 'Your bin needs help')],
+          ],
+        ),
         const SizedBox(height: S.x3),
         PillButton(label: 'Take or choose a photo', icon: PhosphorIconsRegular.image, onTap: () => Routes.photo(context)),
         const SizedBox(height: S.x3),

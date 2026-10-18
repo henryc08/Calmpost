@@ -6,6 +6,7 @@ import '../../domain/trunc_guidance.dart';
 import '../../state/providers.dart';
 import '../../state/trunc_brief.dart';
 import '../../ui/brand.dart';
+import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 
@@ -72,7 +73,13 @@ class TruncSuggestion extends ConsumerWidget {
           child: TextButton(
             onPressed: () => Routes.trunc(context),
             style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-            child: Text('Ask Trunc a specific question', style: T.button.copyWith(color: C.forest)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: Text('Ask Trunc a specific question', style: T.button.copyWith(color: C.forest))),
+                if (ref.watch(binNeedsHelpProvider)) ...[const SizedBox(width: S.x2), const AlertBadge(label: 'Your bin needs help')],
+              ],
+            ),
           ),
         ),
       ],

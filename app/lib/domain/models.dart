@@ -45,6 +45,9 @@ class BinSnapshot {
     this.airMeasured = true,
     this.ambientMeasured = true,
     this.moistureCalibrated = true,
+    this.bottomMoistureCalibrated = false,
+    this.topMoistureRaw,
+    this.bottomMoistureRaw,
   });
 
   final DateTime time;
@@ -81,6 +84,10 @@ class BinSnapshot {
   final bool stale;
   final bool topMeasured, topTemperatureMeasured, bottomTemperatureMeasured;
   final bool airMeasured, ambientMeasured, moistureCalibrated;
+  final bool bottomMoistureCalibrated;
+  final int? topMoistureRaw, bottomMoistureRaw;
+
+  bool calibrated(Zone zone) => zone == Zone.bottom ? bottomMoistureCalibrated : moistureCalibrated;
 
   bool get readingsStale => stale || DateTime.now().difference(time) > const Duration(minutes: 2);
 
@@ -408,12 +415,7 @@ class DropConfirmation {
 
 /// What came back from confirming a drop.
 class DropResult {
-  const DropResult({
-    required this.dropId,
-    required this.corrected,
-    required this.verdicts,
-    required this.xpAwarded,
-  });
+  const DropResult({required this.dropId, required this.corrected, required this.verdicts, required this.xpAwarded});
 
   final int dropId;
 
@@ -452,21 +454,17 @@ class TruncTurn {
 /// decoratively: when [readingsAt] is null the bin has never reported, so the
 /// answer came from general rules and not from this bin.
 class TruncContext {
-  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0});
+  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0, this.readingsStale = false});
 
   final DateTime? readingsAt;
   final int recentAdds;
   final int photos;
+  final bool readingsStale;
 }
 
 class TruncReply {
-  const TruncReply({
-    required this.reply,
-    required this.model,
-    required this.onTopic,
-    required this.usedReadings,
-    required this.context,
-  });
+  const TruncReply({required this.reply, required this.model, required this.onTopic, required this.usedReadings, required this.context, this.need});
+  final BinNeed? need;
 
   /// Always something sayable, including when [onTopic] is false or the model
   /// was unreachable. Render it as a normal message either way.

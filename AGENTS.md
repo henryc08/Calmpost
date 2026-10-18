@@ -36,27 +36,31 @@ Each feature lists what the user sees, how it works, and its status.
 
 | # | Feature | Status |
 |---|---|---|
-| 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ✅ **second probe (bottom layer live)** · ⏳ bottom-layer trends |
-| 2.2 | Next best action / **What to add** (Home's main section) | ✅ app (rules) · ⏳ Gemini wording |
+| 2.1 | Live sensing & Bin Health Score | ✅ app (mock + **live via `ApiRepository`**) · ✅ backend · ✅ **two moisture probes + independent histories** · ✅ metric-first Sensors |
+| 2.2 | **Trunc: current-bin suggestion** (Home) | ✅ immediate rules + guarded Gemini explanation |
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | ✅ vision + backend + app (sheet, "Is this right?" review, mixed drops) |
 | 2.10 | **Confirmed compost inventory** (counts, estimated mass, score breakdown) | ✅ backend + mock/live app + private group totals |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
-| 2.9 | **Single photo submission** (point a phone at something, ask what it is) | ✅ backend + app data layer · ⏳ capture UI · ⏳ needs Gemini billing |
-| 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + app data layer · ⏳ chat UI · ⏳ needs Gemini billing |
+| 2.9 | **Single photo submission** (point a phone at something, ask what it is) | ✅ backend + capture/review UI + mock · live identification needs configured Gemini quota |
+| 2.8 | **Trunc: the compost assistant (chat)** | ✅ backend + chat UI + mock · live AI wording needs configured Gemini quota |
 
 ### 2.1 Live sensing & Bin Health Score
-- **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, three readings (top, bottom, air), and charts on Layers.
-- **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Firmware supports two sensor pairs: A0/D2 retains `moisture_raw` / `probe_temp_c`; A1/D3 adds `moisture_raw_2` / `probe_temp_c_2`. Each externally powered DS18B20 data line needs its own 4.7 kΩ pull-up to 5 V (unless its module already includes one). The bridge forwards both pairs; the backend stores and calibrates them independently. Bottom moisture can be measured while its temperature is unknown. Missing readings remain unknown, never 0; bottom-layer historical trends are not implemented yet. The score comes from `domain/health_score.dart`:
+- **Calibrate probes** opens from Sensors or Profile settings. Choose top/probe 1 or bottom/probe 2, enter separate dry/wet raw counts (or capture the current fresh raw count), then explicitly save. Inputs must be distinct integers from 0–65535. Historical recalculation is opt-in; otherwise new readings use the new curve. Live responses carry each layer's own calibration flag. Signed-in owners may calibrate only their paired bin; other accounts, shared keys targeting a player bin and camera-device tokens are denied. Mock calibration stores the chosen references/flags in-session while its sensor values remain simulated. Switching probes clears the form to prevent accidentally reusing the other sensor's references.
+- **Metric-first sensor UI:** Sensors opens to **Moisture / Temperature**, with a separate **View air · CO₂** link. Moisture shows both probe readings (upper/probe 1, lower/probe 2), a discrete two-point heat map and a history selector. Never average the probes or interpolate a full-bin measurement from two points. Missing readings are unknown; stale readings lose status colours. Each probe keeps its own calibration flag. The 40–60 shaded moisture band is an app guide on a relative dry/wet sensor scale, not a water-by-weight measurement.
+- **Temperature hardware:** the lower temperature sensor is not working. The Temperature page and Home shortcut use only the working primary compost probe; ambient air is a separate comparison, never a substitute. No bottom-temperature toggle or readiness claims. Existing optional backend fields remain backward compatible; this UI change does not rewrite ingestion, health/game rules or Trunc.
+- Both moisture histories are supported by migration `008_bottom_trends.sql`: probe 1 requests `moisture`, probe 2 requests `moisture_2`. Keep loading, retryable errors and empty history distinct; older servers or newly connected probes can still return no history. Never show probe 1 history as probe 2. Temperature/CO₂ charts have no asserted healthy band.
+- **Sees:** the Bin World on Home (a living cross-section of the bin), the health score on its bezel, metric shortcuts (both moisture readings, compost temperature, CO₂), and charts on Sensors.
+- **How:** the board sends probe moisture + temperature and air CO₂/temp/humidity about once a second over USB (the serial bridge posts it). Firmware supports two sensor pairs: A0/D2 retains `moisture_raw` / `probe_temp_c`; A1/D3 adds `moisture_raw_2` / `probe_temp_c_2`. Each externally powered DS18B20 data line needs its own 4.7 kΩ pull-up to 5 V (unless its module already includes one). The bridge forwards both pairs; the backend stores and calibrates them independently. Bottom moisture can be measured while its temperature is unknown. Missing readings remain unknown, never 0; both moisture histories are available after migration 008 and aggregate refresh. The score comes from `domain/health_score.dart`:
   ```
   health = 0.45·moisture + 0.20·temperature + 0.15·co2_trend + 0.20·balance
   ```
   `moisture` is per layer: 100 inside 40–60%, falling to 0 at ±25%. `balance` is 7-day greens:browns ≈ 1:2–1:3. State: Thriving ≥ 85 · Healthy ≥ 70 · Fair ≥ 50 · Needs care. Top layer > 66% → **Too wet**, < 33% → **Too dry**.
 
-### 2.2 Next best action → "What to add"
-- **Sees:** **What to add**, the main section on Home right under the band: a headline ("Add something dry"), one sentence why, three recommended items shown as tappable circles with what each will do ("Soaks up water", "Adds nitrogen"), what to hold off on, and +15 XP for following it. Tapping an item opens its verdict in Log.
+### 2.2 Next best action → Trunc on Home
+- **Sees:** an open Trunc text section immediately below Home’s bin hero, before the daily goal. It explains what this bin needs now; the bottom-left **Ask Trunc a specific question** button opens the existing conversation. No generic chat window on Home.
 - **How:** rules compute `need` ∈ `browns | greens | water | mix | nothing` from moisture, balance, CO₂ and temperature (table in §3). Gemini only words it. **`nothing` is a good answer**; never suggest food just to have a suggestion.
 
 ### 2.3 Scrap check ("Can I add this?")
@@ -86,7 +90,7 @@ When you drop something into the bin, a camera sees it, Gemini identifies it, an
 **What "tracked" means**
 - The confirmed drop is an `add_log` row with `source = 'camera'`, its photo thumbnail and the model's first guess.
 - It counts toward the 7-day greens:browns balance, kg kept from landfill, and the next best action.
-- Layers marks it on the moisture/CO₂ chart ("Banana peel · 2:14 pm"), so you can see what each drop did to the bin over the next hours.
+- Sensors marks it on the moisture/CO₂ chart ("Banana peel · 2:14 pm"), so you can see what each drop did to the bin over the next hours.
 - Corrections are kept. They measure camera accuracy (a Tiger Data stat), and recent corrections are fed back to Gemini as hints ("in this bin, items that looked like X were Y").
 
 **How it works (recommended approach)**
@@ -161,7 +165,7 @@ Why this design:
   lasts for the repository session and does not represent a signed-in account's score.
 
 ### 2.5 Summaries 📝 *planned*
-Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Layers), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
+Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Sensors), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
 
 ### 2.6 Game & economy
 Streak calendar, daily quests, XP and levels, **Loam** currency, **crates** from achievements, **Seed Packet** gacha for plants with equippable buffs plus cosmetic finishes/titles, weekly leagues and friends. Tap the Home level ring to open the **growth trail** and claim rewards for each reached level. All numbers are in §8.
@@ -172,7 +176,9 @@ Plain, state-triggered, **max 2 a day**, persisted across restarts: compost look
 
 ---
 
-### 2.9 Single photo submission ✅ *backend + app data layer; capture UI open*
+### 2.9 Single photo submission ✅ *backend + app data layer + capture UI*
+
+Log → **Take or choose a photo** opens Android camera/gallery capture, a local preview and an explicit **Identify and review** action. Orientation is normalized, metadata removed, and images bounded to 1024 px and 1.4 MB before upload. Cancellation, permissions, invalid images and upload failures stay retryable. Android interrupted-picker recovery restores the local preview without uploading. The existing review sheet handles the returned pending drop, including manual identification, corrections and keep-out confirmation; no second confirmation flow is used. An existing pending drop is reviewed before creating another. Source remains `photo` throughout.
 
 The camera drop-in (2.4) watches the bin and decides for itself when something
 arrived. This is the other way round: the user points a phone at something and
@@ -180,7 +186,7 @@ asks what it is.
 
 `CalmpostRepository.submitPhoto(Uint8List jpeg)` ⇒ a pending `CameraDrop` with
 `source == 'photo'` (`drop.fromPhoto`). **It is an ordinary drop**, so
-`confirmDrop` and `dismissDrop` finish it exactly as they finish a camera
+the existing UI's `confirmReviewedDrop` and `dismissReviewedDrop` finish it exactly as they finish a camera
 detection — there is no separate photo flow to build, and the XP rules, the
 add_log rows and the history all come for free.
 
@@ -202,19 +208,27 @@ so photos the user framed are excluded from it.
 Integration: photo confirmations retain `source = 'photo'` in `add_log` and
 use the same atomic, retry-safe confirmation receipt as webcam drops. Both
 repository APIs remain available; this does not replace the laptop's USB
-webcam flow. Phone capture UI remains open; player-owned webcam access uses
+webcam flow. Phone capture UI is built; player-owned webcam access uses
 the scoped device authorization described in §2.10.
 Photo identification sends the Gemini key in a request header, never the URL.
 Provider failures return a fixed, safe manual-identification message; raw
 exceptions and tracebacks must not enter drop history, responses, or logs.
 
+**Past drops & photos** is reachable from Log. `dropHistory(before, limit)` pages the existing API; the UI shows resolved records with source, original guesses, confirmed items, corrections and removed items. `dropPhoto(id)` fetches JPEGs with the same authenticated repository headers (never credentials in image URLs). Loading, empty, retry, missing/expired photos and account changes are handled. Mock confirmations/dismissals populate the same history contract. Reading history never awards XP or repeats an add.
+
+Mock pending recovery uses the exact detection shown in the review sheet, including failed/mixed identifications. A no-motion session leaves no pending drop. The separate legacy `confirmDrop` volume-XP implementation is retained, not removed or replaced by UI work.
+
 ---
 
-### 2.8 Trunc: the compost assistant ✅ *backend + app data layer; chat UI open*
+### 2.8 Trunc: current-bin guidance + follow-up questions ✅
 
-Trunc answers free-text composting questions. Everything else in the app takes
-an item name and returns a fixed verdict shape, so there was nowhere to ask
-"why does my bin smell?".
+Open **Ask Trunc** from Home or Log. The paper-and-brand-band conversation includes a keyboard-aware composer, waiting indicator, retry for transport failures, and clear-conversation action. Fallback and off-topic replies render normally, with the actual reading timestamp, recent-add count and photo count underneath. Recent photos are opt-in. Conversation history is in app memory and resets with repository/account/bin changes; only the latest ten completed exchanges are sent, excluding the new question. Late replies from an old account are discarded.
+
+Home shows local guidance immediately, then requests a photo-free overview through the existing chat endpoint. Refresh at most once a minute unless the care decision, sensor quality or confirmed-log count changes; stop listening off Home. Failed/stale/mismatched replies never replace current local guidance. The response must include the same rule-computed `need` and fresh reading context.
+
+Direct material questions (including apples, water, and remembered-material follow-ups) use deterministic current-bin rules, not Gemini's judgement. A generally compostable item can be unnecessary **now**. Gemini explains broader questions using live readings, confirmed additions and optional photos. Shared cases in `testdata/trunc_cases.json` pin Dart/Python decisions.
+
+**Limits:** two moisture points cannot establish whole-bin water content, oxygen, carbon:nitrogen chemistry, decomposition or exact doses. The 40–60% band is a relative sensor guide. Missing/stale upper moisture means inspect first; conflicting probes mean inspect both spots, not add across the bin. Uncalibrated probes remain approximate. A lower curing/ready stage never suppresses upper-probe care. A steady answer is allowed; missing mix history is disclosed. Bottom temperature is optional and never inferred from moisture.
 
 **What the UI has to work with** — `CalmpostRepository.askTrunc` (`app/lib/data/calmpost_repository.dart`):
 
@@ -224,10 +238,9 @@ Future<TruncReply> askTrunc(String message, {List<TruncTurn> history, bool inclu
 
 `TruncReply` and `TruncTurn` are in `app/lib/domain/models.dart`. Backed by
 `ApiRepository` (POST `/bins/{id}/chat`) and by `MockRepository`, which answers
-from a script, so **the chat screen can be built with no backend, no API key
-and no Gemini quota**.
+from the same deterministic guidance, so **the flow can be demoed without a backend, API key or Gemini quota**.
 
-Four things to know before building the screen:
+Conversation contract:
 
 - **Stateless.** The server keeps no conversation. Hold the turns in app state
   and pass them in `history` (oldest first, excluding the question being
@@ -238,7 +251,7 @@ Four things to know before building the screen:
 - **`isFallback` is not an error.** `model == 'rules-fallback'` means Gemini was
   unreachable and the sensors answered instead. Still a real reply; no error
   state.
-- **`context` is for honesty, not decoration.** `{readingsAt, recentAdds,
+- **`context` is for honesty, not decoration.** `{readingsAt, readingsStale, recentAdds,
   photos}` says what Trunc was actually given. A null `readingsAt` means the
   bin has never reported, so the answer came from general rules rather than
   this bin — worth saying quietly.
@@ -251,17 +264,14 @@ question always gives the same answer.
 
 **Context Trunc gets on the backend** (it does not need asking for): the live
 sensor snapshot, the last 48 h of `add_log` (`recent_adds`, newest first, with
-`hours_ago`), and the newest two camera photos as real image parts. It is told
+`hours_ago`), and, when opted in, the newest two camera photos as real image parts. It is told
 to be aware of all of it but to raise it only when it bears on the question.
 
 **Scope and safety.** Compost only, enforced twice: the model classifies each
 question, and the backend substitutes its own line when it says off topic. The
-rules in the prompt are generated from `app/rules/compost.py` rather than
-retyped, so Trunc cannot drift from the verdict sheet and the camera. A reply
-that suggests a keep-out item is replaced by the rules' line
-(`model == 'rules-override'`).
+care decision comes from `app/rules/compost.py` and `trunc_guidance.py`. The backend checks the structured need and conservatively screens model prose for contradictory additions, keep-outs and unsupported exact quantities; violations use `rules-override`. These prose checks are a backstop, not a guarantee of every AI sentence. Direct material decisions bypass Gemini. `context.photos` counts photos actually used by an accepted model response (zero for rules/text-only fallback).
 
-The app never calls Gemini and never holds its key.
+The app never calls Gemini and never holds its key. The updated backend supplies optional `need` and `context.readings_stale` fields. Older servers remain parseable; Home ignores replies without a matching `need` and uses local guidance. Deploy the updated backend to enable guarded remote wording.
 
 ---
 
@@ -273,9 +283,9 @@ The app never calls Gemini and never holds its key.
 |---|---|---|---|---|
 | **Drop identification** | 2.4 | before + after JPEG (≤ 1024 px), catalog ids, recent corrections | `{items: [{label, catalog_id, piece_count?, est_grams, confidence, box_2d}]}` with `box_2d` = `[ymin, xmin, ymax, xmax]` on 0–1000 | Flash (`GEMINI_VISION_MODEL`) |
 | **Scrap check** | 2.3 | item (text or photo) + snapshot | `{verdict: great \| careful \| avoid, headline, reason, balance, suggest_add[], suggest_avoid[], pair_with[], tip}` | Flash |
-| **Next best action wording** | 2.2 | snapshot + rule `need` | `{need, headline, why, suggest_add[{item, amount}], suggest_avoid[], confidence}` | Flash |
+| **Home Trunc wording** | 2.2 | snapshot + locked care decision + fixed overview question, no photos/history | same Trunc reply schema below; local guidance is immediate | Flash |
 | **Photo identification** | 2.9 | one user-supplied JPEG + the catalog ids | same `items` shape as drop identification; categories come from the rules, not the model | Flash |
-| **Trunc chat** | 2.8 | snapshot + `recent_adds` + newest 2 drop photos + the question and prior turns | `{on_topic, reply, used_readings}`; off topic ⇒ the backend's own line | Flash |
+| **Trunc chat** | 2.8 | snapshot + `recent_adds` + newest 2 drop photos + the question and prior turns | `{on_topic, reply, used_readings, need}`; off topic ⇒ the backend's own line | Flash |
 | **Summaries** | 2.5 | snapshot (+ week stats) | `{title, body, bullets[], mood}` | Flash or Flash-Lite |
 
 **Every text call gets the same context snapshot:**
@@ -295,11 +305,13 @@ The snapshot is stored with each response (`advice` table), so we can always sho
 
 | `need` | When (any of) | Example wording |
 |---|---|---|
-| `browns` | moisture > 60%, ratio greener than 1:2, CO₂ high + temp low (going anaerobic) | "The top layer is 76% wet. Dry browns will soak it up." |
-| `greens` | moisture < 40% *and* ratio browner than 1:3, temp dropping in the Active stage | "Plenty of dry material. Fresh scraps will get it going." |
-| `water` | moisture < 40% with balance already fine | "Just a splash of water, no food needed." |
-| `mix` | CO₂ rising with flat temp | "Give it a stir to let air in." |
-| `nothing` | everything in range, or bottom layer curing / ready | "All on target. Nothing to add today." |
+| `browns` | upper moisture > 60%, or recent ratio greener than 1:2 after checking dryness | "The top layer is 76% wet. Dry browns will soak it up." |
+| `greens` | upper moisture < 40% *and* recent ratio browner than 1:3 | "Plenty of dry material. Fresh scraps will get it going." |
+| `water` | upper moisture < 40% without brown-heavy additions | "Just a splash of water, no food needed." |
+| `mix` | CO₂ slope > 2/day with measured compost-to-ambient rise < 5°C, after moisture/mix checks | "Give it a stir to let air in." |
+| `nothing` | no indicated action; unknown/conflicting data instead requires inspection, never an all-clear | "All on target. Nothing to add today." |
+
+Missing/stale upper moisture and conflicting probes take priority over this table. `nothing` alone is not proof of health; Trunc additionally distinguishes `unknown`, `inspect`, and `steady`.
 
 **Guardrails**
 - **Validate everything:** responses must match the schema; `verdict` and `need` must match the rules; hard-avoid items can never appear in `suggest_add`; drop `catalog_id` must be in the catalog or `unknown`. Otherwise, fall back.
@@ -332,13 +344,13 @@ Arduino ─USB─▶ serial_bridge ─POST /ingest─┐  Vision service (Python
 | **Database** | **Tiger Data (Tiger Cloud: Postgres + TimescaleDB)** | hypertables, continuous aggregates, hyperfunctions (sponsor track) |
 | **Vision service** | **Python + OpenCV + `google-genai`** | runs on the laptop with the webcam; later the in-lid camera |
 | **AI** | **Gemini API** (`google-genai`), JSON-schema structured output | rule fallback always on |
-| **Hardware** | Arduino UNO R4, **2×** analog capacitive moisture sensors + **2×** DS18B20 temperature probes, 1× DFRobot STCC4 air module (CO₂, temp, humidity); laptop webcam | firmware prints both pairs as JSON over USB serial; `backend/scripts/serial_bridge.py` forwards both. Bottom moisture is live; missing bottom temperature remains unknown |
+| **Hardware** | Arduino UNO R4, **2×** analog capacitive moisture sensors + **1 working** DS18B20 compost temperature probe (lower temperature probe unavailable), 1× DFRobot STCC4 air module (CO₂, temp, humidity); laptop webcam | firmware prints both pairs as JSON over USB serial; `backend/scripts/serial_bridge.py` forwards both. Bottom moisture is live; missing bottom temperature remains unknown |
 
 ---
 
 ## 5. Backend & Tiger Data ✅ *built*
 
-The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks and logs. Both registered players and legacy API-key demo accounts use server game/economy: quest/daily claims, crates, pulls, equipment and Lid Locks use server responses, refreshed after actions and every minute. Players retain scoped Social check-ins and care logs, but Home, Layers history, Profile and Greenhouse now read the same server ledger and saved additions. Unpaired accounts see a connection prompt, not seeded progress. Explicit mock mode remains separate and never uploads demo rewards. Build with `--dart-define=API_URL=…` or pair a bin in Social. Demo progression is persisted separately using SharedPreferences.
+The backend is a thin FastAPI app (`backend/`, full reference in `backend/README.md`). `ApiRepository` reads live readings (every 3 s), trends (every 30 s), scrap checks and logs. Both registered players and legacy API-key demo accounts use server game/economy: quest/daily claims, crates, pulls, equipment and Lid Locks use server responses, refreshed after actions and every minute. Players retain scoped Social check-ins and care logs, but Home, Sensors history, Profile and Greenhouse now read the same server ledger and saved additions. Unpaired accounts see a connection prompt, not seeded progress. Explicit mock mode remains separate and never uploads demo rewards. Build with `--dart-define=API_URL=…` or pair a bin in Social. Demo progression is persisted separately using SharedPreferences.
 
 **The app owns the rules; the server enforces them.**
 - The numbers in `domain/xp_rules.dart`, `domain/health_score.dart`, `domain/gacha.dart` and `state/game.dart` are re-implemented in `backend/app/rules/` (pure, unit-tested). `tests/test_parity.py` fails if they drift.
@@ -380,7 +392,7 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 | Advice (Gemini) | `POST /bins/{id}/advice/check` · `GET /bins/{id}/advice` (whole-bin "What to add") · 📝 *planned:* `GET /bins/{id}/summary?kind=` |
 | Logging | `POST /bins/{id}/logs` (send `catalog_id` when known) · `GET /bins/{id}/logs` · `GET /bins/{id}/inventory?period=all\|week` · `POST /bins/{id}/harvest` |
 | **Photo submission** | `POST /bins/{id}/drops/photo` — `{image_jpeg_b64}` ⇒ a pending drop with `source: 'photo'`. Downscale to ~1024 px; over ~1.5 MB is a 413. Finishes through the normal `/drops/{id}/confirm` and `/dismiss`. |
-| **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, context}`. Stateless: the app owns the conversation. |
+| **Trunc (chat)** | `POST /bins/{id}/chat` — `{message, history[], include_photos}` ⇒ `{reply, model, on_topic, used_readings, need, context}`. Stateless: the app owns the conversation. |
 | **Camera drop-in** | `POST /bins/{id}/drops/session` (app arms) · `GET /bins/{id}/drops/session/active` (vision polls) · `POST /bins/{id}/drops` (vision reports) · `GET /bins/{id}/drops/stream` (SSE; `GET …/drops/pending` as a polling fallback) · `POST /drops/{id}/confirm` · `POST /drops/{id}/dismiss` · `GET /bins/{id}/drops/history` (resolved drops, paged; `has_photo` rather than inline base64) · `GET /drops/{id}` · `GET /drops/{id}/photo` (real `image/jpeg`) |
 | Game | `GET /users/{id}/game` (the app's GameState) · `POST /users/{id}/check-in` · `GET /quests/today` · `POST /quests/{key}/claim` · `GET /leagues/current` |
 | Economy | `GET /users/{id}/daily-goal` · `POST …/daily-goal/{i}/claim` · `GET /users/{id}/rewards` · `POST …/crates/{id}/open` · `GET /users/{id}/collection` · `POST …/gacha/pull` · `POST …/equip` · `POST …/lid-locks/buy` · `GET /economy/rules` |
@@ -436,7 +448,7 @@ calmpost/
       data/                 # calmpost_repository (abstract), mock_repository (+ scenarios), api_repository + api_config (live bin), food_catalog
       state/                # Riverpod: providers (bin, health, trends, tab), game (XP/streak/quests/economy), celebrations
       features/home/        # ✅ bin_world, home_screen (band + HUD + score), what_to_add, readings_row, streak_calendar, today_quests
-      features/layers/      # ✅ layers_screen (zone switcher, chart with add markers, stats, life cycle)
+      features/layers/      # ✅ layers_screen (metric switcher, two-probe moisture map/history, temperature, CO₂)
       features/log/         # ✅ log_screen (search, recommended, lists), verdict_sheet
       features/social/      # ✅ social_screen (league table, ladder, friends, friend quest)
       features/profile/     # ✅ profile_screen (stats, rewards waiting, impact, achievements, collection, settings)
@@ -458,15 +470,15 @@ calmpost/
 
 ### Screens
 
-**Bottom nav:** Home · Layers · **Log** (forest pill) · Social · Profile.
+**Bottom nav:** Home · Sensors · **Log** (forest pill) · Social · Profile.
 **Off-tab:** Rewards inbox (gift on Home) · Greenhouse (Loam on Home) · **Drop-in sheet + "Something was added" pop-up** (from Home) · health breakdown · settings.
 
 Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBand`): the green header with a two-layer hill edge, a serif title, and a hero element in white on the green. Below it, open sections on the paper separated by `SectionBreak` hairlines with caps `SectionLabel`s. XP and rewards use `PinkPill`.
 
 | Screen | Status | What's on it |
 |---|---|---|
-| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, status. Then the game loop, top to bottom: **Daily goal** (today's XP fills a pink track to 20 / 40 / 60 XP reward nodes: 15 Loam, 30 Loam, Sprout crate; tap a pulsing node to claim) · **What to add** (main section: headline, why, three recommended items with their effect and a +15 XP badge, hold-off list) · **Rewards ready** (crates and Seed Packets wiggling; tap a crate for the reveal) · **Today** quests · **League race** (your rank, XP to the promotion zone, the players just above and below you) · **Streak** calendar + next milestone and its reward · Live readings (moved to the bottom). **Drop something in** (forest pill under the status line) opens the camera drop-in |
-| **Layers** | ✅ | Band: Top / Bottom / Air switcher, big live value + state pill. Then moisture/temperature toggle, 24 h chart with healthy band and dashed pink **add markers**, Now / Avg / Low / High, what it means, life-cycle line (Active → Ready), recent adds |
+| **Home** | ✅ | Band: HUD (level ring + XP, streak, Loam, rewards) · **Bin World** · score, state pill, status. Then **Trunc** (current-bin text suggestion + specific-question button), followed by **Daily goal** (today's XP fills a pink track to 20 / 40 / 60 XP reward nodes: 15 Loam, 30 Loam, Sprout crate; tap a pulsing node to claim) · **Rewards ready** (crates and Seed Packets wiggling; tap a crate for the reveal) · **Today** quests · **League race** (your rank, XP to the promotion zone, the players just above and below you) · **Streak** calendar + next milestone and its reward · Live readings (moved to the bottom). **Drop something in** (forest pill under the status line) opens the camera drop-in |
+| **Sensors** | ✅ | Band: Moisture / Temperature switcher and separate CO₂ link. Moisture: two live readings, discrete two-point heat map, per-probe calibration warning/link, probe 1/2 history selector. Temperature: working compost probe + ambient comparison, no lower temperature. Both: 24 h chart, Latest / Avg / Low / High, limitations, recent adds. Missing/stale data and loading/error/empty history stay explicit |
 | **Log** | ✅ | Band: search field + camera button (opens the camera drop-in). Then Recommended now (tips), Greens / Browns / Keep out lists → **verdict sheet**: Good to add / Add with care / Keep it out, headline, reason, pair-it-with (tap to check that instead), XP note, Add it / Keep it out. **Demo moment** |
 | **Social** | ✅ | Band: league name, reset countdown, your rank, XP this week, "XP to go" or Promotion zone, six-tier ladder. Then This week (table with promotion/demotion zones, your row marked in pink) / Friends (co-op friend quest, friends list with Nudge) |
 | **Profile** | ✅ | Band: avatar, level + title, XP bar, streak / total XP / harvests / Loam. Then rewards waiting (crates + packets, Open), impact, achievements (tier dots, progress, next crate), collection by rarity, settings |
@@ -480,7 +492,7 @@ Every tab opens with the **brand band** (`ui/brand.dart`: `BrandPage`, `BrandBan
 - The two soil bands are the real layers. CO₂ bubbles rise faster when the microbes are busy, rain falls when it's too wet, and the soil cracks when it's too dry.
 - A watch-style bezel with a forest arc shows the health score.
 
-Tap the circle to open Layers; long-press it for the demo picker. *Planned:* a confirmed drop briefly falls into the top layer as a small scrap.
+Tap the circle to open Sensors; long-press it for the demo picker. *Planned:* a confirmed drop briefly falls into the top layer as a small scrap.
 
 ### Design system
 
@@ -518,7 +530,7 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 | Mechanic | Rule |
 |---|---|
 | XP | **confirmed compostable volume +1 per 20 g**, rounded cumulatively per day · followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100. Volume and other action XP share the 60/day cap |
-| Streak | consecutive days with ≥ 1 care action (open Layers, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
+| Streak | consecutive days with ≥ 1 care action (open Sensors, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
 | Lid Lock | streak freeze; covers one missed day; hold max 2; 60 Loam |
 | Daily quests | "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |
 | Levels | 50 levels; **every level-up costs 120 XP**, including 1→2 and 10→11. Level n needs `120·(n−1)` lifetime XP. Existing XP, claimed rewards and collections are retained; displayed levels are recalculated from this flat curve. Titles Scrap Saver → Peel Keeper → Soil Whisperer → Worm Wrangler → Humus Hero → Loam Legend → Compost Sage |
@@ -613,7 +625,7 @@ Pity: Epic+ within 30 pulls, Legendary within 80; both counters visible. Odds al
 2. Tap **Drop something in** and drop a banana peel under the webcam. The pop-up appears with the photo and box, filling in "Banana peel · Green · Handful".
 3. If it's wrong, correct the item and amount, then Submit. The saved compostable amount earns volume XP, with +15 more if it follows the next action (subject to the cap).
 4. Switch to `tooWet` and drop another peel. Now it's **careful, add browns first**.
-5. Open Layers: the drop markers are on the chart, and today's streak day fills in.
+5. Open Sensors: the drop markers are on the chart, and today's streak day fills in.
 6. Claim a quest → Loam ticks up → open a crate → pull a Seed Packet.
 
 ---
@@ -646,7 +658,7 @@ cd vision && python main.py
 ```
 
 ### Build order
-1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Layers**, **Log**, **Social**, **Profile** tabs.
+1. ✅ Design system + **Home** (Bin World, HUD, What to add) + **Sensors**, **Log**, **Social**, **Profile** tabs.
 2. ✅ **Drop-in UI** (sheet, "Is this right?" review, edit form, mixed drops), on mocks and the live API.
 3. ✅ **Backend + Tiger Data** (ingest, readings, logs, drops, advice, game + economy) and **vision service** (webcam + motion + Gemini).
 4. ✅ Greenhouse (Seed Packets, collection, equip) and crate reveals · next: Rewards inbox history.
@@ -658,7 +670,7 @@ cd vision && python main.py
 - A quiet new/dry bin is not ready. The readiness guide additionally requires recorded active/hot history at least 14 days old after the last harvest. This is a conservative product heuristic, **not a validation of compost maturity**.
 - Serial samples receive a timestamp before queueing so retrying preserves capture time. A single background HTTP uploader keeps serial reads independent of network stalls and retries even without new serial input. The memory-only buffer holds 500 queued samples plus one in flight; full queues warn and drop incoming samples, and exit warns about unsent data. Vision opens the camera only for armed sessions, polls cancellation during watching, and clears its preview after the session.
 - A recommendation is **not permission to log**: any catalog green/brown can be logged, including a `careful` verdict, earning volume XP without an unearned advice bonus. Manual verdict sheets scroll so the add button remains reachable with Android large-text accessibility settings. Hard keep-out materials remain a separate safety case.
-- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Scoped multiplayer accounts, friends and groups are implemented; production signing/deployment, background notifications, summary generation, rewards history, a Trunc chat screen, and a phone-camera/live-preview workflow remain unfinished. Player-owned camera capture uses device-scoped vision authorization. Do not describe these as production-ready.
+- The Android demo still permits LAN HTTP and uses debug signing for release APKs. Scoped multiplayer accounts, friends and groups are implemented; production signing/deployment, background notifications, summary generation, rewards history and an embedded live webcam-preview workflow remain unfinished. Player-owned camera capture uses device-scoped vision authorization. Do not describe these as production-ready.
 - Visual review: `cd app && flutter test test/visual_correction_test.dart --dart-define=CAPTURE_REVIEW=true` writes actual phone-sized Flutter renders to `artifacts/review/`. Detections are simulated and the missing photo is labelled; this is not a real Gemini/hardware accuracy test.
 
 ### Working together
@@ -695,7 +707,7 @@ not used for multiplayer.
   Scores are never uploaded by the phone. A check-in earns 5 XP once per UTC day,
   serialized to prevent duplicate concurrent rewards.
 - Pairing a bin requires its device token; an existing player-owned bin cannot be claimed
-  by another account. The app then reads that bin with its user session. Checking Layers
+  by another account. The app then reads that bin with its user session. Checking Sensors
   saves a check-in, and Log saves via `/social/care-log`: server rules determine advised
   additions/avoids, and selected compostable amounts earn 1 XP per 20 g under the same
   cumulative rounding and 60 XP action cap. Non-recommended compostables remain loggable.
@@ -709,7 +721,7 @@ not used for multiplayer.
   player care logs and check-ins still go through Social.
   Demo clients keep access to demo users and bins. Arduino ingestion is unchanged.
 - In live account mode, Home/Greenhouse, Profile and Social share server-owned progression.
-  Layers displays that bin's saved additions, not seeded demo logs. Only explicit mock
+  Sensors displays that bin's saved additions, not seeded demo logs. Only explicit mock
   mode uses the local demo garden; those rewards never enter social rankings.
 - UI uses `socialRepositoryProvider` and `socialDataProvider` as the social counterpart of
   `repositoryProvider`: no HTTP in screens. Visible social data refreshes every 20 seconds,

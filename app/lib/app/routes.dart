@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+import '../domain/drop.dart';
+import '../features/photo/photo_screen.dart';
+import '../features/history/drop_history_screen.dart';
+import '../features/calibration/calibration_screen.dart';
 
 import '../features/drop/drop_sheet.dart';
 import '../features/inventory/inventory_screen.dart';
@@ -7,9 +12,16 @@ import '../features/social/social_screen.dart';
 import '../features/levels/level_map.dart';
 import '../features/greenhouse/collectible_details.dart';
 import '../data/collectibles.dart';
+import '../features/trunc/trunc_screen.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  static Future<void> calibration(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CalibrationScreen()));
+  static Future<void> dropHistory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DropHistoryScreen()));
+  static Future<void> photo(BuildContext context, {Uint8List? recovered}) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PhotoScreen(recovered: recovered)));
+  static Future<void> review(BuildContext context, Drop drop) => showDropSheet(context, initialDrop: drop);
+  static Future<void> trunc(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TruncScreen()));
   static Future<void> levels(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LevelMapScreen()));
   static Future<void> seed(BuildContext context, String id) => showCollectibleDetails(context, collectibleById[id]!);
   static Future<void> inventory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const InventoryScreen()));

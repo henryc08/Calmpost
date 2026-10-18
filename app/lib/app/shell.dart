@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../data/mock_repository.dart';
+import '../data/photo_input.dart';
 import '../domain/models.dart';
 import '../features/home/bin_world.dart';
 import '../features/home/home_screen.dart';
@@ -23,7 +24,7 @@ import 'routes.dart';
 import '../features/greenhouse/pull_reveal.dart';
 import 'toast.dart';
 
-/// Five tabs: Home · Layers · Log · Social · Profile.
+/// Five tabs: Home · Sensors · Log · Social · Profile.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -91,9 +92,18 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(recoveredPhotoProvider, (_, next) {
+      if (next.hasError) showToast(ref, 'Could not recover the interrupted photo. Choose it again from Log.');
+      final bytes = next.valueOrNull;
+      if (bytes != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Routes.photo(context, recovered: bytes);
+        });
+      }
+    });
     final tab = ref.watch(tabProvider);
 
-    // Opening Layers counts as checking on the bin.
+    // Opening Sensors counts as checking on the bin (stable internal tab id).
     ref.listen(tabProvider, (prev, next) {
       if (next == AppTab.layers) {
         ref.read(gameProvider.notifier).checkInAsync();
@@ -133,7 +143,7 @@ class _NavBar extends StatelessWidget {
 
   static const _items = {
     AppTab.home: ('Home', PhosphorIconsRegular.house, PhosphorIconsFill.house),
-    AppTab.layers: ('Layers', PhosphorIconsRegular.stack, PhosphorIconsFill.stack),
+    AppTab.layers: ('Sensors', PhosphorIconsRegular.stack, PhosphorIconsFill.stack),
     AppTab.log: ('Log', PhosphorIconsRegular.plus, PhosphorIconsBold.plus),
     AppTab.social: ('Social', PhosphorIconsRegular.usersThree, PhosphorIconsFill.usersThree),
     AppTab.profile: ('Profile', PhosphorIconsRegular.userCircle, PhosphorIconsFill.userCircle),

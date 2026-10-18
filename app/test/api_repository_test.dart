@@ -107,18 +107,25 @@ void main() {
     expect(a.pairWith.every((f) => f.category == FoodCategory.brown), isTrue);
   });
 
-  test('trends: top-layer series, nulls skipped; no bottom series without a probe', () async {
+  test('trends: each layer asks for its own probe series, nulls skipped', () async {
+    // One reading row carries both probes, so the LAYER picks the metric
+    // name rather than being a parameter: moisture is the top probe,
+    // moisture_2 the bottom one (008_bottom_trends.sql). Before that series
+    // existed the bottom layer returned empty, because asking for 'moisture'
+    // would have charted the TOP probe's history under a bottom label.
+    final asked = <String>[];
     final r = repo((req) async {
       if (req.url.path.endsWith('/live')) return json(live());
-      expect(req.url.queryParameters['metrics'], 'moisture');
+      final metric = req.url.queryParameters['metrics']!;
+      asked.add(metric);
       return json({
         'series': [
           {
-            'metric': 'moisture',
+            'metric': metric,
             'points': [
-              {'bucket': '2026-10-17T12:00:00Z', 'value': 70.1},
+              {'bucket': '2026-10-17T12:00:00Z', 'value': metric == 'moisture' ? 70.1 : 40.2},
               {'bucket': '2026-10-17T12:15:00Z', 'value': null},
-              {'bucket': '2026-10-17T12:30:00Z', 'value': 75.8},
+              {'bucket': '2026-10-17T12:30:00Z', 'value': metric == 'moisture' ? 75.8 : 41.6},
             ],
           },
         ],
@@ -127,8 +134,20 @@ void main() {
     final sub = r.watchBin().listen((_) {});
     await Future<void>.delayed(const Duration(milliseconds: 20));
     await sub.cancel();
+
     expect((await r.trends(Zone.top, Metric.moisture)).map((p) => p.value), [70.1, 75.8]);
-    expect(await r.trends(Zone.bottom, Metric.moisture), isEmpty);
+    expect((await r.trends(Zone.bottom, Metric.moisture)).map((p) => p.value), [40.2, 41.6]);
+    expect(asked, ['moisture', 'moisture_2'], reason: 'the layer selects the series');
+  });
+
+  test('trends: a layer with no data gets an empty list, not an error', () async {
+    // temperature_2 is accepted by the backend but has no data: the second
+    // probe measures moisture only, so probe_temp_c_2 is null everywhere.
+    final r = repo((req) async {
+      if (req.url.path.endsWith('/live')) return json(live());
+      return json({'series': <Map<String, dynamic>>[]});
+    });
+    expect(await r.trends(Zone.bottom, Metric.temperature), isEmpty);
   });
 
   test('league: everyone except you; no league yet is an empty table', () async {

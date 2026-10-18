@@ -61,7 +61,10 @@ def test_ingest_rejects_a_token_for_another_bin(c):
 def test_same_scrap_different_answer(c):
     ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=10)
     dry = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}).json()
-    assert dry["verdict"] == "great" and dry["model"] == "rules-fallback"
+    # Dry alone is not evidence that food is needed: without brown-heavy logs,
+    # the current action is water. Compostable additions remain loggable.
+    assert dry["verdict"] == "careful" and dry["model"] == "rules-fallback"
+    assert "water" in dry["reason"]
 
     ingest_series(c, moisture_raw=raw_for(76), probe_temp=31, co2=3900, minutes=0)
     wet = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}).json()
@@ -262,7 +265,7 @@ def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
     monkeypatch.setattr(advisor, "_ask_gemini", gemini_says_avoid)
     ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=10)
     r = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"}).json()
-    assert r["verdict"] == "great" and r["model"] == "rules-override"
+    assert r["verdict"] == "careful" and r["model"] == "rules-override"
 
     # Unknown items also retain the conservative deterministic verdict.
     r = c.post("/bins/bin-001/advice/check", json={"item": "durian rind"}, params={"refresh": "true"}).json()
@@ -448,3 +451,31 @@ def test_an_out_of_range_second_probe_is_rejected(c):
     bad = {**NEW_FORMAT, "moisture_raw_2": 99999}
     assert post_reading(c, bad).status_code == 422
     assert post_reading(c, {**NEW_FORMAT, "probe_temp_c_2": 500}).status_code == 422
+
+
+def test_the_bottom_probe_has_its_own_trend_series(c):
+    """007 made the bottom layer live but left the charts empty: the
+    aggregates only averaged probe 1, so there was no bottom series and the
+    app returned nothing rather than draw probe 1 under a bottom label."""
+    post_reading(c, NEW_FORMAT)
+
+    r = c.get("/bins/bin-001/trends", params={"hours": 24, "metrics": ["moisture", "moisture_2"]})
+    assert r.status_code == 200
+    series = {s["metric"]: s for s in r.json()["series"]}
+
+    assert "moisture_2" in series, "the bottom probe is chartable"
+    assert "moisture" in series, "and the top one still is"
+
+    # Different probes, so the two series must not be the same numbers.
+    top = [p["value"] for p in series["moisture"]["points"] if p["value"] is not None]
+    bot = [p["value"] for p in series["moisture_2"]["points"] if p["value"] is not None]
+    assert top and bot, "both carry data"
+    assert top != bot, "moisture_2 is probe 2, not a copy of probe 1"
+
+
+def test_an_unknown_metric_is_ignored_rather_than_erroring(c):
+    """temperature_2 is accepted but has no data: the second probe measures
+    moisture only, so the series comes back empty instead of 500ing."""
+    post_reading(c, NEW_FORMAT)
+    r = c.get("/bins/bin-001/trends", params={"hours": 24, "metrics": ["temperature_2"]})
+    assert r.status_code == 200

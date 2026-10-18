@@ -29,7 +29,7 @@ async def bin_row(bin_id: str):
     return await db.fetchrow(
         """
         SELECT bin_id, display_name, owner_id, moisture_raw_dry,
-               moisture_raw_wet, calibrated, last_seen_at
+               moisture_raw_wet, calibrated, calibrated_2, last_seen_at
         FROM bins WHERE bin_id = $1
         """,
         bin_id,
@@ -297,6 +297,9 @@ async def snapshot(bin_id: str) -> dict | None:
                 "temp_c": None,
             }
 
+    for layer, values in layers.items():
+        values["moisture_calibrated"] = binr["calibrated_2" if layer == "bottom" else "calibrated"]
+
     # Stages. The unmeasured layer gets 'started' rather than an invented
     # stage, which also keeps bottom_ready false until a probe exists.
     stages = {}
@@ -406,6 +409,8 @@ def state_hash(snap: dict, item: str | None) -> str:
         "rule_band": [top['moisture_pct'] is not None and top['moisture_pct'] > 64,
                       top['moisture_pct'] is not None and top['moisture_pct'] < 36],
         "need": compost.need_for(snap),
+        "moisture_conflict": compost.moisture_conflict(snap),
+        "bottom_calibrated": snap['layers']['bottom'].get('moisture_calibrated', False),
         "stages": snap['stages'],
         "stale": snap.get('stale', False),
         "calibrated": snap.get('moisture_calibrated', False),

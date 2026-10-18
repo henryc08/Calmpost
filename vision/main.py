@@ -98,9 +98,16 @@ def run(args) -> None:
             if outcome.kind in ('camera_lost', 'cancelled'):
                 log.info('session ended: %s', outcome.kind)
             elif outcome.kind == 'no_motion':
+                state.status = 'nothing seen this session'
                 if backend: backend.close_session(session_id, 'no_motion')
             else:
                 log.info('drop: %s', describe(outcome))
+                # Also put it on the preview: the watcher stops pushing
+                # frames when it fires, so without this the result only ever
+                # reached the terminal and the browser showed a dead feed.
+                state.show_result(outcome.after, outcome.result.items,
+                                  outcome.result.model, outcome.result.ok,
+                                  outcome.result.latency_ms)
                 if args.save_frames: save_frames(outcome, settings.thumbs_dir)
                 if backend:
                     # Identical session reports are idempotent on the backend.

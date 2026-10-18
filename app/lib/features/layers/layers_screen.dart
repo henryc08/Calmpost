@@ -2,11 +2,11 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../domain/health_score.dart';
+import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../state/game.dart';
 import '../../state/providers.dart';
@@ -15,8 +15,10 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import '../../ui/info_dot.dart';
+import 'moisture_map.dart';
 
-/// Live readings per zone, a 24 h chart with the healthy band, and what it means.
+/// Metric-first sensor view. The internal Layers route stays stable for deep links
+/// and check-in rewards; top/bottom remain storage identifiers, not navigation.
 class LayersScreen extends ConsumerStatefulWidget {
   const LayersScreen({super.key});
 
@@ -25,188 +27,229 @@ class LayersScreen extends ConsumerStatefulWidget {
 }
 
 class _LayersScreenState extends ConsumerState<LayersScreen> {
-  Zone _zone = Zone.top;
-  Metric _metric = Metric.moisture;
+  Zone _moistureProbe = Zone.top;
 
   @override
   Widget build(BuildContext context) {
-    final h = ref.watch(healthProvider);
-    if (h == null) return const SizedBox();
-    final s = h.snapshot;
-    final metric = _zone == Zone.air ? Metric.co2 : _metric;
-    final trend = ref.watch(trendProvider((_zone, metric))).valueOrNull ?? const <TrendPoint>[];
+    final reading = ref.watch(binProvider);
+    final s = reading.valueOrNull;
+    if (s == null) {
+      return BrandPage(
+        title: 'Sensors',
+        children: [
+          if (reading.hasError) ...[
+            Text("Can't reach the bin.", style: T.heading),
+            TextButton(
+              onPressed: () => ref.invalidate(binProvider),
+              child: Text('Retry readings', style: T.button),
+            ),
+          ] else ...[
+            const Center(child: CircularProgressIndicator(color: C.forest)),
+            const SizedBox(height: S.x3),
+            Text('Waiting for sensor readings…', style: T.body),
+          ],
+        ],
+      );
+    }
+    final metric = ref.watch(sensorMetricProvider);
+    final zone = metric == Metric.moisture ? _moistureProbe : (metric == Metric.co2 ? Zone.air : Zone.top);
+    final trendKey = (zone, metric);
+    final trendState = ref.watch(trendProvider(trendKey));
+    final trend = trendState.valueOrNull ?? const <TrendPoint>[];
     final logs = ref.watch(gameProvider.select((g) => g.logs));
-
-    final unmeasured = switch ((_zone, metric)) {
-      (Zone.air, _) => !s.airMeasured,
-      (Zone.bottom, Metric.temperature) => !s.bottomTemperatureMeasured,
-      (Zone.bottom, _) => !s.bottomMeasured,
-      (Zone.top, Metric.temperature) => !s.topTemperatureMeasured,
-      _ => !s.topMeasured,
+    final measured = switch (metric) {
+      Metric.moisture => zone == Zone.top ? s.topMeasured : s.bottomMeasured,
+      Metric.temperature => s.topTemperatureMeasured,
+      Metric.co2 => s.airMeasured,
     };
-    final (value, unit) = switch (metric) {
-      _ when unmeasured => ('—', ''),
-      Metric.moisture => ('${s.moisture(_zone).round()}', '%'),
-      Metric.temperature => (s.temp(_zone).toStringAsFixed(1), '°C'),
-      Metric.co2 => ('${s.co2.round()}', ' ppm'),
-    };
-    final state = zoneState(s, _zone);
-    final (stateLabel, stateColor) = switch (state) {
-      ZoneState.wet => ('Too wet', C.water),
-      ZoneState.dry => ('Too dry', C.amber),
-      ZoneState.hot => ('High', C.clay),
-      ZoneState.unknown => ('Not measured', C.muted),
-      _ => ('In range', C.brandDeep),
-    };
-    final stage = _zone == Zone.bottom ? s.bottomStage : s.topStage;
+    final moisture = metric == Metric.moisture;
+    final value = metric == Metric.temperature ? (measured ? '${s.topTemp.toStringAsFixed(1)} °C' : '—') : (measured ? '${s.co2.round()} ppm' : '—');
 
     return BrandPage(
-      title: 'Layers',
+      title: 'Sensors',
       subtitle: s.readingsStale ? 'Kitchen bin · last reading ${s.ageLabel(DateTime.now())}' : 'Kitchen bin · live',
       trailing: s.readingsStale ? null : const LiveDot(color: C.onBrand),
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          BandSegments<Zone>(
-            values: const [Zone.top, Zone.bottom, Zone.air],
-            selected: _zone,
-            label: (z) => switch (z) {
-              Zone.top => 'Top layer',
-              Zone.bottom => 'Bottom layer',
-              Zone.air => 'Air gap',
-            },
-            onChanged: (z) => setState(() => _zone = z),
+          // Two primary hardware views; air readings remain reachable below.
+          BandSegments<Metric>(
+            values: const [Metric.moisture, Metric.temperature],
+            selected: metric,
+            label: (m) => m == Metric.moisture ? 'Moisture' : 'Temperature',
+            onChanged: (m) => ref.read(sensorMetricProvider.notifier).state = m,
           ),
-          const SizedBox(height: S.x5),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(value, style: T.hero.copyWith(fontSize: 72, color: C.onBrand)),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12, left: 4),
-                child: Text(unit, style: T.heading.copyWith(color: C.onBrandMuted)),
-              ),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: C.onBrand, borderRadius: BorderRadius.circular(R.pill)),
-                  child: Text(stateLabel.toUpperCase(), style: T.caps.copyWith(color: stateColor, fontSize: 10.5)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => ref.read(sensorMetricProvider.notifier).state = Metric.co2,
+              child: Text(metric == Metric.co2 ? 'Air · CO₂ selected' : 'View air · CO₂', style: T.label.copyWith(color: C.onBrand)),
+            ),
+          ),
+          if (moisture)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _MoistureReading(label: 'PROBE 1 · UPPER', value: s.topMeasured ? s.topMoisture : null),
                 ),
+                const SizedBox(width: S.x4),
+                Expanded(
+                  child: _MoistureReading(label: 'PROBE 2 · LOWER', value: s.bottomMeasured ? s.bottomMoisture : null),
+                ),
+              ],
+            )
+          else ...[
+            Text(metric == Metric.temperature ? 'COMPOST TEMPERATURE' : 'AIR · CO₂', style: T.caps.copyWith(color: C.onBrand)),
+            const SizedBox(height: S.x2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(value, style: T.hero.copyWith(fontSize: 58, color: C.onBrand)),
+            ),
+            if (!measured) Text('Not measured · check the sensor connection', style: T.body.copyWith(color: C.onBrand)),
+            if (metric == Metric.temperature) ...[
+              Text(
+                s.ambientMeasured ? 'Ambient air: ${s.ambientTemp.toStringAsFixed(1)} °C' : 'Ambient temperature not measured',
+                style: T.body.copyWith(color: C.onBrand),
               ),
+              if (measured && s.ambientMeasured)
+                Text(
+                  '${(s.topTemp - s.ambientTemp).abs().toStringAsFixed(1)} °C ${s.topTemp >= s.ambientTemp ? 'above' : 'below'} ambient',
+                  style: T.small.copyWith(color: C.onBrand),
+                ),
             ],
-          ),
-          Text(_heroLine(_zone, s), style: T.body.copyWith(color: C.onBrand)),
+          ],
         ],
       ),
       children: [
-        if (_zone != Zone.air) ...[
-          PaperSegments<Metric>(
-            values: const [Metric.moisture, Metric.temperature],
-            selected: _metric,
-            label: (m) => m == Metric.moisture ? 'Moisture' : 'Temperature',
-            onChanged: (m) => setState(() => _metric = m),
+        if (moisture) ...[
+          const SectionLabel('MOISTURE HEAT MAP'),
+          const SizedBox(height: S.x3),
+          MoistureMap(snapshot: s),
+          const SizedBox(height: S.x3),
+          Text('Two measured points, not a scan of the whole bin. Colour does not imply measurements between probes.', style: T.small),
+          if (!s.moistureCalibrated || !s.bottomMoistureCalibrated)
+            Text(
+              '${[if (!s.moistureCalibrated) 'Probe 1', if (!s.bottomMoistureCalibrated) 'Probe 2'].join(' and ')} uncalibrated · values are approximate.',
+              style: T.small.copyWith(color: C.clay),
+            ),
+          TextButton(
+            onPressed: () => Routes.calibration(context),
+            child: Text('Calibrate probes', style: T.button),
           ),
-          const SizedBox(height: S.x5),
+          const SectionBreak(),
+          PaperSegments<Zone>(
+            values: const [Zone.top, Zone.bottom],
+            selected: _moistureProbe,
+            label: (z) => z == Zone.top ? 'Probe 1 history' : 'Probe 2 history',
+            onChanged: (z) => setState(() => _moistureProbe = z),
+          ),
+          const SizedBox(height: S.x4),
+        ] else ...[
+          Text(
+            metric == Metric.temperature
+                ? 'One working compost temperature probe. The lower temperature sensor is unavailable and is not shown.'
+                : 'CO₂ is context for activity, not a direct measurement of oxygen or compost readiness.',
+            style: T.body,
+          ),
+          const SectionBreak(),
         ],
-        SectionLabel(
-          'LAST 24 HOURS',
-          info: InfoTip.chart,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 12,
-                height: 8,
-                decoration: BoxDecoration(color: C.brand.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(width: 5),
-              Text('Healthy range', style: T.small.copyWith(fontSize: 11)),
-            ],
-          ),
+        const SectionLabel('LAST 24 HOURS', info: InfoTip.chart),
+        const SizedBox(height: S.x2),
+        Text(
+          moisture
+              ? '${zone == Zone.top ? 'Probe 1 · upper' : 'Probe 2 · lower'} moisture · shaded guide: 40–60'
+              : metric == Metric.temperature
+              ? 'Compost probe · °C'
+              : 'Air sensor · ppm',
+          style: T.small,
         ),
         const SizedBox(height: S.x3),
         SizedBox(
           height: 190,
-          child: trend.isEmpty ? const SizedBox() : _Chart(points: trend, metric: metric, zone: _zone, ambient: s.ambientTemp, logs: logs),
+          child: trendState.when(
+            loading: () => const Center(child: CircularProgressIndicator(color: C.forest)),
+            error: (_, _) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Could not load this trend.', style: T.body),
+                  TextButton(
+                    onPressed: () => ref.invalidate(trendProvider(trendKey)),
+                    child: Text('Retry trend', style: T.button),
+                  ),
+                ],
+              ),
+            ),
+            data: (points) => points.isEmpty
+                ? Center(
+                    child: Text(
+                      moisture && zone == Zone.bottom
+                          ? 'No Probe 2 history yet. Available live readings still appear above.'
+                          : 'No measurements for this chart yet.',
+                      style: T.body,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : _Chart(points: points, metric: metric, logs: logs),
+          ),
         ),
         const SizedBox(height: S.x4),
-        Row(
-          children: [
-            Container(width: 10, height: 2, color: C.pink),
-            const SizedBox(width: 6),
-            Expanded(child: Text('Dashed lines mark when something was added', style: T.small.copyWith(fontSize: 11))),
-          ],
-        ),
-        const SizedBox(height: S.x4),
-        if (trend.isNotEmpty) _Stats(points: trend, metric: metric),
+        Text('Dashed pink lines mark additions. They show timing, not proof of cause.', style: T.small),
+        if (!measured) Text('Current reading unavailable. Any chart above contains past measurements only.', style: T.small),
+        if (trend.isNotEmpty && !trendState.hasError) ...[const SizedBox(height: S.x4), _Stats(points: trend, metric: metric)],
         const SectionBreak(),
         const SectionLabel('WHAT IT MEANS'),
         const SizedBox(height: S.x3),
         Text(
-          unmeasured ? 'No usable reading from this sensor. Unknown is not zero; check the sensor connection.' : _meaning(_zone, s),
-          style: T.body.copyWith(fontSize: 15),
+          moisture
+              ? 'Compare the two probes instead of averaging them: a dry spot and a wet spot can cancel each other out. '
+                    'Percentages are relative to each probe’s dry/wet calibration, not water by weight. The 40–60 band is an app guide; check the compost by hand.'
+              : metric == Metric.temperature
+              ? 'Compare compost warmth with ambient air and its own history. Temperature alone cannot tell you what to add or whether compost is ready.'
+              : 'CO₂ can change with microbial activity and ventilation. Read it alongside moisture, temperature and recent additions.',
+          style: T.body,
         ),
-        if (!s.moistureCalibrated && _zone != Zone.air) Text('Moisture is uncalibrated: treat the percentage as an estimate.', style: T.small),
-        if (_zone != Zone.air && !unmeasured) ...[
-          const SectionBreak(),
-          SectionLabel('LIFE CYCLE', trailing: Text('Guide from sensor trends', style: T.small.copyWith(fontSize: 11))),
-          const SizedBox(height: S.x4),
-          _StageLine(stage: stage),
-        ],
         const SectionBreak(),
         const SectionLabel('RECENT ADDS'),
         const SizedBox(height: S.x2),
+        if (logs.isEmpty) Text('No additions recorded yet.', style: T.small),
         for (final (i, l) in logs.take(4).indexed) ...[if (i > 0) const Hairline(), _LogRow(l)],
-      ].animate(interval: M.stagger).fadeIn(duration: 380.ms, curve: M.ease),
+      ],
     );
   }
+}
 
-  static String _heroLine(Zone z, BinSnapshot s) => switch (z) {
-    Zone.top when !s.topTemperatureMeasured || !s.ambientMeasured => 'Fresh scraps and browns · temperature unavailable',
-    Zone.air when !s.airMeasured => 'CO₂ unavailable · check the air sensor',
-    Zone.top => 'Fresh scraps and browns · ${s.topTemp.round()}°C, ${(s.topTemp - s.ambientTemp).round()}° above the room',
-    Zone.bottom when !s.bottomMeasured => 'Older compost, slowly finishing · no probe here yet',
-    Zone.bottom => 'Older compost, slowly finishing · ${s.bottomTemp.round()}°C',
-    Zone.air => 'CO₂ in the gap under the lid · ${s.co2SlopePerDay >= 0 ? 'rising' : 'falling'} ${s.co2SlopePerDay.abs().round()}% a day',
-  };
+class _MoistureReading extends StatelessWidget {
+  const _MoistureReading({required this.label, required this.value});
+  final String label;
+  final double? value;
 
-  static String _meaning(Zone z, BinSnapshot s) => switch (z) {
-    Zone.air =>
-      s.co2SlopePerDay < -5
-          ? 'CO₂ is dropping day over day. The microbes are winding down, which is what finishing compost looks like.'
-          : 'CO₂ is the microbes breathing. Steady, high readings mean they are busy; the vent holes keep the bin from going sour.',
-    Zone.top =>
-      s.topMoisture > moistureHi + 4
-          ? 'Too much water pushes the air out, and the bin starts to smell. Add dry browns like cardboard or leaves.'
-          : s.topMoisture < moistureLo - 4
-          ? 'Too dry for the microbes to work. Wet greens or a splash of water will get it going again.'
-          : 'Damp like a wrung-out sponge, which is exactly right. The warmth means it is breaking down nicely.',
-    Zone.bottom when !s.bottomMeasured =>
-      'There is no probe in this layer yet, so its moisture and temperature are unknown. Its stage is a guide from the top layer and the CO₂.',
-    Zone.bottom =>
-      s.bottomStage == Stage.ready
-          ? 'This layer is done: cool, dark and crumbly. Harvest it for your plants.'
-          : s.bottomMoisture < moistureLo - 4
-          ? 'The finishing layer is drying out. A little water keeps the last stage of curing moving.'
-          : 'Cooling and curing. In a few weeks this will be rich, finished compost.',
-  };
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: T.caps.copyWith(color: C.onBrand, fontSize: 10.5)),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(value == null ? '—' : '${value!.round()}%', style: T.hero.copyWith(fontSize: 48, color: C.onBrand)),
+      ),
+      Text(value == null ? 'Not measured' : 'Relative moisture', style: T.small.copyWith(color: C.onBrand)),
+    ],
+  );
 }
 
 class _Chart extends StatelessWidget {
-  const _Chart({required this.points, required this.metric, required this.zone, required this.ambient, required this.logs});
+  const _Chart({required this.points, required this.metric, required this.logs});
   final List<TrendPoint> points;
   final Metric metric;
-  final Zone zone;
-  final double ambient;
   final List<LogEntry> logs;
 
   @override
   Widget build(BuildContext context) {
     final (lo, hi) = switch (metric) {
       Metric.moisture => (moistureLo, moistureHi),
-      Metric.temperature => zone == Zone.bottom ? (ambient - 2, ambient + 8) : (ambient + 5, ambient + 25),
+      Metric.temperature => (0.0, 60.0),
       Metric.co2 => (900.0, 6000.0),
     };
     final values = points.map((p) => p.value).toList();
@@ -216,7 +259,7 @@ class _Chart extends StatelessWidget {
       minY = values.reduce(math.min) * 0.6;
       maxY = values.reduce(math.max) * 1.4;
     }
-    final pad = (maxY - minY) * 0.12;
+    final pad = math.max(1.0, (maxY - minY) * 0.12);
     final first = DateTime.now().subtract(const Duration(hours: 24));
     final spots = [for (final p in points) FlSpot(p.time.difference(first).inMinutes / 60, p.value)];
     String fmt(double v) => switch (metric) {
@@ -237,7 +280,7 @@ class _Chart extends StatelessWidget {
         minY: minY - pad,
         maxY: maxY + pad,
         rangeAnnotations: RangeAnnotations(
-          horizontalRangeAnnotations: [HorizontalRangeAnnotation(y1: lo, y2: hi, color: C.brand.withValues(alpha: 0.14))],
+          horizontalRangeAnnotations: [if (metric == Metric.moisture) HorizontalRangeAnnotation(y1: lo, y2: hi, color: C.brand.withValues(alpha: 0.14))],
         ),
         extraLinesData: ExtraLinesData(
           verticalLines: [
@@ -278,7 +321,7 @@ class _Chart extends StatelessWidget {
         lineBarsData: [
           LineChartBarData(
             spots: spots,
-            isCurved: true,
+            isCurved: false,
             curveSmoothness: 0.25,
             color: C.forest,
             barWidth: 2.5,
@@ -323,7 +366,7 @@ class _Stats extends StatelessWidget {
     return IntrinsicHeight(
       child: Row(
         children: [
-          stat('NOW', fmt(v.last)),
+          stat('LATEST', fmt(v.last)),
           const Hairline(vertical: true),
           stat('AVG', fmt(avg)),
           const Hairline(vertical: true),
@@ -332,75 +375,6 @@ class _Stats extends StatelessWidget {
           stat('HIGH', fmt(v.reduce(math.max))),
         ],
       ),
-    );
-  }
-}
-
-/// Minimal horizontal life-cycle: dots on a line, current stage highlighted.
-class _StageLine extends StatelessWidget {
-  const _StageLine({required this.stage});
-  final Stage stage;
-
-  static const _steps = [(Stage.active, 'Active'), (Stage.hot, 'Hot'), (Stage.cooling, 'Cooling'), (Stage.curing, 'Curing'), (Stage.ready, 'Ready')];
-
-  @override
-  Widget build(BuildContext context) {
-    final current = _steps.lastIndexWhere((e) => e.$1.index <= stage.index).clamp(0, _steps.length - 1);
-    return Column(
-      children: [
-        SizedBox(
-          height: 18,
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final step = c.maxWidth / (_steps.length - 1);
-              return Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.centerLeft,
-                children: [
-                  Positioned(left: 0, right: 0, child: Container(height: 2, color: C.line)),
-                  Positioned(
-                    left: 0,
-                    width: step * current,
-                    child: Container(height: 2, color: C.forest),
-                  ),
-                  for (var i = 0; i < _steps.length; i++)
-                    Positioned(
-                      left: step * i - (i == current ? 9 : 5),
-                      child: i == current
-                          ? Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: C.pink,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: C.paper, width: 3),
-                              ),
-                            )
-                          : Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(color: i < current ? C.forest : C.line, shape: BoxShape.circle),
-                            ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: S.x2),
-        Row(
-          children: [
-            for (var i = 0; i < _steps.length; i++)
-              Expanded(
-                child: Text(
-                  _steps[i].$2,
-                  textAlign: i == 0 ? TextAlign.left : (i == _steps.length - 1 ? TextAlign.right : TextAlign.center),
-                  style: T.small.copyWith(fontSize: 11.5, color: i == current ? C.ink : C.muted, fontWeight: i == current ? FontWeight.w800 : FontWeight.w600),
-                ),
-              ),
-          ],
-        ),
-      ],
     );
   }
 }

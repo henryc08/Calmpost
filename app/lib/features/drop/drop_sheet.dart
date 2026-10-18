@@ -23,7 +23,7 @@ import 'drop_review.dart';
 
 /// Camera drop-in (AGENTS.md 2.4): arm the camera, drop the scrap in, then
 /// review what it saw. Nothing is logged until the user says it's right.
-Future<void> showDropSheet(BuildContext context) {
+Future<void> showDropSheet(BuildContext context, {Drop? initialDrop}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -31,14 +31,15 @@ Future<void> showDropSheet(BuildContext context) {
     backgroundColor: C.paper,
     barrierColor: C.ink.withValues(alpha: 0.4),
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(R.hero))),
-    builder: (_) => const DropSheet(),
+    builder: (_) => DropSheet(initialDrop: initialDrop),
   );
 }
 
 enum _Phase { arming, watching, nothing, failed, review, done }
 
 class DropSheet extends ConsumerStatefulWidget {
-  const DropSheet({super.key});
+  const DropSheet({super.key, this.initialDrop});
+  final Drop? initialDrop;
 
   @override
   ConsumerState<DropSheet> createState() => _DropSheetState();
@@ -62,7 +63,11 @@ class _DropSheetState extends ConsumerState<DropSheet> {
   void initState() {
     super.initState();
     _repo = ref.read(repositoryProvider);
-    _arm();
+    if (widget.initialDrop case final drop?) {
+      _review(drop);
+    } else {
+      _arm();
+    }
   }
 
   @override
@@ -311,7 +316,10 @@ class _DropSheetState extends ConsumerState<DropSheet> {
         Text(_verdicts.length == 1 ? _verdicts.first.headline : 'Here\'s what that does', style: T.title),
         const SizedBox(height: S.x4),
         for (final (i, a) in _verdicts.indexed) ...[if (i > 0) const Hairline(), _VerdictRow(advice: a, removed: _lines[i].removed)],
-        if (fixed) ...[const SizedBox(height: S.x4), Text('Thanks for the fix. The camera uses corrections like this to get better in your bin.', style: T.small)],
+        if (fixed) ...[
+          const SizedBox(height: S.x4),
+          Text('Thanks for the fix. The camera uses corrections like this to get better in your bin.', style: T.small),
+        ],
         const SizedBox(height: S.x5),
         SizedBox(
           width: double.infinity,
@@ -321,7 +329,14 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     );
   }
 
-  Widget _message({required IconData icon, required String title, required String body, bool busy = false, (String, VoidCallback)? primary, (String, VoidCallback)? secondary}) {
+  Widget _message({
+    required IconData icon,
+    required String title,
+    required String body,
+    bool busy = false,
+    (String, VoidCallback)? primary,
+    (String, VoidCallback)? secondary,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

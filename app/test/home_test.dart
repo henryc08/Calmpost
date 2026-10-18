@@ -51,6 +51,29 @@ Future<void> _loadFonts() async {
 void main() {
   setUpAll(_loadFonts);
 
+  testWidgets('Home reading shortcuts open their matching metric', (tester) async {
+    tester.view.physicalSize = const Size(412 * 3, 915 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final container = _container();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
+    await _settle(tester);
+    for (final entry in [('TEMP', Metric.temperature), ('CO₂', Metric.co2), ('MOISTURE', Metric.moisture)]) {
+      container.read(tabProvider.notifier).state = AppTab.home;
+      await _settle(tester);
+      await tester.ensureVisible(find.text(entry.$1).last);
+      await _settle(tester, 300);
+      await tester.tap(find.text(entry.$1).last);
+      await _settle(tester);
+      expect(container.read(tabProvider), AppTab.layers);
+      expect(container.read(sensorMetricProvider), entry.$2);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('home: check-in lights the calendar and quests pay out', (tester) async {
     tester.view.physicalSize = const Size(412 * 3, 915 * 3);
     tester.view.devicePixelRatio = 3;
@@ -60,10 +83,10 @@ void main() {
 
     await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const CalmpostApp()));
     await _settle(tester);
-    expect(find.text('TOP'), findsOneWidget);
+    expect(find.text('MOISTURE'), findsOneWidget);
 
     // Opening Layers checks on the bin: streak extends, quest completes.
-    await tester.tap(find.bySemanticsLabel('Layers'));
+    await tester.tap(find.bySemanticsLabel('Sensors'));
     await _settle(tester);
     expect(container.read(gameProvider).caredToday, isTrue);
     expect(container.read(gameProvider).streak.days, 7);

@@ -79,9 +79,12 @@ class ProfileScreen extends ConsumerWidget {
         if (ref.watch(socialSessionProvider).valueOrNull case final account?) ...[
           PillButton(label: 'My shared progress', onTap: () => Routes.socialProfile(context, account.userId)),
           const SizedBox(height: S.x3),
-          Text(ref.watch(repositoryProvider).serverGame
-              ? 'Your care, rewards and shared progress are saved to this account.'
-              : 'Demo mode: these local rewards do not change your account.', style: T.small),
+          Text(
+            ref.watch(repositoryProvider).serverGame
+                ? 'Your care, rewards and shared progress are saved to this account.'
+                : 'Demo mode: these local rewards do not change your account.',
+            style: T.small,
+          ),
           const SectionBreak(),
         ],
         _Rewards(g: g),
@@ -119,6 +122,7 @@ class ProfileScreen extends ConsumerWidget {
         const SectionLabel('SETTINGS'),
         const SizedBox(height: S.x2),
         const _SettingRow(PhosphorIconsRegular.trash, 'Kitchen bin', 'Connected · ESP32'),
+        PillButton(label: 'Calibrate probes', icon: PhosphorIconsRegular.slidersHorizontal, onTap: () => Routes.calibration(context)),
         const Hairline(),
         const _SettingRow(PhosphorIconsRegular.bell, 'Notifications', 'Compost ready, streak at risk'),
         const Hairline(),

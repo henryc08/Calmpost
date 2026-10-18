@@ -8,6 +8,8 @@ import '../domain/advice_rules.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
+import '../domain/drop_history.dart';
+import '../domain/calibration.dart';
 import 'api_config.dart';
 import 'calmpost_repository.dart';
 import 'food_catalog.dart';
@@ -22,13 +24,37 @@ import 'food_catalog.dart';
 /// readings, trends, the scrap-check verdict (Gemini words, rules decide),
 /// the add log and the league.
 class ApiRepository implements CalmpostRepository {
-  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)}) : _http = client ?? http.Client();
+  ApiRepository(this.config, {http.Client? client, this.pollEvery = const Duration(seconds: 3), this.dropPollEvery = const Duration(seconds: 1)})
+    : _http = client ?? http.Client();
 
   @override
   Future<CompostInventory> inventory({String period = 'all'}) async =>
       CompostInventory.fromJson(await _get('/bins/${config.binId}/inventory', {'period': period}) as Map<String, dynamic>);
 
   final ApiConfig config;
+  @override
+  Future<CalibrationResult> calibrateProbe({required int probe, required int dry, required int wet, bool backfill = false}) async {
+    final error = calibrationError(probe, dry, wet);
+    if (error != null) throw ArgumentError(error);
+    return CalibrationResult.fromJson(
+      await _post('/bins/${config.binId}/calibration', {'probe': probe, 'moisture_raw_dry': dry, 'moisture_raw_wet': wet, 'backfill': backfill})
+          as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<DropHistoryPage> dropHistory({String? before, int limit = 20}) async =>
+      DropHistoryPage.fromJson(await _get('/bins/${config.binId}/drops/history', {'limit': '$limit', 'before': ?before}) as Map<String, dynamic>);
+
+  @override
+  Future<Uint8List?> dropPhoto(int id) async {
+    final path = '/drops/$id/photo';
+    final res = await _http.get(_uri(path), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) throw ApiException('GET $path', res.statusCode, 'Photo unavailable');
+    return res.bodyBytes;
+  }
+
   final Duration pollEvery;
 
   /// How often the drop sheet asks whether the camera saw something.
@@ -91,7 +117,11 @@ class ApiRepository implements CalmpostRepository {
 
   void close() => _http.close();
 
-  Map<String, String> get _headers => {'X-API-Key': config.apiKey, 'Content-Type': 'application/json', if (config.token != null) 'Authorization': 'Bearer ${config.token}'};
+  Map<String, String> get _headers => {
+    'X-API-Key': config.apiKey,
+    'Content-Type': 'application/json',
+    if (config.token != null) 'Authorization': 'Bearer ${config.token}',
+  };
 
   Uri _uri(String path, [Map<String, dynamic>? query]) => Uri.parse('${config.baseUrl}$path').replace(queryParameters: query);
 
@@ -133,15 +163,19 @@ class ApiRepository implements CalmpostRepository {
 
   @override
   Future<List<TrendPoint>> trends(Zone zone, Metric metric) async {
-    // The bottom layer now reports live (second probe), but the continuous
-    // aggregates behind /trends still carry probe 1 only, so asking for a
-    // bottom series would chart the TOP probe's history under a bottom label.
-    // Empty until readings_15m/readings_1d gain the second probe -- see
-    // backend/sql/007_second_probe.sql.
-    if (zone == Zone.bottom) return const [];
+    // One row carries both probes, so the layer picks the series rather than
+    // being a parameter: moisture is the top probe, moisture_2 the bottom one
+    // (008_bottom_trends.sql). The bottom layer used to return nothing here,
+    // because asking for 'moisture' would have charted the TOP probe's
+    // history under a bottom label.
+    //
+    // temperature_2 exists for symmetry but has no data yet: the second probe
+    // measures moisture only, so probe_temp_c_2 is null in every reading. The
+    // series comes back empty, which the chart already handles.
+    final bottom = zone == Zone.bottom;
     final name = switch (metric) {
-      Metric.moisture => 'moisture',
-      Metric.temperature => zone == Zone.air ? 'air_temp' : 'temperature',
+      Metric.moisture => bottom ? 'moisture_2' : 'moisture',
+      Metric.temperature => zone == Zone.air ? 'air_temp' : (bottom ? 'temperature_2' : 'temperature'),
       Metric.co2 => 'co2',
     };
     final j =
@@ -253,7 +287,13 @@ class ApiRepository implements CalmpostRepository {
         if (i < items.length && items[i]['verdict'] is Map<String, dynamic>)
           adviceFromJson(l.item, items[i]['verdict'] as Map<String, dynamic>, xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
         else if (l.removed)
-          Advice(item: l.item, verdict: Verdict.avoid, headline: 'Kept it out', reason: 'Thanks for taking it back out.', xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0)
+          Advice(
+            item: l.item,
+            verdict: Verdict.avoid,
+            headline: 'Kept it out',
+            reason: 'Thanks for taking it back out.',
+            xpAwarded: items[i]['log']['xp_awarded'] as int? ?? 0,
+          )
         else
           // No readings to judge against yet: the add is still logged.
           Advice(
@@ -432,6 +472,9 @@ BinSnapshot snapshotFromJson(Map<String, dynamic> j) {
     airMeasured: air['co2_ok'] != false && air['co2_ppm'] != null,
     ambientMeasured: air['ambient_temp_c'] != null,
     moistureCalibrated: j['moisture_calibrated'] == true,
+    bottomMoistureCalibrated: bottom['moisture_calibrated'] == true,
+    topMoistureRaw: (top['moisture_raw'] as num?)?.toInt(),
+    bottomMoistureRaw: (bottom['moisture_raw'] as num?)?.toInt(),
   );
 }
 
@@ -464,6 +507,7 @@ Drop reviewedDropFromJson(Map<String, dynamic> j) {
   final thumb = j['thumbnail_jpeg_b64'] as String? ?? '';
   return Drop(
     id: (j['id'] as num).toInt(),
+    source: j['source'] as String? ?? 'camera',
     geminiOk: j['gemini_ok'] != false,
     thumbnail: thumb.isEmpty ? null : base64Decode(thumb),
     items: [
@@ -543,12 +587,14 @@ TruncReply truncReplyFromJson(Map<String, dynamic> j) {
     // Absent means on topic: only an off-topic answer sets it false.
     onTopic: j['on_topic'] != false,
     usedReadings: j['used_readings'] == true,
+    need: BinNeed.values.where((n) => n.name == j['need']).firstOrNull,
     context: TruncContext(
       // Null when the bin has never reported, which is not an error: a general
       // question does not need a reading.
       readingsAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
       recentAdds: (ctx['recent_adds'] as num?)?.toInt() ?? 0,
       photos: (ctx['photos'] as num?)?.toInt() ?? 0,
+      readingsStale: ctx['readings_stale'] == true,
     ),
   );
 }

@@ -1,0 +1,105 @@
+[
+  {
+    "name": "wet upper still needs care while lower is curing",
+    "top": 76,
+    "bottom": 55,
+    "greens": 3,
+    "browns": 7,
+    "need": "browns",
+    "status": "action",
+    "apple": "Hold off"
+  },
+  {
+    "name": "dry balanced means water not apples",
+    "top": 25,
+    "bottom": 50,
+    "greens": 3,
+    "browns": 7,
+    "need": "water",
+    "status": "action",
+    "apple": "Hold off"
+  },
+  {
+    "name": "dry and brown heavy can use apples",
+    "top": 25,
+    "bottom": 35,
+    "greens": 2,
+    "browns": 9,
+    "need": "greens",
+    "status": "action",
+    "apple": "Yes"
+  },
+  {
+    "name": "steady bin does not need more food",
+    "top": 52,
+    "bottom": 48,
+    "greens": 3,
+    "browns": 7,
+    "need": "nothing",
+    "status": "steady",
+    "apple": "not needed"
+  },
+  {
+    "name": "opposite probes require inspection",
+    "top": 25,
+    "bottom": 78,
+    "greens": 2,
+    "browns": 9,
+    "need": "nothing",
+    "status": "inspect",
+    "apple": "cannot recommend"
+  },
+  {
+    "name": "lower issue is not hidden by healthy upper",
+    "top": 52,
+    "bottom": 80,
+    "greens": 3,
+    "browns": 7,
+    "need": "nothing",
+    "status": "inspect",
+    "apple": "cannot recommend"
+  },
+  {
+    "name": "missing upper is unknown",
+    "top": null,
+    "bottom": 50,
+    "greens": 3,
+    "browns": 7,
+    "need": "nothing",
+    "status": "unknown",
+    "apple": "cannot recommend"
+  },
+  {
+    "name": "stale is not all good",
+    "top": 52,
+    "bottom": 48,
+    "greens": 3,
+    "browns": 7,
+    "stale": true,
+    "need": "nothing",
+    "status": "unknown",
+    "apple": "cannot recommend"
+  },
+  {
+    "name": "no history is not nutrient evidence",
+    "top": 52,
+    "bottom": 48,
+    "greens": 0,
+    "browns": 0,
+    "need": "nothing",
+    "status": "steady",
+    "apple": "not needed"
+  },
+  {
+    "name": "rising co2 without warmth",
+    "top": 52,
+    "bottom": 48,
+    "greens": 3,
+    "browns": 7,
+    "delta": 1,
+    "slope": 3,
+    "need": "mix",
+    "status": "action",
+    "apple": "Hold off"
+  }
+]

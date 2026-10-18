@@ -124,5 +124,8 @@ enum AppTab { home, layers, log, social, profile }
 
 final tabProvider = StateProvider<AppTab>((ref) => AppTab.home);
 
+/// Shared with Home so a reading opens the matching sensor view.
+final sensorMetricProvider = StateProvider<Metric>((ref) => Metric.moisture);
+
 /// An item another screen wants the Log tab to check (e.g. tapped on Home).
 final logIntentProvider = StateProvider<FoodItem?>((ref) => null);

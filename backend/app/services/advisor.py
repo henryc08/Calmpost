@@ -270,7 +270,16 @@ def fallback(snapshot: dict, item: str | None) -> dict:
             verdict, headline = "careful", "Check the bin first"
             reason = "Current moisture is unavailable. Check the bin by hand before adding more."
         elif category == "green":
-            if wet:
+            if compost.moisture_conflict(snapshot) or need in ("water", "mix"):
+                verdict, headline = "careful", "Not needed right now"
+                reason = (
+                    "The moisture probes disagree. Check both spots before adding more."
+                    if compost.moisture_conflict(snapshot) else
+                    "The upper probe is dry, but more food is not the next step. Check by hand and add a little water if dry."
+                    if need == "water" else
+                    "Check airflow and gently mix first. More food is not needed for this action."
+                )
+            elif wet:
                 verdict, headline = "careful", "Add browns first"
                 extra = (
                     "This adds even more water."
@@ -292,8 +301,8 @@ def fallback(snapshot: dict, item: str | None) -> dict:
             elif dry and compost.is_wet_item(item):
                 verdict, headline = "great", "Perfect timing!"
                 reason = (
-                    f"Your top layer is only {round(pct)}% moist. {name} adds the "
-                    "water and nitrogen it's missing."
+                    f"The upper probe reads {round(pct)}% relative moisture and recent additions lean brown. "
+                    f"{name} can add moisture; check by hand first."
                 )
             else:
                 verdict, headline = "great", "Great add!"
@@ -329,9 +338,8 @@ def fallback(snapshot: dict, item: str | None) -> dict:
         reason = "Current moisture is unavailable. Check the bin by hand before adding more."
 
     # suggestFor(): a finished bottom layer is the headline news.
-    if item is None and stages["bottom"] == "ready":
-        line = "The bottom layer looks ready. Check its texture and smell; sensors are only a guide."
-        reason = line
+    if item is None and compost.moisture_conflict(snapshot):
+        reason = "The moisture probes disagree. Check both spots before adding anything."
 
     return {
         "verdict": verdict,

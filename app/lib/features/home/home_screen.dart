@@ -23,7 +23,7 @@ import 'bin_world.dart';
 import 'daily_track.dart';
 import 'league_race.dart';
 import 'rewards_shelf.dart';
-import 'what_to_add.dart';
+import 'trunc_suggestion.dart';
 import 'readings_row.dart';
 import 'streak_calendar.dart';
 import 'today_quests.dart';
@@ -35,7 +35,6 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final health = ref.watch(healthProvider);
-    final suggestion = ref.watch(suggestionProvider);
     final game = ref.watch(gameProvider);
 
     void goTo(AppTab tab) => ref.read(tabProvider.notifier).state = tab;
@@ -118,19 +117,10 @@ class HomeScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                TruncSuggestion(snapshot: s),
+                const SectionBreak(),
                 const DailyTrack(),
                 const SectionBreak(),
-                if (suggestion != null) ...[
-                  WhatToAdd(
-                    suggestion: suggestion,
-                    snapshot: s,
-                    onPick: (f) {
-                      ref.read(logIntentProvider.notifier).state = f;
-                      goTo(AppTab.log);
-                    },
-                  ),
-                  const SectionBreak(),
-                ],
                 if (game.crates.isNotEmpty || game.packets > 0) ...[const RewardsShelf(), const SectionBreak()],
                 const TodayQuests(),
                 const SectionBreak(),
@@ -143,7 +133,13 @@ class HomeScreen extends ConsumerWidget {
                 const SectionBreak(),
                 const SectionLabel('LIVE READINGS'),
                 const SizedBox(height: S.x3),
-                ReadingsRow(s: s, onOpen: (_) => goTo(AppTab.layers)),
+                ReadingsRow(
+                  s: s,
+                  onOpen: (metric) {
+                    ref.read(sensorMetricProvider.notifier).state = metric;
+                    goTo(AppTab.layers);
+                  },
+                ),
               ].animate(interval: M.stagger).fadeIn(duration: 420.ms, curve: M.ease).slideY(begin: 0.03, curve: M.ease),
             ),
           ),

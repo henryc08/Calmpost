@@ -212,6 +212,7 @@ async def live(bin_id: str) -> LiveResponse:
             layer=layer,
             label=LAYER_LABELS[layer],
             measured=snap["layers"][layer]["measured"],
+            moisture_calibrated=binr["calibrated_2" if layer == "bottom" else "calibrated"],
             moisture_pct=(
                 round(snap["layers"][layer]["moisture_pct"], 1)
                 if snap["layers"][layer]["moisture_pct"] is not None
@@ -291,14 +292,18 @@ DEFAULT_METRICS: list[Metric] = ["moisture", "temperature", "co2"]
 AGG_COLUMNS = {
     "15m": {
         "moisture": "moisture_pct_avg",
+        "moisture_2": "moisture_pct_2_avg",
         "temperature": "probe_temp_c_avg",
+        "temperature_2": "probe_temp_c_2_avg",
         "co2": "co2_ppm_avg",
         "air_temp": "air_temp_c_avg",
         "air_humidity": "air_humidity_pct_avg",
     },
     "1d": {
         "moisture": "moisture_pct_avg",
+        "moisture_2": "moisture_pct_2_avg",
         "temperature": "probe_temp_c_avg",
+        "temperature_2": "probe_temp_c_2_avg",
         "co2": "co2_ppm_avg",
     },
 }

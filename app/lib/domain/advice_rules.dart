@@ -21,10 +21,23 @@ Advice adviseFor(FoodItem item, BinSnapshot s, Map<String, FoodItem> catalog) {
   }
 
   final balance = balanceOf(s);
+  final need = needFor(s);
   final wet = s.topMoisture > 64;
   final dry = s.topMoisture < 36;
 
   if (item.category == FoodCategory.green) {
+    if (moistureConflict(s) || need == BinNeed.water || need == BinNeed.mix) {
+      return Advice(
+        item: item,
+        verdict: Verdict.careful,
+        headline: 'Not needed right now',
+        reason: moistureConflict(s)
+            ? 'The moisture probes disagree. Check both spots before adding more.'
+            : need == BinNeed.water
+            ? 'The upper probe is dry, but more food is not the next step. Check by hand and add a little water if dry.'
+            : 'Check airflow and gently mix first. More food is not needed for this action.',
+      );
+    }
     if (wet) {
       return Advice(
         item: item,
@@ -49,7 +62,8 @@ Advice adviseFor(FoodItem item, BinSnapshot s, Map<String, FoodItem> catalog) {
         item: item,
         verdict: Verdict.great,
         headline: 'Perfect timing!',
-        reason: 'Your top layer is only ${s.topMoisture.round()}% moist. ${item.name} adds the water and nitrogen it\'s missing.',
+        reason:
+            'The upper probe reads ${s.topMoisture.round()}% relative moisture and recent additions lean brown. ${item.name} can add moisture; check by hand first.',
       );
     }
     return Advice(item: item, verdict: Verdict.great, headline: 'Great add!', reason: '${item.note} Moisture is right where it should be, so toss it in.');
@@ -80,14 +94,20 @@ Advice adviseFor(FoodItem item, BinSnapshot s, Map<String, FoodItem> catalog) {
 
 BinNeed needFor(BinSnapshot s) {
   if (!s.topMeasured || s.readingsStale) return BinNeed.nothing;
-  if (s.bottomMeasured && (s.bottomStage == Stage.curing || s.bottomStage == Stage.ready)) return BinNeed.nothing;
+  if (moistureConflict(s)) return BinNeed.nothing;
   final ratio = s.greens7d > 0 ? s.browns7d / s.greens7d : (s.browns7d > 0 ? 4.0 : 2.5);
   final delta = s.topTemperatureMeasured && s.ambientMeasured ? s.topTemp - s.ambientTemp : null;
-  if (s.topMoisture > 60 || ratio < 2 || (s.airMeasured && s.co2 > 6000 && delta != null && delta < 5)) return BinNeed.browns;
+  if (s.topMoisture > 60) return BinNeed.browns;
   if (s.topMoisture < 40) return ratio > 3 ? BinNeed.greens : BinNeed.water;
+  if (ratio < 2) return BinNeed.browns;
   if (s.airMeasured && s.co2SlopePerDay > 2 && delta != null && delta < 5) return BinNeed.mix;
   return BinNeed.nothing;
 }
+
+bool moistureConflict(BinSnapshot s) =>
+    s.topMeasured &&
+    s.bottomMeasured &&
+    ((s.bottomMoisture < moistureLo && s.topMoisture >= moistureLo) || (s.bottomMoisture > moistureHi && s.topMoisture <= moistureHi));
 
 Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
   List<FoodItem> pick(List<String> ids) => ids.map((id) => catalog[id]).whereType<FoodItem>().toList();
@@ -104,8 +124,8 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
           ? 'The top layer is dry, but the mix is balanced. Add a little water; no food is needed.'
           : need == BinNeed.mix
           ? 'CO₂ is rising without much warmth. Stir the top layer to let air in.'
-          : s.bottomMeasured && s.bottomStage.index >= Stage.curing.index
-          ? 'Let the bottom layer finish curing. Readiness is a guide; check its texture and smell.'
+          : moistureConflict(s)
+          ? 'The moisture probes disagree. Check both spots before adding anything.'
           : 'Moisture and balance are on target. Nothing needs adding right now.',
       add: const [],
       avoid: avoid,
@@ -131,7 +151,7 @@ Suggestion suggestFor(BinSnapshot s, Map<String, FoodItem> catalog) {
         balance: Balance.needsGreens,
         line: s.topMoisture < 36
             ? 'The top layer is down to ${s.topMoisture.round()}% moisture. Wet greens will get it going again.'
-            : 'The bin is running low on nitrogen. A few fresh scraps will help.',
+            : 'Recent additions lean brown. A few fresh scraps may help; this is not a nitrogen measurement.',
         add: pick(['veg_peels', 'coffee_grounds', 'banana_peel']),
         avoid: [
           ...pick(['sawdust']),

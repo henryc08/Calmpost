@@ -43,6 +43,7 @@ class _QuestRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final claimable = q.done && !q.claimed;
+    final pending = ref.watch(gameActionsProvider).contains('quest:${q.id}');
     final seed = ref.watch(gameProvider.select((g) => g.activeSeed));
     final progress = q.unit.isEmpty ? '${q.progress.floor()}/${q.goal.floor()}' : '${q.progress.toStringAsFixed(1)}/${q.goal.floor()} ${q.unit}';
 
@@ -97,7 +98,11 @@ class _QuestRow extends ConsumerWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: claimable
-                    ? PillButton(label: 'Claim', dense: true, onTap: () => ref.read(gameProvider.notifier).claimQuestAsync(q.id))
+                    ? PillButton(
+                        label: pending ? 'Claiming…' : 'Claim',
+                        dense: true,
+                        onTap: pending ? null : () => ref.read(gameProvider.notifier).claimQuestAsync(q.id),
+                      )
                     : q.claimed
                     ? Text('Claimed', style: T.small)
                     : Column(

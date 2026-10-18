@@ -352,13 +352,21 @@ class LogOutcome {
 const lidLockPrice = 60;
 const maxLidLocks = 2;
 
+/// Pending writes belong to one repository/account, never the next signed-in user.
+final gameActionsProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(repositoryProvider);
+  return {};
+});
+
 class GameController extends Notifier<GameState> {
   int _lifecycle = 0;
   bool _alive = false;
+  Future<void> _actionTail = Future.value();
   @override
   GameState build() {
     _alive = true;
     final lifecycle = ++_lifecycle;
+    _actionTail = Future.value();
     ref.onDispose(() {
       if (lifecycle == _lifecycle) _alive = false;
     });
@@ -410,21 +418,45 @@ class GameController extends Notifier<GameState> {
     }
   }
 
-  bool _working = false;
   Future<Map<String, dynamic>?> _remote(String action, [Map<String, dynamic> args = const {}]) async {
-    if (_working) return null;
-    _working = true;
+    final lifecycle = _lifecycle;
+    final repo = ref.read(repositoryProvider);
+    bool current() => _alive && lifecycle == _lifecycle && ref.read(repositoryProvider) == repo;
+    final key = switch (action) {
+      'quest' => 'quest:${args['id']}',
+      'daily' || 'crate' => '$action:${args['index']}',
+      'level' => 'level:${args['level']}',
+      _ => action,
+    };
+    final pending = ref.read(gameActionsProvider);
+    if (pending.contains(key)) {
+      _toast.show('That action is already in progress.');
+      return null;
+    }
+    ref.read(gameActionsProvider.notifier).state = {...pending, key};
+    final previous = _actionTail;
+    final completed = Completer<void>();
+    _actionTail = completed.future;
     try {
-      final result = await ref.read(repositoryProvider).gameAction(action, args);
+      // Keep distinct taps, but serialize writes and their reward refreshes.
+      await previous;
+      if (!current()) return null;
+      final result = await repo.gameAction(action, args);
+      if (!current()) return null;
       await refreshLive();
-      if (_alive) ref.invalidate(socialDataProvider);
+      if (!current()) return null;
+      ref.invalidate(socialDataProvider);
       return result;
     } catch (_) {
+      if (!current()) return null;
       await refreshLive();
-      if (_alive) _toast.show('Could not complete that action. Check your rewards before retrying.');
+      if (current()) _toast.show('Could not complete that action. Check your rewards before retrying.');
       return null;
     } finally {
-      _working = false;
+      if (current()) {
+        ref.read(gameActionsProvider.notifier).state = {...ref.read(gameActionsProvider)}..remove(key);
+      }
+      completed.complete();
     }
   }
 
@@ -438,7 +470,8 @@ class GameController extends Notifier<GameState> {
 
   Future<void> claimQuestAsync(String id) async {
     if (isLive) {
-      await _remote('quest', {'id': id});
+      final result = await _remote('quest', {'id': id});
+      if (result != null) _toast.show('Quest claimed · +${result['loam_awarded']} Loam', xp: result['xp_awarded'] as int? ?? 0);
     } else {
       claimQuest(id);
     }

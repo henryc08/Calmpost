@@ -19,6 +19,7 @@ class DailyTrack extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final xp = ref.watch(gameProvider.select((g) => g.xpToday));
     final claimed = ref.watch(gameProvider.select((g) => g.dailyClaimed));
+    final pending = ref.watch(gameActionsProvider);
     final goal = dailyGoals.last;
     final ready = [for (var i = 0; i < dailyGoals.length; i++) xp >= dailyGoals[i] && !claimed.contains(i)];
 
@@ -72,7 +73,7 @@ class DailyTrack extends ConsumerWidget {
                         reached: xp >= dailyGoals[i],
                         claimed: claimed.contains(i),
                         isCrate: dailyRewards[i].crate != null,
-                        onTap: ready[i] ? () => claim(i) : null,
+                        onTap: ready[i] && !pending.contains('daily:$i') ? () => claim(i) : null,
                       ),
                     ),
                 ],
@@ -119,7 +120,11 @@ class DailyTrack extends ConsumerWidget {
         ),
         const SizedBox(height: S.x2),
         Text(
-          ready.contains(true) ? 'A reward is ready. Tap it to claim.' : 'Earn XP by caring for the bin: follow a tip, check your layers, finish quests.',
+          pending.any((key) => key.startsWith('daily:'))
+              ? 'Claiming your reward…'
+              : ready.contains(true)
+              ? 'A reward is ready. Tap it to claim.'
+              : 'Earn XP by caring for the bin: follow a tip, check your layers, finish quests.',
           style: T.small,
         ),
       ],

@@ -30,6 +30,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sfx/
+    - assets/data/
   fonts:
     - family: Fraunces
       fonts:

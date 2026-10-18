@@ -20,6 +20,7 @@ import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import '../../ui/info_dot.dart';
 import '../../ui/piece_counter.dart';
+import '../toronto/toronto_widgets.dart';
 
 /// Opens the verdict for [item]: checked against the live readings, so the
 /// same scrap can get a different answer on a different day.
@@ -179,12 +180,16 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
             if (a == null) PillButton(label: 'Try again', onTap: () => _check(_item)),
             const SizedBox(height: S.x3),
           ],
+          const SectionLabel('YOUR CALMPOST COMPOST BIN'),
+          const SizedBox(height: S.x3),
           AnimatedSize(
             duration: M.base,
             curve: M.ease,
             alignment: Alignment.topCenter,
             child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a),
           ),
+          const SectionBreak(),
+          TorontoDestination(catalogId: _item.id),
         ],
       ),
     );

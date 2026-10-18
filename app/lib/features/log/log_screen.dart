@@ -11,6 +11,7 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'verdict_sheet.dart';
+import '../toronto/toronto_widgets.dart';
 
 /// Log tab: search or pick an item, then get a verdict from the live readings.
 class LogScreen extends ConsumerStatefulWidget {
@@ -65,7 +66,7 @@ class _LogScreenState extends ConsumerState<LogScreen> {
     final groups = [
       ('GREENS', 'Wet, nitrogen-rich scraps', FoodCategory.green, C.leaf),
       ('BROWNS', 'Dry, carbon-rich material', FoodCategory.brown, C.loam),
-      ('KEEP OUT', 'Never goes in the bin', FoodCategory.avoid, C.clay),
+      ('KEEP OUT', 'This compost bin only', FoodCategory.avoid, C.clay),
     ];
 
     return BrandPage(
@@ -82,6 +83,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       ),
       hero: _SearchField(controller: _search, onChanged: (q) => setState(() => _query = q)),
       children: [
+        const TorontoEntry(),
+        const SectionBreak(),
         PillButton(label: 'Compost inventory', icon: PhosphorIconsRegular.leaf, onTap: () => Routes.inventory(context)),
         const SizedBox(height: S.x3),
         PillButton(label: 'Ask Trunc', icon: PhosphorIconsRegular.chatCircle, onTap: () => Routes.trunc(context)),

@@ -10,6 +10,7 @@ import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import '../../ui/piece_counter.dart';
 import 'drop_photo.dart';
+import '../toronto/toronto_widgets.dart';
 
 /// "Is this right?": always asked, even when the camera is sure, because
 /// Gemini can be confidently wrong. Every row can be changed, removed or
@@ -147,6 +148,10 @@ class _DropReviewState extends State<DropReview> {
               },
               onRemovedChanged: (v) => _replace(i, l.copyWith(removed: v)),
             ),
+            if (l.keepOut) ...[
+              TorontoDestination(catalogId: l.item.id),
+              const SizedBox(height: S.x2),
+            ],
             if (_editing == i) _Editor(line: l, search: widget.search, onChanged: (line) => _replace(i, line), onRemove: () => _remove(i)),
           ],
           const Hairline(),
@@ -163,7 +168,7 @@ class _DropReviewState extends State<DropReview> {
           const SizedBox(height: S.x5),
           const SectionLabel('ANY OF THESE IN IT?'),
           const SizedBox(height: S.x1),
-          Text('They never go in the bin, so a mix with them needs picking out.', style: T.small),
+          Text('They stay out of this compost bin. Check Toronto disposal guidance below each selected item.', style: T.small),
           const SizedBox(height: S.x3),
           _Picks(ids: _keepOutPicks, catalog: widget.catalog, lines: _lines, onTap: _toggle, color: C.clay),
         ] else

@@ -20,6 +20,7 @@ import '../../ui/components.dart';
 import '../../ui/tokens.dart';
 import '../../ui/type.dart';
 import 'bin_world.dart';
+import '../toronto/toronto_widgets.dart';
 import 'daily_track.dart';
 import 'league_race.dart';
 import 'rewards_shelf.dart';
@@ -56,6 +57,8 @@ class HomeScreen extends ConsumerWidget {
                   PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
                   const SizedBox(height: S.x3),
                   PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
+                  const SizedBox(height: S.x3),
+                  const TorontoEntry(),
                 ],
               ),
             ),
@@ -124,6 +127,8 @@ class HomeScreen extends ConsumerWidget {
                 const SectionBreak(),
                 if (game.crates.isNotEmpty || game.packets > 0) ...[const RewardsShelf(), const SectionBreak()],
                 const TodayQuests(),
+                const SectionBreak(),
+                const TorontoEntry(),
                 const SectionBreak(),
                 if (ref.watch(socialSessionProvider).valueOrNull == null)
                   LeagueRace(onOpen: () => goTo(AppTab.social))
@@ -422,6 +427,8 @@ class _Offline extends StatelessWidget {
             PillButton(label: 'Use demo data', onTap: onUseDemo),
             const SizedBox(height: S.x3),
             PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
+            const SizedBox(height: S.x3),
+            const TorontoEntry(),
           ],
         ),
       ),

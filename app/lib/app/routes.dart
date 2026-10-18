@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import '../domain/drop.dart';
 import '../features/photo/photo_screen.dart';
+import '../features/toronto/toronto_screen.dart';
+import '../features/toronto/toronto_learning.dart';
+import '../features/toronto/toronto_item_sheet.dart';
+import '../features/log/verdict_sheet.dart';
+import '../domain/models.dart';
 import '../features/history/drop_history_screen.dart';
 import '../features/calibration/calibration_screen.dart';
 import '../features/connection/bin_connection_screen.dart';
@@ -17,6 +22,12 @@ import '../features/trunc/trunc_screen.dart';
 
 /// Cross-feature navigation, so features never import each other.
 abstract final class Routes {
+  static Future<void> toronto(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TorontoScreen()));
+  static Future<void> torontoSort(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TorontoSortScreen()));
+  static Future<void> torontoLearning(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TorontoLearningScreen()));
+  static Future<void> torontoItem(BuildContext context, {String? itemId, String? catalogId}) => showTorontoItemSheet(context, itemId: itemId, catalogId: catalogId);
+  static Future<void> compostAdvice(BuildContext context, FoodItem item) => showVerdictSheet(context, item);
+
   static Future<void> connectBin(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BinConnectionScreen()));
   static Future<void> calibration(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CalibrationScreen()));
   static Future<void> dropHistory(BuildContext context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DropHistoryScreen()));

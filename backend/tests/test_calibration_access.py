@@ -1,4 +1,4 @@
-"""Phone calibration is owner-scoped and never changes the other sensor."""
+"""Paired accounts share readings; calibration stays with the original owner."""
 import pytest
 from .conftest import needs_db
 from .test_api import post_reading, NEW_FORMAT
@@ -7,17 +7,21 @@ from .test_social import account
 pytestmark = needs_db
 
 
-def test_owner_can_calibrate_only_their_bin_and_selected_probe(c):
+def test_owner_can_calibrate_a_shared_bin_but_only_the_chosen_probe(c):
     _, owner = account(c, 'probeowner')
     _, other = account(c, 'probeother')
     assert c.post('/social/bin', headers=owner, json={'device_token': c.device_token}).status_code == 200
+    assert c.post('/social/bin', headers=other, json={'device_token': c.device_token}).status_code == 200
     post_reading(c, NEW_FORMAT)
     initial = c.get('/bins/bin-001/live', headers=owner).json()
     top = initial['layers'][0]
     body = {'probe': 2, 'moisture_raw_dry': 600, 'moisture_raw_wet': 300, 'backfill': True}
     path = '/bins/bin-001/calibration'
+    # Joining shares readings, not device administration or demo-key access.
     assert c.post(path, headers=other, json=body).status_code == 403
     assert c.post(path, json=body).status_code == 403
+    # A device token still cannot: the board reports readings, it does not
+    # get to decide what they mean.
     assert c.post(path, headers={'X-Device-Token': c.device_token}, json=body).status_code == 403
     assert c.post(path, headers=owner, json={**body, 'moisture_raw_wet': 600}).status_code == 422
     result = c.post(path, headers=owner, json=body)

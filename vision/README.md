@@ -47,7 +47,7 @@ python main.py --save-frames                      # also write before/after JPEG
 | `main.py` | Poll for an armed session, then watch, identify and report, in a loop |
 | `watcher.py` | One session: BEFORE frame, motion start/end, sharpest AFTER frame, Gemini call |
 | `camera.py` | OpenCV capture from `CAMERA_SOURCE` (webcam index, file or stream URL) on a background thread |
-| `motion.py` | MOG2 background subtraction in the ROI. A drop starts at >2% of the ROI for 150 ms and ends after 0.8 s still; the first 0.5 s after arming is ignored |
+| `motion.py` | MOG2 background subtraction in the ROI. A drop starts at >1% of the ROI for 150 ms and ends after 0.55 s still; the first 0.5 s after arming is ignored |
 | `frames.py` | Sharpest frame (Laplacian variance), resize to ≤1024 px, JPEG, thumbnails, box drawing |
 | `gemini.py` | Before/after prompt, JSON schema with catalog ids as an enum, 4 s budget, validation |
 | `catalog.py` / `catalog.json` | The app's food catalog. **Category comes from here, never from Gemini** |

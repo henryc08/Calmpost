@@ -512,7 +512,7 @@ vision/
   mock_backend.py  # stand-in for backend/ on :8090
 ```
 
-- **Trigger tuning:** motion must cover > 2% of the ROI for ≥ 150 ms to start; it ends after 0.8 s of stillness. Ignore the first 0.5 s after arming (the user's hand moving away from the button).
+- **Trigger tuning:** motion must cover > 1% of the ROI for ≥ 150 ms to start (the wider webcam ROI needs this lower threshold); it ends after 0.55 s of stillness. Ignore the first 0.5 s after arming (the user's hand moving away from the button).
 - **Demo setup:** the laptop on a stand, webcam angled down into the open bin, the ROI drawn once with `calibrate.py`. The MJPEG preview on the laptop screen is a good thing for judges to watch.
 - **Run:** `cd vision && pip install -r requirements.txt && python main.py`, with `BACKEND_URL=http://localhost:8000` for the real backend.
 

@@ -256,6 +256,23 @@ class LogEntry {
 /// Reward crates, earned from achievements and milestones.
 enum CrateTier { sprout, grove, canopy }
 
+String crateLabel(CrateTier t) => switch (t) {
+  CrateTier.sprout => 'Sprout crate',
+  CrateTier.grove => 'Grove crate',
+  CrateTier.canopy => 'Canopy crate',
+};
+
+/// One line in the rewards inbox history.
+enum RewardKind { crateOpened, packetsOpened, streak, levelUp, harvest }
+
+class RewardEvent {
+  const RewardEvent({required this.kind, required this.title, required this.detail, required this.time});
+  final RewardKind kind;
+  final String title;
+  final String detail;
+  final DateTime time;
+}
+
 /// Gacha rarities for Seed Packet pulls.
 enum Rarity { common, uncommon, rare, epic, legendary }
 

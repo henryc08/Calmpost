@@ -35,7 +35,9 @@ class GameState {
     required this.lockDays,
     required this.bestStreak,
     required this.crates,
+    required this.crateFrom,
     required this.packets,
+    required this.rewardLog,
     required this.xpToday,
     required this.owned,
     required this.pity,
@@ -78,7 +80,13 @@ class GameState {
 
   /// Unopened reward crates and Seed Packets (the rewards inbox).
   final List<CrateTier> crates;
+
+  /// Where each crate in [crates] came from ("Daily goal"), same order.
+  final List<String> crateFrom;
   final int packets;
+
+  /// Rewards history for the inbox, newest first.
+  final List<RewardEvent> rewardLog;
 
   /// XP earned today (drives the daily goal track) and which of its rewards are claimed.
   final int xpToday;
@@ -129,7 +137,9 @@ class GameState {
     Set<DateTime>? lockDays,
     int? bestStreak,
     List<CrateTier>? crates,
+    List<String>? crateFrom,
     int? packets,
+    List<RewardEvent>? rewardLog,
     int? xpToday,
     Map<String, int>? owned,
     PityState? pity,
@@ -162,7 +172,9 @@ class GameState {
     lockDays: lockDays ?? this.lockDays,
     bestStreak: bestStreak ?? this.bestStreak,
     crates: crates ?? this.crates,
+    crateFrom: crateFrom ?? this.crateFrom,
     packets: packets ?? this.packets,
+    rewardLog: rewardLog ?? this.rewardLog,
     xpToday: xpToday ?? this.xpToday,
     owned: owned ?? this.owned,
     pity: pity ?? this.pity,
@@ -327,7 +339,13 @@ GameState _initial() {
     lockDays: {today.subtract(const Duration(days: 12))},
     bestStreak: 21,
     crates: const [CrateTier.sprout, CrateTier.grove],
+    crateFrom: const ['Daily goal', 'In the Zone'],
     packets: 1,
+    rewardLog: [
+      RewardEvent(kind: RewardKind.streak, title: '7-day streak', detail: '+20 Loam', time: now.subtract(const Duration(days: 4))),
+      RewardEvent(kind: RewardKind.packetsOpened, title: 'Opened 1 Seed Packet', detail: 'Marigold · Common', time: now.subtract(const Duration(days: 5))),
+      RewardEvent(kind: RewardKind.crateOpened, title: 'Opened Sprout crate', detail: '+60 Loam · 1 Seed Packet', time: now.subtract(const Duration(days: 5, hours: 1))),
+    ],
     xpToday: 0,
     owned: const {'fern': 2, 'clover': 1, 'sprout': 3, 'acorn': 1, 'basil': 1, 'tulip': 1, 'cactus': 1, 'oak': 1, 'finish_classic': 1, 'finish_mint': 1},
     pity: const PityState(sinceEpic: 7, sinceLegendary: 19),
@@ -497,14 +515,20 @@ class GameController extends Notifier<GameState> {
     if (!isLive) return openCrate(i);
     final result = await _remote('crate', {'index': i});
     if (result == null) return null;
-    return CrateOpening(CrateTier.values.byName(result['tier']), result['loam'], result['packets']);
+    final o = CrateOpening(CrateTier.values.byName(result['tier']), result['loam'], result['packets']);
+    // The server owns the crates; keep the inbox's origins and history in step.
+    if (i < state.crateFrom.length) state = state.copyWith(crateFrom: [...state.crateFrom]..removeAt(i));
+    _logReward(RewardKind.crateOpened, 'Opened ${crateLabel(o.tier)}', '+${o.loam} Loam · ${o.packets} Seed Packet${o.packets == 1 ? '' : 's'}');
+    return o;
   }
 
   Future<List<PullOutcome>?> pullAsync(int count, {required bool fromPackets}) async {
     if (!isLive) return pull(count, fromPackets: fromPackets);
     final result = await _remote('pull', {'count': count, 'paid_with': fromPackets ? 'packet' : 'loam'});
     if (result == null) return null;
-    return [for (final r in result['results']) PullOutcome(collectibleById[r['item']['id']]!, isNew: r['is_new'], refund: r['refund'])];
+    final out = [for (final r in result['results']) PullOutcome(collectibleById[r['item']['id']]!, isNew: r['is_new'], refund: r['refund'])];
+    _logPulls(out);
+    return out;
   }
 
   Future<bool> buyLidLockAsync() async => isLive ? await _remote('lid-lock') != null : buyLidLock();
@@ -560,6 +584,7 @@ class GameController extends Notifier<GameState> {
     state = state.copyWith(weekXp: state.weekXp + xp, totalXp: state.totalXp + xp, xpToday: state.xpToday + xp);
     if (state.level > beforeLevel) {
       _party.push(LevelUpCelebration(state.level, titleForLevel(state.level)));
+      _logReward(RewardKind.levelUp, 'Reached level ${state.level}', titleForLevel(state.level));
     }
   }
 
@@ -587,6 +612,7 @@ class GameController extends Notifier<GameState> {
         );
       }
       _party.push(StreakCelebration(up.state.days, lockUsed: up.locksUsed > 0));
+      _logReward(RewardKind.streak, '${up.state.days}-day streak', up.locksUsed > 0 ? 'Saved by a Lid Lock' : 'Kept it going');
     }
   }
 
@@ -678,6 +704,7 @@ class GameController extends Notifier<GameState> {
     final kg = 4.2;
     state = state.copyWith(harvests: state.harvests + 1, loam: state.loam + loam, garden: [...state.garden, plant]);
     _party.push(HarvestCelebration(plant, xp, loam, kg));
+    _logReward(RewardKind.harvest, 'Harvested compost', '+$loam Loam · $kg kg');
     _addXp(xp);
   }
 
@@ -700,9 +727,22 @@ class GameController extends Notifier<GameState> {
       dailyClaimed: {...state.dailyClaimed, i},
       loam: state.loam + reward.loam,
       crates: reward.crate == null ? state.crates : [...state.crates, reward.crate!],
+      crateFrom: reward.crate == null ? state.crateFrom : [...state.crateFrom, 'Daily goal'],
     );
     return reward;
   }
+
+  void _logPulls(List<PullOutcome> out) {
+    if (out.isEmpty) return;
+    final best = out.map((o) => o.item).reduce((a, b) => b.rarity.index > a.rarity.index ? b : a);
+    final rarity = best.rarity.name[0].toUpperCase() + best.rarity.name.substring(1);
+    final n = out.length;
+    _logReward(RewardKind.packetsOpened, 'Opened $n Seed Packet${n == 1 ? '' : 's'}', n == 1 ? '${best.name} · $rarity' : 'Best: ${best.name} · $rarity');
+  }
+
+  void _logReward(RewardKind kind, String title, String detail) => state = state.copyWith(
+    rewardLog: [RewardEvent(kind: kind, title: title, detail: detail, time: DateTime.now()), ...state.rewardLog].take(50).toList(),
+  );
 
   /// Opens the crate at [index] and pays out Loam + Seed Packets.
   CrateOpening? openCrate(int index) {
@@ -714,7 +754,10 @@ class GameController extends Notifier<GameState> {
       CrateTier.canopy => (400, 5),
     };
     final crates = [...state.crates]..removeAt(index);
-    state = state.copyWith(crates: crates, loam: state.loam + loam, packets: state.packets + packets);
+    final from = [...state.crateFrom];
+    if (index < from.length) from.removeAt(index);
+    state = state.copyWith(crates: crates, crateFrom: from, loam: state.loam + loam, packets: state.packets + packets);
+    _logReward(RewardKind.crateOpened, 'Opened ${crateLabel(tier)}', '+$loam Loam · $packets Seed Packet${packets == 1 ? '' : 's'}');
     return CrateOpening(tier, loam, packets);
   }
 
@@ -738,6 +781,7 @@ class GameController extends Notifier<GameState> {
       out.add(PullOutcome(item, isNew: isNew, refund: refund));
     }
     state = state.copyWith(owned: owned, pity: pity, packets: fromPackets ? state.packets - count : state.packets, loam: state.loam - cost + refunds);
+    _logPulls(out);
     return out;
   }
 

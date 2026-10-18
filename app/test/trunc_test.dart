@@ -170,7 +170,7 @@ void main() {
       final wet = await MockRepository(Scenario.tooWet).askTrunc('Why does my bin smell?');
       final ok = await MockRepository(Scenario.healthy).askTrunc('Why does my bin smell?');
       expect(wet.reply, isNot(ok.reply));
-      expect(ok.reply.toLowerCase(), contains('no addition'));
+      expect(ok.reply.toLowerCase(), contains('nothing is urgent'));
     });
 
     test('an off-topic question is refused', () async {

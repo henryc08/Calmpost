@@ -6,6 +6,22 @@ from . import compost
 
 OVERVIEW_QUESTION = "Based on my current bin data, what should I do next?"
 
+#: What to tell someone for each care need. Each names things they can
+#: actually reach for, because "consider adding browns" helps nobody who is
+#: standing at the bin wondering what a brown is.
+ACTIONS = {
+    "browns": "Your bin is on the wet side, so add some dry browns: shredded cardboard, dry leaves or torn paper egg cartons. Hold off on wet scraps for now.",
+    "greens": "Your bin is dry and your recent additions lean brown, so add a handful of greens: fruit or vegetable scraps, or coffee grounds.",
+    "water": "Your bin is a bit dry. Add a splash of water to the dry spot and mix it in. No food needed right now.",
+    "mix": "Give your bin a gentle stir to let air in, then check back. No food needed right now.",
+    "nothing": "Nothing is urgent. When you add, aim for about one part greens (fruit and veg scraps, coffee grounds) to two parts browns (shredded cardboard, dry leaves).",
+}
+DOING_GREAT = "Your compost is doing great. Keep doing what you're doing."
+
+#: Words that ask what to add without naming anything.
+_GENERIC = {"", "anything", "something", "next", "this", "it", "that", "more", "in", "bin",
+            "items", "item", "things", "thing", "stuff", "food", "scraps", "what", "now"}
+
 
 def is_stale(snap: dict) -> bool:
     at = snap.get("time")
@@ -36,20 +52,14 @@ def assess(snap: dict) -> dict:
         line = "I need a fresh upper moisture reading before recommending an addition. Check the bin by hand and reconnect the sensor."
     elif compost.moisture_conflict(snap):
         status = "inspect"
-        line = "The two moisture probes disagree about what needs care. Check both spots before adding food or water across the bin."
+        line = inspect_line(snap)
     else:
-        line = {
-            "browns": "Try dry browns such as shredded cardboard after checking the compost by hand. Hold off on more wet scraps for now.",
-            "greens": "A small amount of fruit or vegetable scraps may help: the upper probe is dry and your recent additions lean brown. Check by hand first.",
-            "water": "Check the dry spot by hand and add a little water if needed. More food is not the next step.",
-            "mix": "Check airflow and gently mix the compost, then watch the readings. More food is not needed for this action.",
-            "nothing": "No addition is indicated by the available readings. Keep monitoring rather than adding food just to do something.",
-        }[need]
+        line = ACTIONS[need]
         if need == "nothing":
             status = "steady"
             if (bottom.get("measured") and snap.get("moisture_calibrated")
                     and bottom.get("moisture_calibrated") and snap["greens_7d"] + snap["browns_7d"] > 0):
-                line = "Your measured moisture and recent mix look steady. Keep doing what you're doing; nothing needs adding right now."
+                line = DOING_GREAT
     limits = []
     if not snap.get("moisture_calibrated") or (bottom.get("measured") and not bottom.get("moisture_calibrated")):
         limits.append("An uncalibrated moisture probe is approximate.")
@@ -57,10 +67,24 @@ def assess(snap: dict) -> dict:
         limits.append("Lower moisture is unknown.")
     if snap["greens_7d"] + snap["browns_7d"] <= 0:
         limits.append("No recent confirmed mix history is available.")
-    else:
-        limits.append("The seven-day mix is an estimate of additions, not the bin's current chemistry.")
     return {"need": need, "status": status, "action": line, "evidence": evidence, "limits": limits,
             "used_readings": bool(fresh and measured)}
+
+
+def lower_wet(snap: dict) -> bool:
+    return (snap["layers"]["bottom"].get("moisture_pct") or 0) > compost.MOISTURE_HI
+
+
+def inspect_line(snap: dict) -> str:
+    """The top looks fine but the bottom doesn't, so say which and what fixes it."""
+    top = snap["layers"]["top"]["moisture_pct"]
+    bottom = snap["layers"]["bottom"]["moisture_pct"]
+    if lower_wet(snap):
+        return (f"The top looks fine ({top:.0f}%), but the bottom is wet ({bottom:.0f}%). "
+                "Feel the bottom: if it's soggy, mix in some shredded cardboard or dry leaves "
+                "and hold off on wet scraps.")
+    return (f"The top looks fine ({top:.0f}%), but the bottom is dry ({bottom:.0f}%). "
+            "Feel the bottom: if it's dry, pour a little water down the side and mix it in.")
 
 
 def summary(snap: dict) -> str:
@@ -77,8 +101,9 @@ def requested_item(message: str) -> str | None:
     match = re.search(r"\b(?:add|adding|compost|put in|put|feed|what about)\s+(?:some\s+|more\s+|a little\s+|an?\s+)?(.+)", low)
     if not match:
         return None
-    item = re.split(r"\s+(?:to|into|in|right now|at the moment|today|now|instead)\b|[?!.,]", match[1])[0].strip()
-    if not item or item in {"anything", "something", "next", "this", "it", "that", "more", "in"}:
+    rest = re.sub(r"^(?:to|into|in)\s+(?:the\s+|my\s+|this\s+|your\s+)?(?:bin|pile|compost)\b\s*", "", match[1])
+    item = re.split(r"\s+(?:to|into|in|right now|at the moment|today|now|instead)\b|[?!.,]", rest)[0].strip()
+    if item in _GENERIC:
         return None
     return item
 
@@ -95,7 +120,9 @@ def item_answer(snap: dict, item: str) -> str:
         return f"Keep {item} out of this bin: {reason}. This does not depend on the sensor readings."
     category = compost.categorise(item)
     if category == "unknown":
-        return f"I cannot confidently identify '{item}' as a safe compost material. Tell me what it is made of before adding it."
+        return (f"{item.capitalize()} isn't in my list, so I can't check it against your bin. "
+                "Plant-based food scraps and plain paper or cardboard are usually fine; "
+                "keep out meat, fish, dairy, oily food and bones.")
     a = assess(snap)
     if a["status"] in {"unknown", "inspect"}:
         intro = f"{item.capitalize()} is generally compostable, but I cannot recommend adding it right now."

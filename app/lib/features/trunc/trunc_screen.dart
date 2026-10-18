@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../domain/models.dart';
+import '../../domain/trunc_guidance.dart';
 import '../../app/routes.dart';
 import '../../state/providers.dart';
 import '../../state/trunc_chat.dart';
@@ -38,6 +39,15 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(truncChatProvider);
+    final snapshot = ref.watch(binProvider).valueOrNull;
+    final guidance = snapshot == null ? null : guidanceFor(snapshot);
+    final asked = {for (final e in chat.exchanges) e.question};
+    final replies = [for (final q in _quickReplies(guidance)) if (!asked.contains(q)) q].take(4).toList();
+    Widget quickReplies() => Wrap(
+      spacing: S.x2,
+      runSpacing: S.x2,
+      children: [for (final q in replies) PillButton(label: q, dense: true, color: C.sunk, textColor: C.ink, onTap: () => _send(q))],
+    );
     ref.listen(repositoryProvider, (_, _) => _input.clear());
     ref.listen(truncChatProvider, (_, next) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -61,10 +71,17 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                 icon: const Icon(PhosphorIconsRegular.arrowLeft, color: C.onBrand),
               ),
               children: [
-                Text(
-                  'Each question uses the latest available bin readings and confirmed additions. Missing or stale readings limit what Trunc can recommend. Conversation stays in app memory.',
-                  style: T.small,
+                // Open with what the bin needs, so nobody has to think of a question first.
+                const SectionLabel('TRUNC'),
+                const SizedBox(height: S.x2),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    guidance?.action ?? 'Ask me anything about your compost: what to add, smells, moisture or when it is ready.',
+                    style: T.body,
+                  ),
                 ),
+                if (chat.exchanges.isEmpty) ...[const SizedBox(height: S.x4), quickReplies()],
                 const SizedBox(height: S.x3),
                 Row(
                   children: [
@@ -76,18 +93,6 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                     Expanded(child: Text('Include recent bin photos with my questions', style: T.small)),
                   ],
                 ),
-                if (chat.exchanges.isEmpty) ...[
-                  const SectionBreak(),
-                  Text('What does your bin need?', style: T.heading),
-                  const SizedBox(height: S.x3),
-                  for (final prompt in ['Should I add more apples to this compost?', 'Why does my bin smell?', 'What should I do next?']) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: PillButton(label: prompt, dense: true, onTap: () => _send(prompt)),
-                    ),
-                    const SizedBox(height: S.x2),
-                  ],
-                ],
                 for (final exchange in chat.exchanges) ...[
                   const SectionBreak(),
                   const SectionLabel('YOU'),
@@ -100,6 +105,10 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                     SelectableText(answer.reply, style: T.body),
                     const SizedBox(height: S.x3),
                     Text(_context(answer), style: T.small),
+                    if (identical(exchange, chat.exchanges.last) && !chat.waiting && replies.isNotEmpty) ...[
+                      const SizedBox(height: S.x4),
+                      quickReplies(),
+                    ],
                   ],
                 ],
                 if (chat.waiting)
@@ -162,7 +171,7 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                       style: T.body,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Should I add apples right now?',
+                        hintText: 'Ask Trunc anything about your bin',
                         hintStyle: T.small,
                         filled: true,
                         fillColor: C.surface,
@@ -189,6 +198,18 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
       ),
     );
   }
+
+  /// Follow-ups worth one tap, led by whatever the bin needs right now.
+  static List<String> _quickReplies(TruncGuidance? g) => [
+    'What should I add right now?',
+    if (g?.status == 'inspect') 'Why is the bottom different from the top?',
+    if (g?.need == BinNeed.browns) 'What counts as a brown?',
+    if (g?.need == BinNeed.greens) 'What counts as a green?',
+    if (g?.need == BinNeed.water) 'How much water should I add?',
+    'Why does my bin smell?',
+    'Can I add banana peels?',
+    'Is my compost ready yet?',
+  ];
 
   String _context(TruncReply reply) {
     final c = reply.context;

@@ -51,6 +51,14 @@ void main() {
     expect(truncMaterialAnswer(caseSnapshot(cases[1]), 'water', foodCatalog), contains('Water fits'));
     expect(truncFollowupItem('And how much?', const [TruncTurn(role: TruncRole.user, text: 'Should I add apples?')]), 'apples');
     expect(truncMaterialAnswer(caseSnapshot(cases.first), 'apples and cheese', foodCatalog), contains('Keep'));
-    expect(truncMaterialAnswer(caseSnapshot(cases.first), 'mystery polymer', foodCatalog), contains('cannot confidently identify'));
+    expect(truncMaterialAnswer(caseSnapshot(cases.first), 'mystery polymer', foodCatalog), contains("isn't in my list"));
+  });
+
+  test('generic what-to-add questions name no item', () {
+    // "what items should I add to the bin" once named the item "to the bin".
+    for (final q in ['what items should i add to the bin', 'What should I add to my compost?', 'what can I add to the bin', 'what should I add']) {
+      expect(truncRequestedItem(q), isNull, reason: q);
+    }
+    expect(truncRequestedItem('can I add banana peels to the bin?'), 'banana peels');
   });
 }

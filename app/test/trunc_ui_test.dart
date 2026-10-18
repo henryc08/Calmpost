@@ -67,7 +67,7 @@ void main() {
       final repo = ChatRepo()..pending = Completer();
       await t.pumpWidget(
         ProviderScope(
-          overrides: [repositoryProvider.overrideWithValue(repo)],
+          overrides: [repositoryProvider.overrideWithValue(repo), binProvider.overrideWith((ref) => const Stream.empty())],
           child: MaterialApp(theme: buildTheme(), home: const TruncScreen()),
         ),
       );

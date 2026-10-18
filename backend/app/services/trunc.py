@@ -64,10 +64,15 @@ is still on topic if it is asking whether it can be composted.
 You are given current bin evidence and an authoritative care_decision. Answer \
 about THIS BIN NOW, not generic compostability. Include relevant evidence and \
 its limitations. Return need exactly equal to care_decision.need. Never replace \
-care_decision.action with a different action. When status is unknown or inspect, \
-do not recommend additions or say the bin is doing well. For steady, do not \
-invent work or tell the user to keep adding scraps. If asked for an exact dose, \
-say these sensors and estimated addition logs cannot determine one.
+care_decision.action with a different action. When status is unknown, do not \
+recommend additions. When status is inspect, the only fix you may suggest is \
+the one in care_decision.action, and do not say the bin is doing well. For \
+steady, do not invent urgent work, but when asked what to add, name concrete \
+greens and browns and the one-to-two balance. Answer the question that was \
+asked in two to four short sentences. If asked about a material that is not \
+in the lists below, say whether it suits a small home bin and why. If asked \
+for an exact dose, say these sensors and estimated addition logs cannot \
+determine one.
 
 Rules of this bin, which you must never contradict:
 %(rules)s
@@ -191,8 +196,10 @@ async def ask(
             payload["reply"] = "These readings cannot determine an exact amount. " + payload["reply"]
         return payload, "rules-grounded"
     # Known add questions have an enforceable answer, not unvalidated AI prose.
-    # Unknown materials are also conservative; Gemini cannot pronounce them safe.
-    if item:
+    # Items the rules don't recognise go to Gemini; the keep-out check below
+    # still stops it suggesting anything on the avoid list.
+    if item and (item == "water" or compost.avoid_reason(item)
+                 or compost.categorise(item) != "unknown" or not settings.gemini_api_key):
         return guidance.fallback(message, snapshot), "rules-grounded"
     if not settings.gemini_api_key:
         if not re.search(r"compost|bin|brown|green|moist|water|smell|wet|dry|heat|hot|temperature|co2|carbon|scrap|worm|pest|harvest|fallback|what should", message.lower()):
@@ -212,6 +219,9 @@ async def ask(
             "responseSchema": RESPONSE_SCHEMA,
             # Low variation for explanations; direct add decisions bypass the model.
             "temperature": 0.3,
+            # 3.8 Flash spends ~8 s thinking by default; with no budget a
+            # reply takes ~3 s, which is what a chat needs.
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
 
@@ -250,8 +260,16 @@ async def ask(
     ruled = guidance.assess(snapshot)
     if message == guidance.OVERVIEW_QUESTION and answer.get("used_readings") is not True:
         return guidance.fallback(message, snapshot), "rules-override"
-    if answer.get("need") != ruled["need"] or ruled["status"] in ("unknown", "inspect"):
+    if answer.get("need") != ruled["need"]:
         return guidance.fallback(message, snapshot), "rules-override"
+    # Uncertain bins still get real answers; the prose check just gets
+    # stricter. With no reading nothing may be suggested; with a wet or dry
+    # bottom only the matching fix may be.
+    check_need = ruled["need"]
+    if ruled["status"] == "unknown":
+        check_need = "mix"
+    elif ruled["status"] == "inspect":
+        check_need = "browns" if guidance.lower_wet(snapshot) else "water"
 
     reply = (answer.get("reply") or "").strip()
     if not reply:
@@ -268,19 +286,19 @@ async def ask(
             "used_readings": False,
         }, "rules-override"
 
-    if not _consistent(reply, ruled["need"]):
+    if not _consistent(reply, check_need, item):
         return guidance.fallback(message, snapshot), "rules-override"
 
     return {
         "on_topic": True,
-        "reply": (ruled["action"] + " " + reply) if message == guidance.OVERVIEW_QUESTION else reply,
+        "reply": reply,
         "used_readings": bool(answer.get("used_readings", False)),
         "need": ruled["need"],
         "photos_used": photos_sent,
     }, settings.gemini_model
 
 
-def _consistent(reply: str, need: str) -> bool:
+def _consistent(reply: str, need: str, item: str | None = None) -> bool:
     """Conservative prose backstop in addition to the structured need check.
 
     Direct material decisions never use model prose at all. For explanations,
@@ -294,8 +312,18 @@ def _consistent(reply: str, need: str) -> bool:
         if any(n in before for n in ("don't", "do not", "never", "avoid", "not ", "no need", "hold off")):
             continue
         material = match[1]
-        if need in ("nothing", "mix"):
+        # An unrecognised item was sent here to be judged; talking about
+        # adding it is the answer, and keep-outs were already screened.
+        if item and item in material:
+            continue
+        if need == "mix":
             return False
+        if need == "nothing":
+            # A steady bin can still be told what a good addition looks like;
+            # it must not be told to water it.
+            if "water" in material:
+                return False
+            continue
         if "water" in material:
             if need != "water":
                 return False
@@ -331,7 +359,7 @@ async def _call(body: dict) -> dict:
     settings = get_settings()
     url = ENDPOINT.format(model=settings.gemini_model)
     # Bound demo latency; a failed image request gets one text-only attempt.
-    async with httpx.AsyncClient(timeout=8) as client:
+    async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(url, headers={"x-goog-api-key": settings.gemini_api_key}, json=body)
         resp.raise_for_status()
         data = resp.json()

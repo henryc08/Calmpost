@@ -557,7 +557,7 @@ class MockRepository implements CalmpostRepository {
       reply: text,
       model: q.contains('fallback') || q.contains('test error') ? 'rules-fallback' : 'mock',
       onTopic: true,
-      usedReadings: a.usable && !text.contains('cannot confidently identify') && !text.contains('Keep $item out'),
+      usedReadings: a.usable && !text.contains("isn't in my list") && !text.contains('Keep $item out'),
       context: context,
       need: a.need,
     );

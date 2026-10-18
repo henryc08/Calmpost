@@ -95,7 +95,7 @@ void main() {
     repo.pending.last.complete(answer(BinNeed.browns, 'WRONG NEED'));
     await t.pumpAndSettle();
     expect(find.text('WRONG NEED'), findsNothing);
-    expect(find.textContaining('More food is not the next step'), findsOneWidget);
+    expect(find.textContaining('No food needed right now'), findsOneWidget);
     await t.ensureVisible(find.text('Ask Trunc a specific question'));
     await t.tap(find.text('Ask Trunc a specific question'));
     await t.pumpAndSettle();

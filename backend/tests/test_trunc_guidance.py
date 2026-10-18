@@ -41,7 +41,7 @@ def test_aliases_avoid_unknown_and_quantities():
         assert compost.is_wet_item(item)
         assert "Hold off" in g.item_answer(s, item)
     assert "Keep apples and cheese out" in g.item_answer(s, "apples and cheese")
-    assert "cannot confidently identify" in g.item_answer(s, "mystery polymer")
+    assert "isn't in my list" in g.item_answer(s, "mystery polymer")
     assert "cannot calculate an exact" in g.fallback("How much water?", s)["reply"]
     assert g.requested_item("Should I add more apples to this compost?") == "apples"
     assert g.requested_item("What about apples?") == "apples"
@@ -98,3 +98,12 @@ def test_cached_verdict_changes_when_lower_probe_requires_inspection():
     before = state_hash(s, "apples")
     s["layers"]["bottom"]["moisture_pct"] = 80
     assert state_hash(s, "apples") != before
+
+
+def test_generic_what_to_add_questions_are_not_items():
+    # "what items should I add to the bin" once named the item "to the bin".
+    for q in ("what items should i add to the bin", "What should I add to my compost?",
+              "what can I add to the bin", "what things should I add", "what should I add"):
+        assert g.requested_item(q) is None, q
+    assert g.requested_item("can I add banana peels to the bin?") == "banana peels"
+    assert g.requested_item("should I add cardboard into my bin") == "cardboard"

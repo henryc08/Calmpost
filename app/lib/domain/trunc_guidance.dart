@@ -1,8 +1,32 @@
 import 'advice_rules.dart';
 import 'models.dart';
 import 'drop.dart' show keepOutLabel;
+import 'health_score.dart' show moistureHi;
 
 const truncOverviewQuestion = 'Based on my current bin data, what should I do next?';
+
+/// Mirrored by ACTIONS in backend/app/rules/trunc_guidance.py. Each names
+/// something the user can actually reach for.
+const truncActions = {
+  BinNeed.browns:
+      'Your bin is on the wet side, so add some dry browns: shredded cardboard, dry leaves or torn paper egg cartons. Hold off on wet scraps for now.',
+  BinNeed.greens: 'Your bin is dry and your recent additions lean brown, so add a handful of greens: fruit or vegetable scraps, or coffee grounds.',
+  BinNeed.water: 'Your bin is a bit dry. Add a splash of water to the dry spot and mix it in. No food needed right now.',
+  BinNeed.mix: 'Give your bin a gentle stir to let air in, then check back. No food needed right now.',
+  BinNeed.nothing:
+      'Nothing is urgent. When you add, aim for about one part greens (fruit and veg scraps, coffee grounds) to two parts browns (shredded cardboard, dry leaves).',
+};
+const truncDoingGreat = "Your compost is doing great. Keep doing what you're doing.";
+
+/// The top looks fine but the bottom doesn't, so say which and what fixes it.
+String truncInspectLine(BinSnapshot s) {
+  final top = s.topMoisture.round(), bottom = s.bottomMoisture.round();
+  return s.bottomMoisture > moistureHi
+      ? "The top looks fine ($top%), but the bottom is wet ($bottom%). Feel the bottom: if it's soggy, mix in some shredded cardboard or dry leaves and hold off on wet scraps."
+      : "The top looks fine ($top%), but the bottom is dry ($bottom%). Feel the bottom: if it's dry, pour a little water down the side and mix it in.";
+}
+
+const _generic = {'', 'anything', 'something', 'next', 'this', 'it', 'that', 'more', 'in', 'bin', 'items', 'item', 'things', 'thing', 'stuff', 'food', 'scraps', 'what', 'now'};
 
 class TruncGuidance {
   const TruncGuidance(this.need, this.status, this.action, this.evidence, this.limits);
@@ -23,20 +47,13 @@ TruncGuidance guidanceFor(BinSnapshot s) {
     action = 'I need a fresh upper moisture reading before recommending an addition. Check the bin by hand and reconnect the sensor.';
   } else if (moistureConflict(s)) {
     status = 'inspect';
-    action = 'The two moisture probes disagree about what needs care. Check both spots before adding food or water across the bin.';
+    action = truncInspectLine(s);
   } else {
-    action = switch (need) {
-      BinNeed.browns => 'Try dry browns such as shredded cardboard after checking the compost by hand. Hold off on more wet scraps for now.',
-      BinNeed.greens =>
-        'A small amount of fruit or vegetable scraps may help: the upper probe is dry and your recent additions lean brown. Check by hand first.',
-      BinNeed.water => 'Check the dry spot by hand and add a little water if needed. More food is not the next step.',
-      BinNeed.mix => 'Check airflow and gently mix the compost, then watch the readings. More food is not needed for this action.',
-      BinNeed.nothing => 'No addition is indicated by the available readings. Keep monitoring rather than adding food just to do something.',
-    };
+    action = truncActions[need]!;
     if (need == BinNeed.nothing) {
       status = 'steady';
       if (s.bottomMeasured && s.moistureCalibrated && s.bottomMoistureCalibrated && s.greens7d + s.browns7d > 0) {
-        action = "Your measured moisture and recent mix look steady. Keep doing what you're doing; nothing needs adding right now.";
+        action = truncDoingGreat;
       }
     }
   }
@@ -51,9 +68,7 @@ TruncGuidance guidanceFor(BinSnapshot s) {
     [
       if (!s.moistureCalibrated || (s.bottomMeasured && !s.bottomMoistureCalibrated)) 'An uncalibrated moisture probe is approximate.',
       if (!s.bottomMeasured) 'Lower moisture is unknown.',
-      s.greens7d + s.browns7d <= 0
-          ? 'No recent confirmed mix history is available.'
-          : "The seven-day mix is an estimate of additions, not the bin's current chemistry.",
+      if (s.greens7d + s.browns7d <= 0) 'No recent confirmed mix history is available.',
     ],
   );
 }
@@ -80,8 +95,10 @@ String? truncRequestedItem(String message) {
   if (RegExp(r'\bhow much water\b').hasMatch(question)) return 'water';
   final match = RegExp(r'\b(?:add|adding|compost|put in|put|feed|what about)\s+(?:some\s+|more\s+|a little\s+|an?\s+)?(.+)').firstMatch(question);
   if (match == null) return null;
-  final item = match[1]!.split(RegExp(r'\s+(?:to|into|in|right now|at the moment|today|now|instead)\b|[?!.,]')).first.trim();
-  return const ['', 'anything', 'something', 'next', 'this', 'it', 'that', 'more', 'in'].contains(item) ? null : item;
+  // "what should I add to the bin" names no item, not one called "to the bin".
+  final rest = match[1]!.replaceFirst(RegExp(r'^(?:to|into|in)\s+(?:the\s+|my\s+|this\s+|your\s+)?(?:bin|pile|compost)\b\s*'), '');
+  final item = rest.split(RegExp(r'\s+(?:to|into|in|right now|at the moment|today|now|instead)\b|[?!.,]')).first.trim();
+  return _generic.contains(item) ? null : item;
 }
 
 String truncMaterialAnswer(BinSnapshot s, String item, Iterable<FoodItem> catalog) {
@@ -98,7 +115,10 @@ String truncMaterialAnswer(BinSnapshot s, String item, Iterable<FoodItem> catalo
   final bad = matches.where((f) => f.category == FoodCategory.avoid).firstOrNull;
   if (bad != null) return 'Keep $item out of this bin: ${bad.note} This does not depend on sensor readings.';
   final known = matches.firstOrNull;
-  if (known == null) return "I cannot confidently identify '$item' as a safe compost material. Tell me what it is made of before adding it.";
+  if (known == null) {
+    return "${item[0].toUpperCase()}${item.substring(1)} isn't in my list, so I can't check it against your bin. "
+        'Plant-based food scraps and plain paper or cardboard are usually fine; keep out meat, fish, dairy, oily food and bones.';
+  }
   final a = guidanceFor(s);
   final intro = switch (a.status) {
     'unknown' || 'inspect' => '$item is generally compostable, but I cannot recommend adding it right now.',

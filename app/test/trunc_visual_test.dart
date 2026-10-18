@@ -66,7 +66,11 @@ void main() {
     await t.ensureVisible(find.text('Ask Trunc a specific question'));
     await t.tap(find.text('Ask Trunc a specific question'));
     await settle(500);
-    await t.tap(find.text('Should I add more apples to this compost?'));
+    expect(find.text('What should I add right now?'), findsOneWidget);
+    await capture('02-trunc-opening');
+    await t.enterText(find.byKey(const ValueKey('trunc-input')), 'Should I add more apples to this compost?');
+    await t.pump();
+    await t.tap(find.text('Send'));
     await settle();
     expect(find.textContaining('Hold off on apples'), findsOneWidget);
     await capture('02-apples-answer');

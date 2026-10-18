@@ -30,15 +30,26 @@ enum _Filter { all, specimen, finish, title }
 
 class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
   _Filter _filter = _Filter.all;
+  bool _pulling = false;
 
   Future<void> _pull(int count, {required bool fromPackets}) async {
-    final out = await ref.read(gameProvider.notifier).pullAsync(count, fromPackets: fromPackets);
-    if (!mounted) return;
-    if (out == null) {
-      showToast(ref, fromPackets ? 'No Seed Packets left' : 'Not enough Loam yet');
-      return;
+    if (_pulling) return;
+    setState(() => _pulling = true);
+    final game = ref.read(gameProvider.notifier);
+    final live = game.isLive;
+    try {
+      final out = await game.pullAsync(count, fromPackets: fromPackets);
+      if (!mounted) return;
+      if (out == null) {
+        // Live failures already carry feedback from the controller. A timeout
+        // is not evidence of insufficient funds (the server may have saved it).
+        if (!live) showToast(ref, fromPackets ? 'No Seed Packets left' : 'Not enough Loam yet');
+        return;
+      }
+      await showPullReveal(context, out);
+    } finally {
+      if (mounted) setState(() => _pulling = false);
     }
-    await showPullReveal(context, out);
   }
 
   @override
@@ -46,6 +57,7 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
     final g = ref.watch(gameProvider);
     // Live and demo use the same supported batches; the server accepts 1 or 10.
     final packetCount = g.packets >= 10 ? 10 : 1;
+    final pulling = _pulling || ref.watch(gameActionsProvider).contains('pull');
     final pity = g.pity;
     final items = collectibles.where((c) => _filter == _Filter.all || c.type.name == _filter.name).toList();
 
@@ -90,7 +102,7 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
                   icon: PhosphorIconsBold.sparkle,
                   color: C.pink,
                   textColor: C.ink,
-                  onTap: () => _pull(packetCount, fromPackets: true),
+                  onTap: pulling ? null : () => _pull(packetCount, fromPackets: true),
                 ),
               ),
               const SizedBox(height: S.x2),
@@ -98,15 +110,24 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
             Row(
               children: [
                 Expanded(
-                  child: _BuyButton(label: '1 pull', price: packetPrice, enabled: g.loam >= packetPrice, onTap: () => _pull(1, fromPackets: false)),
+                  child: _BuyButton(label: '1 pull', price: packetPrice, enabled: !pulling && g.loam >= packetPrice, onTap: () => _pull(1, fromPackets: false)),
                 ),
                 const SizedBox(width: S.x2),
                 Expanded(
-                  child: _BuyButton(label: '10 pulls', price: tenPackPrice, enabled: g.loam >= tenPackPrice, onTap: () => _pull(10, fromPackets: false)),
+                  child: _BuyButton(
+                    label: '10 pulls',
+                    price: tenPackPrice,
+                    enabled: !pulling && g.loam >= tenPackPrice,
+                    onTap: () => _pull(10, fromPackets: false),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: S.x3),
+            if (pulling || g.loam < packetPrice) ...[
+              Text(pulling ? 'Opening Seed Packets…' : 'Earn ${packetPrice - g.loam} more Loam for a pull.', style: T.small.copyWith(color: C.onBrand)),
+              const SizedBox(height: S.x2),
+            ],
             Text(
               'Epic or better within ${epicPity - pity.sinceEpic} pulls · Legendary within ${legendaryPity - pity.sinceLegendary}',
               textAlign: TextAlign.center,
@@ -180,7 +201,7 @@ class _BuyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Pressable(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       scale: 0.96,
       child: AnimatedOpacity(
         duration: M.base,
@@ -211,7 +232,9 @@ class _WhatLoamIsFor extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final g = ref.watch(gameProvider);
-    final canLock = g.loam >= lidLockPrice && g.streak.lidLocks < maxLidLocks;
+    final buying = ref.watch(gameActionsProvider).contains('lid-lock');
+    final full = g.streak.lidLocks >= maxLidLocks;
+    final canLock = !buying && g.loam >= lidLockPrice && !full;
 
     Widget row(Widget icon, String title, String sub, Widget? trailing) => Padding(
       padding: const EdgeInsets.symmetric(vertical: S.x3),
@@ -246,7 +269,11 @@ class _WhatLoamIsFor extends ConsumerWidget {
           'Lid Lock · $lidLockPrice Loam',
           'Saves your streak if you miss a day · you have ${g.streak.lidLocks} of $maxLidLocks',
           PillButton(
-            label: 'Buy',
+            label: buying
+                ? 'Buying…'
+                : full
+                ? 'Full'
+                : 'Buy',
             dense: true,
             onTap: canLock
                 ? () async {

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'state/game.dart';
 
 import 'app/shell.dart';
+import 'app/toast.dart';
 import 'ui/theme.dart';
 import 'ui/tokens.dart';
 
@@ -34,7 +35,11 @@ class CalmpostApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       // On a wide browser window, show the app at phone size.
-      builder: kIsWeb ? (context, child) => _PhoneFrame(child: child!) : null,
+      builder: (context, child) {
+        // Above Navigator so feedback remains visible over pushed pages/sheets.
+        final content = Stack(fit: StackFit.expand, children: [child!, const ToastLayer()]);
+        return kIsWeb ? _PhoneFrame(child: content) : content;
+      },
       home: const AppShell(),
     );
   }

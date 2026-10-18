@@ -450,7 +450,7 @@ class GameController extends Notifier<GameState> {
     } catch (_) {
       if (!current()) return null;
       await refreshLive();
-      if (current()) _toast.show('Could not complete that action. Check your rewards before retrying.');
+      if (current()) _toast.show('Could not confirm that action. Check your rewards before retrying.');
       return null;
     } finally {
       if (current()) {

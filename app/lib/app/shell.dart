@@ -126,7 +126,6 @@ class _AppShellState extends ConsumerState<AppShell> {
         children: [
           const Positioned.fill(child: TopoBackdrop()),
           IndexedStack(index: tab.index, children: const [HomeScreen(), LayersScreen(), LogScreen(), SocialScreen(), ProfileScreen()]),
-          const ToastLayer(),
         ],
       ),
       bottomNavigationBar: MediaQuery.withClampedTextScaling(

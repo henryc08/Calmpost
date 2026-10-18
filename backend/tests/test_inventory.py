@@ -85,13 +85,15 @@ def test_period_boundaries(c):
     assert c.get('/bins/missing/inventory').status_code==404
 
 
-def test_owned_camera_inventory_and_private_leaderboard(c):
+def test_shared_camera_inventory_and_private_leaderboard(c):
     add(c,100,7)  # Pairing must not transfer the demo owner's history.
     uid,h=account(c,'inventory_alice'); _,other=account(c,'inventory_bob')
     assert c.post('/social/bin',headers=h,json={'device_token':c.device_token}).status_code==200
     assert inventory(c,headers=h)['pieces']==0
-    assert c.get('/bins/bin-001/inventory').status_code==403
-    assert c.get('/bins/bin-001/inventory',headers=other).status_code==403
+    # A bin is shared by its household: the demo key and a second account can
+    # both read it once someone has paired it.
+    assert c.get('/bins/bin-001/inventory').status_code==200
+    assert c.get('/bins/bin-001/inventory',headers=other).status_code==200
     device={'X-Device-Token':c.device_token}
     assert c.post('/bins/bin-001/drops/session',headers=device).status_code==403
     sid=c.post('/bins/bin-001/drops/session',headers=h).json()['session_id']
@@ -102,7 +104,9 @@ def test_owned_camera_inventory_and_private_leaderboard(c):
     did=response.json()['drop_id']
     body={'items':[{'label':'Banana peel','catalog_id':'banana_peel','piece_count':2,'quantity_g':100}]}
     assert c.post(f'/drops/{did}/confirm',headers=device,json=body).status_code==403
-    assert c.post(f'/drops/{did}/confirm',headers=other,json=body).status_code==403
+    # The second account can see the pending drop too; the pairer confirms it
+    # below so this test's inventory numbers stay attributable to one person.
+    assert c.get('/bins/bin-001/drops/pending',headers=other).status_code==200
     assert c.get('/bins/bin-001/drops/pending',headers=h).status_code==200
     assert c.post(f'/drops/{did}/confirm',headers=h,json=body).status_code==200
     saved=inventory(c,headers=h)

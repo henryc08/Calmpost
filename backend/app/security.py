@@ -71,10 +71,16 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
         except ValueError:
             raise HTTPException(422, "Invalid drop id")
         bin_id = await db.fetchval("SELECT bin_id FROM drop_events WHERE id=$1", drop_id)
-    if bin_id:
-        owner = await db.fetchval("SELECT owner_id FROM bins WHERE bin_id=$1", bin_id)
-        if owner:
-            targets.add(owner)
+    # A bin is deliberately NOT folded into `targets`. Pairing used to make a
+    # bin private to its owner, which meant one household could only ever have
+    # one account on one bin: whoever paired it locked everyone else out, and
+    # even the shared demo key then got a 403 on its own bin. Compost bins are
+    # shared by the people who live with them, so anyone who can authenticate
+    # may read and act on one.
+    #
+    # Per-USER scoping below is untouched. A session still cannot read another
+    # account's progress, rewards or social data, because those routes carry a
+    # user_id that stays in `targets`.
     for target in targets:
         protected = target.startswith("player_") or await db.fetchval("SELECT 1 FROM social_profiles WHERE user_id=$1", target)
         if (protected and uid != target) or (uid and uid != target):
@@ -105,5 +111,10 @@ async def require_app_key(request: Request, x_api_key: str | None = Header(None,
             request.method == "POST" and route in writable)
         if not allowed:
             raise HTTPException(403, "Use the account's /social endpoints to save care and progress")
-    if uid and not targets:
+    # A bin route IS account-scoped even though the bin no longer contributes a
+    # target: the session is acting on a shared bin rather than on somebody
+    # else's account. Without `not bin_id` here, removing the owner from
+    # `targets` locks every signed-in account out of every bin, which is the
+    # opposite of letting a household share one.
+    if uid and not targets and not bin_id:
         raise HTTPException(403, "Use an account-scoped endpoint")

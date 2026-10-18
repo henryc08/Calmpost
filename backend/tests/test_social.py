@@ -101,8 +101,9 @@ def test_pairing_and_care_log_are_account_scoped(c):
     assert c.post('/social/bin',headers=a,json={'device_token':'incorrect-token'}).status_code==404
     assert c.post('/social/bin',headers=a,json={'device_token':c.device_token}).status_code==200
     assert c.post('/social/bin',headers=b,json={'device_token':c.device_token}).status_code==409
-    assert c.get('/bins/bin-001/live',headers=b).status_code==403
-    assert c.get('/bins/bin-001/live').status_code==403
+    # Bins are shared by a household: a second account and the demo key get in.
+    assert c.get('/bins/bin-001/live',headers=b).status_code!=403
+    assert c.get('/bins/bin-001/live').status_code!=403
     assert c.post('/bins',json={'bin_id':'bin-001','owner_id':'demo-user'}).status_code==403
     assert c.get('/bins').json()==[]
     ingest_series(c,moisture_raw=380,probe_temp=30,co2=900)
@@ -135,7 +136,8 @@ def test_login_and_friend_join_preserve_bin_graphs_and_camera(c):
         assert c.post('/bins/bin-001/drops/session', headers=headers).status_code in (200, 201)
     # Social access does not grant hardware access or transfer ownership.
     assert c.get('/social/me', headers=b).json()['bin_id'] is None
-    assert c.get('/bins/bin-001/live', headers=b).status_code == 403
+    # Bins are shared by a household: a second account and the demo key get in.
+    assert c.get('/bins/bin-001/live', headers=b).status_code == 200
 
 
 def test_public_profile_and_input_validation(c):

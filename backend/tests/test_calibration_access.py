@@ -1,4 +1,6 @@
-"""Phone calibration is owner-scoped and never changes the other sensor."""
+"""Phone calibration is shared by the household and never changes the other
+sensor. A bin is no longer private to whoever paired it, so any signed-in
+account may calibrate it; a device token still cannot."""
 import pytest
 from .conftest import needs_db
 from .test_api import post_reading, NEW_FORMAT
@@ -7,7 +9,7 @@ from .test_social import account
 pytestmark = needs_db
 
 
-def test_owner_can_calibrate_only_their_bin_and_selected_probe(c):
+def test_any_account_can_calibrate_a_shared_bin_but_only_the_chosen_probe(c):
     _, owner = account(c, 'probeowner')
     _, other = account(c, 'probeother')
     assert c.post('/social/bin', headers=owner, json={'device_token': c.device_token}).status_code == 200
@@ -16,8 +18,12 @@ def test_owner_can_calibrate_only_their_bin_and_selected_probe(c):
     top = initial['layers'][0]
     body = {'probe': 2, 'moisture_raw_dry': 600, 'moisture_raw_wet': 300, 'backfill': True}
     path = '/bins/bin-001/calibration'
-    assert c.post(path, headers=other, json=body).status_code == 403
-    assert c.post(path, json=body).status_code == 403
+    # A second account in the same household may calibrate the shared bin.
+    assert c.post(path, headers=other, json=body).status_code == 200
+    # ...and so may the shared demo key.
+    assert c.post(path, json=body).status_code == 200
+    # A device token still cannot: the board reports readings, it does not
+    # get to decide what they mean.
     assert c.post(path, headers={'X-Device-Token': c.device_token}, json=body).status_code == 403
     assert c.post(path, headers=owner, json={**body, 'moisture_raw_wet': 600}).status_code == 422
     result = c.post(path, headers=owner, json=body)

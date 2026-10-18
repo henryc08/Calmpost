@@ -21,7 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-START_FRACTION = 0.02
+START_FRACTION = 0.01
 START_HOLD_S = 0.15
 STILL_S = 0.55        # how long the ROI must be quiet before a drop counts as
                       # finished. Straight latency the user feels, so it is kept

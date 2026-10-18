@@ -238,6 +238,8 @@ void main() {
         250,
         scrollable: find.byType(Scrollable).first,
       );
+      await t.ensureVisible(find.text('Accept'));
+      await settle(t);
       await t.tap(find.text('Accept'));
       await settle(t);
       expect(

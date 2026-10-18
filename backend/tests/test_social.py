@@ -117,6 +117,27 @@ def test_pairing_and_care_log_are_account_scoped(c):
     assert c.post('/social/care-log',headers=a,json={**payload,'xp':9999}).status_code==422
 
 
+def test_login_and_friend_join_preserve_bin_graphs_and_camera(c):
+    _, a = account(c, 'alice')
+    _, b = account(c, 'bob')
+    assert c.get('/social/me', headers=a).json()['bin_id'] is None
+    assert c.post('/social/bin', headers=a, json={'device_token': c.device_token}).status_code == 200
+    ingest_series(c, moisture_raw=380, probe_temp=30, co2=900)
+    code = c.post('/social/invites', headers=a).json()['code']
+    assert c.post('/social/join', headers=b, json={'code': code}).status_code == 200
+    login = c.post('/social/login', json={'handle': 'alice', 'password': 'compost-test-password'})
+    assert login.status_code == 200
+    again = {'Authorization': 'Bearer ' + login.json()['token']}
+    for headers in (a, again):
+        assert c.get('/social/me', headers=headers).json()['bin_id'] == 'bin-001'
+        assert c.get('/bins/bin-001/live', headers=headers).status_code == 200
+        assert c.get('/bins/bin-001/trends?hours=24&metrics=moisture', headers=headers).status_code == 200
+        assert c.post('/bins/bin-001/drops/session', headers=headers).status_code in (200, 201)
+    # Social access does not grant hardware access or transfer ownership.
+    assert c.get('/social/me', headers=b).json()['bin_id'] is None
+    assert c.get('/bins/bin-001/live', headers=b).status_code == 403
+
+
 def test_public_profile_and_input_validation(c):
     alice,a=account(c,'alice');bob,b=account(c,'bob')
     c.patch('/social/me',headers=a,json={'display_name':'Alice','bio':'Balcony composter','is_private':False})

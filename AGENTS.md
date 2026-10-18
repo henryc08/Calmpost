@@ -715,6 +715,16 @@ not used for multiplayer.
   conflict. Missing/stale sensors do not block logging or volume XP; only the advice
   bonus requires fresh readings. Before the first reading, the verdict sheet gives
   cautious rule-based advice with unknown sensor values. Hard keep-outs stay avoid.
+- **Connection recovery:** signing in selects the account's bin, never silently claims the
+  legacy demo bin. **Connect bin / Your bin** is directly available on Home (unpaired),
+  Sensors (unpaired), Social, Profile settings, and the camera/photo flow. The shared
+  connection screen accepts the device token and can recheck the server's saved pairing.
+  Pairing from the webcam sheet resumes arming after success. Unpaired graphs show setup,
+  not a network-error spinner. `/social/me` refreshes reconcile cached bin IDs without
+  rebuilding the data repository when the assignment is unchanged. Failed refreshes and
+  friend actions retain pairing; late responses cannot replace a newer account/pairing.
+  Friend/group codes do not grant bin access; multi-account shared-bin access remains
+  separate from the existing single-owner model.
 - Legacy API-key routes cannot read or mutate registered players' private state or bins.
   Player sessions can read their owned bin and game, request advice or Trunc chat, and
   claim earned rewards or spend server balances. Demo harvest/log writes stay blocked;

@@ -40,23 +40,24 @@ class HomeScreen extends ConsumerWidget {
     void goTo(AppTab tab) => ref.read(tabProvider.notifier).state = tab;
 
     if (health == null) {
-      final account = ref.watch(socialSessionProvider).valueOrNull;
-      if (account != null && account.binId == null && ref.watch(dataSourceProvider) == DataSource.live) {
+      if (ref.watch(needsBinProvider)) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(S.gutter),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Connect your bin', style: T.title),
-                const SizedBox(height: S.x3),
-                Text('Your account rewards are saved. Pair the bin in Social to see readings and log compost.', style: T.body),
-                const SizedBox(height: S.x5),
-                PillButton(label: 'Open Social', onTap: () => goTo(AppTab.social)),
-                const SizedBox(height: S.x3),
-                PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
-              ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Connect your bin', style: T.title),
+                  const SizedBox(height: S.x3),
+                  Text('Your account rewards are saved. Connect a bin to this account to see readings, graphs and camera additions.', style: T.body),
+                  const SizedBox(height: S.x5),
+                  PillButton(label: 'Connect bin', onTap: () => Routes.connectBin(context)),
+                  const SizedBox(height: S.x3),
+                  PillButton(label: 'View level map', onTap: () => Routes.levels(context)),
+                ],
+              ),
             ),
           ),
         );

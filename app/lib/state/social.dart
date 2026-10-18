@@ -15,6 +15,7 @@ final socialSessionProvider =
     AsyncNotifierProvider<SocialAccount, SocialSession?>(SocialAccount.new);
 
 class SocialAccount extends AsyncNotifier<SocialSession?> {
+  int _binRevision = 0;
   @override
   Future<SocialSession?> build() => ref.read(sessionStoreProvider).read();
 
@@ -50,6 +51,7 @@ class SocialAccount extends AsyncNotifier<SocialSession?> {
 
   Future<void> pair(String token) async {
     final old = state.requireValue!;
+    final revision = ++_binRevision;
     final result =
         await ref.read(socialRepositoryProvider).call(old, 'POST', '/bin', {
               'device_token': token,
@@ -61,9 +63,42 @@ class SocialAccount extends AsyncNotifier<SocialSession?> {
       userId: old.userId,
       binId: result['bin_id'],
     );
-    await ref.read(sessionStoreProvider).write(session);
+    if (!identical(state.valueOrNull, old) || revision != _binRevision) return;
     state = AsyncData(session);
+    await ref.read(sessionStoreProvider).write(session);
     refreshSocial(ref);
+  }
+
+  /// Reconcile a cached pairing without dropping it on network failure or a
+  /// social refresh. Ignore responses that started before another account/pair.
+  Future<void> refreshBin() async {
+    final old = state.valueOrNull;
+    if (old == null) return;
+    final revision = _binRevision;
+    final me =
+        await ref.read(socialRepositoryProvider).call(old, 'GET', '/me')
+            as Json;
+    if (!identical(state.valueOrNull, old) ||
+        revision != _binRevision ||
+        !me.containsKey('bin_id')) {
+      return;
+    }
+    await syncBin(old, me['bin_id'] as String?);
+  }
+
+  Future<void> syncBin(SocialSession expected, String? binId) async {
+    if (!identical(state.valueOrNull, expected) || expected.binId == binId) {
+      return;
+    }
+    _binRevision++;
+    final next = SocialSession(
+      server: expected.server,
+      token: expected.token,
+      userId: expected.userId,
+      binId: binId,
+    );
+    state = AsyncData(next);
+    await ref.read(sessionStoreProvider).write(next);
   }
 }
 
@@ -81,7 +116,14 @@ final socialDataProvider = FutureProvider.autoDispose.family<dynamic, String>((
   if (session == null) return null;
   final timer = Timer(const Duration(seconds: 20), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
-  return ref.watch(socialRepositoryProvider).call(session, 'GET', path);
+  final account = ref.read(socialSessionProvider.notifier);
+  final result = await ref
+      .watch(socialRepositoryProvider)
+      .call(session, 'GET', path);
+  if (path == '/me' && result is Json && result.containsKey('bin_id')) {
+    await account.syncBin(session, result['bin_id'] as String?);
+  }
+  return result;
 });
 
 Future<dynamic> socialWrite(

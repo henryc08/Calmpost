@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../data/social_repository.dart';
 import '../../state/social.dart';
+import '../../app/routes.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
 import '../../ui/tokens.dart';
@@ -109,6 +110,12 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
       ),
       children: [
         status(),
+        PillButton(
+          label: session.binId == null ? 'Connect bin' : 'Your bin',
+          icon: PhosphorIconsRegular.plugsConnected,
+          onTap: () => Routes.connectBin(context),
+        ),
+        const SizedBox(height: S.x3),
         Wrap(
           spacing: S.x2,
           runSpacing: S.x2,

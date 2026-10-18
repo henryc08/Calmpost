@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/toast.dart';
+import '../../app/routes.dart';
 import '../../data/food_catalog.dart';
 import '../../data/calmpost_repository.dart';
 import '../../domain/drop.dart';
@@ -88,7 +89,7 @@ class _DropSheetState extends ConsumerState<DropSheet> {
     try {
       final account = await ref.read(socialSessionProvider.future);
       if (!mounted) return;
-      _needsBin = account != null && ref.read(dataSourceProvider) == DataSource.live && account.binId == null;
+      _needsBin = account != null && ref.read(needsBinProvider);
       if (_needsBin) {
         setState(() => _phase = _Phase.failed);
         return;
@@ -237,10 +238,18 @@ class _DropSheetState extends ConsumerState<DropSheet> {
       icon: PhosphorIconsRegular.cameraSlash,
       title: _needsBin ? 'Connect your bin first' : 'Couldn\'t reach the camera',
       body: _needsBin
-          ? 'Connect your bin in Social, then return to review camera additions.'
+          ? 'This account has no bin assigned. Connect it here, then the camera can watch for your addition.'
           : 'The camera service on the laptop isn\'t answering. You can still log this by hand.',
-      primary: ('Log it by hand', _logByHand),
-      secondary: ('Try again', _arm),
+      primary: _needsBin
+          ? (
+              'Connect bin',
+              () async {
+                await Routes.connectBin(context);
+                if (mounted && !ref.read(needsBinProvider)) await _arm();
+              },
+            )
+          : ('Log it by hand', _logByHand),
+      secondary: _needsBin ? ('Not now', () => Navigator.pop(context)) : ('Try again', _arm),
     ),
     _Phase.review => DropReview(
       drop: _drop!,

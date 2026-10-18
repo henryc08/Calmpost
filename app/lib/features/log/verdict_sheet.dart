@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../app/toast.dart';
+import '../../app/routes.dart';
 import '../../domain/models.dart';
 import '../../domain/drop.dart';
 import '../../domain/xp_rules.dart';
@@ -91,7 +92,13 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
     });
     final advice = _advice!;
     final tips = ref.read(suggestionProvider)?.add.map((f) => f.id) ?? const <String>[];
-    final submission = _submission ??= (advice: advice, added: added, grams: _weight ?? amountGrams[_amount]!, pieces: _pieceCount, advised: tips.contains(advice.item.id));
+    final submission = _submission ??= (
+      advice: advice,
+      added: added,
+      grams: _weight ?? amountGrams[_amount]!,
+      pieces: _pieceCount,
+      advised: tips.contains(advice.item.id),
+    );
     final repo = ref.read(repositoryProvider);
     final game = ref.read(gameProvider.notifier);
     try {
@@ -100,7 +107,7 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
       final account = await ref.read(socialSessionProvider.future);
       if (account != null) {
         if (account.binId == null || ref.read(dataSourceProvider) != DataSource.live) {
-          throw const SocialFailure('Connect your bin in Social to save real care. Demo actions stay on this device.');
+          throw const SocialFailure('Connect a bin to this account to save real care. Demo actions stay on this device.');
         }
         final result =
             await socialWrite(ref, 'POST', '/care-log', {
@@ -161,10 +168,23 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
           const SizedBox(height: S.x5),
           if (_error != null) ...[
             Text(_error!, style: T.body.copyWith(color: C.clay)),
+            if (ref.watch(needsBinProvider))
+              PillButton(
+                label: 'Connect bin',
+                onTap: () async {
+                  await Routes.connectBin(context);
+                  if (mounted && !ref.read(needsBinProvider)) await _check(_item);
+                },
+              ),
             if (a == null) PillButton(label: 'Try again', onTap: () => _check(_item)),
             const SizedBox(height: S.x3),
           ],
-          AnimatedSize(duration: M.base, curve: M.ease, alignment: Alignment.topCenter, child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a)),
+          AnimatedSize(
+            duration: M.base,
+            curve: M.ease,
+            alignment: Alignment.topCenter,
+            child: a == null ? (_error == null ? _loading() : const SizedBox.shrink()) : _result(a),
+          ),
         ],
       ),
     );
@@ -288,8 +308,16 @@ class _VerdictSheetState extends ConsumerState<_VerdictSheet> {
         SizedBox(
           width: double.infinity,
           child: avoid
-              ? PillButton(label: _saving ? 'Saving…' : 'Keep it out', color: C.clay, textColor: Colors.white, onTap: _saving ? null : () => _commit(added: false))
-              : PillButton(label: _saving ? 'Saving…' : (a.verdict == Verdict.great ? 'Add it' : 'Add it carefully'), onTap: _saving ? null : () => _commit(added: true)),
+              ? PillButton(
+                  label: _saving ? 'Saving…' : 'Keep it out',
+                  color: C.clay,
+                  textColor: Colors.white,
+                  onTap: _saving ? null : () => _commit(added: false),
+                )
+              : PillButton(
+                  label: _saving ? 'Saving…' : (a.verdict == Verdict.great ? 'Add it' : 'Add it carefully'),
+                  onTap: _saving ? null : () => _commit(added: true),
+                ),
         ),
         const SizedBox(height: S.x2),
         Center(

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'state/game.dart';
 
 import 'app/shell.dart';
+import 'features/tutorial/tutorial_screen.dart';
 import 'ui/theme.dart';
 import 'ui/tokens.dart';
 
@@ -35,7 +36,7 @@ class CalmpostApp extends StatelessWidget {
       theme: buildTheme(),
       // On a wide browser window, show the app at phone size.
       builder: kIsWeb ? (context, child) => _PhoneFrame(child: child!) : null,
-      home: const AppShell(),
+      home: const TutorialGate(child: AppShell()),
     );
   }
 }

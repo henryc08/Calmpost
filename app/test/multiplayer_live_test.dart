@@ -50,6 +50,38 @@ void main() {
       expect(feed.first['user_id'], bob.userId);
       await api.call(alice, 'POST', "/events/${feed.first['id']}/cheer");
       expect((await api.call(bob, 'GET', '/feed'))[0]['cheers'], 1);
+      // Exercise the real Dart repository, HTTP API and database together.
+      for (final kind in ['request', 'offer']) {
+        final post =
+            await api.call(alice, 'POST', '/circles/$cid/exchange', {
+                  'kind': kind,
+                  'material_id': 'dry_leaves',
+                  'quantity': 'One small bag',
+                  'request_id': 'live-$stamp-$kind',
+                })
+                as Json;
+        final path = '/circles/$cid/exchange/${post['id']}';
+        final reservation =
+            await api.call(bob, 'POST', '$path/claim', {
+                  'version': post['version'],
+                  'request_id': 'claim-$stamp-$kind',
+                  'note': 'Garden gate at noon',
+                })
+                as Json;
+        final receipt = {'reservation_id': reservation['reservation_id']};
+        final waiting = await api.call(alice, 'POST', '$path/confirm', receipt);
+        expect(waiting['status'], 'reserved');
+        final completed = await api.call(bob, 'POST', '$path/confirm', receipt);
+        expect(completed['status'], 'completed');
+        expect(completed['creator_xp'], kind == 'request' ? 10 : 0);
+        expect(completed['responder_xp'], kind == 'request' ? 10 : 0);
+        final retried = await api.call(bob, 'POST', '$path/confirm', receipt);
+        expect(retried['responder_xp'], completed['responder_xp']);
+      }
+      final aliceProgress = await api.call(alice, 'GET', '/me') as Json;
+      final bobProgress = await api.call(bob, 'GET', '/me') as Json;
+      expect(aliceProgress['progress']['total_xp'], 10);
+      expect(bobProgress['progress']['total_xp'], 15);
       await api.call(alice, 'DELETE', '/circles/$cid/members/${bob.userId}');
       await expectLater(
         api.call(bob, 'GET', '/circles/$cid'),

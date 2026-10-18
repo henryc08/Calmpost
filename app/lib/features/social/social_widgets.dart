@@ -80,6 +80,8 @@ class SocialData extends ConsumerWidget {
 }
 
 String activityLabel(String kind) => switch (kind) {
+  'exchange_completed' => 'Completed a materials or help exchange',
+  'compost_added' => 'Added compostable material',
   'check_in' => 'Checked on their compost',
   'followed_suggestion' => 'Followed their bin’s next best action',
   'avoided_bad_add' => 'Kept a harmful item out',
@@ -210,11 +212,13 @@ class SocialField extends StatelessWidget {
     this.maxLength,
     this.validator,
     this.onSubmitted,
+    this.enabled = true,
   });
   final TextEditingController controller;
   final String label;
   final String? hint;
   final bool secret;
+  final bool enabled;
   final int? maxLength;
   final String? Function(String?)? validator;
   final ValueChanged<String>? onSubmitted;
@@ -222,6 +226,7 @@ class SocialField extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: S.x2),
     child: TextFormField(
+      enabled: enabled,
       controller: controller,
       obscureText: secret,
       autocorrect: false,

@@ -80,3 +80,16 @@ Older logs without counts remain labelled as such.
 Live inventory and group rankings show the server's amount XP + care/reward XP
 breakdown. The sensor-based health score stays separate. Demo inventory works
 without a backend and lasts for the mock repository session.
+
+### Materials & help
+
+Social → Groups → a private group → **Materials & help** opens requests and offers.
+Choose compostable scraps/browns, finished compost or turning/harvesting help, then
+specify an amount/help description. Another member reserves; only the participants
+see arrangement notes. Both confirm completion before the server awards up to 10 XP
+each. **How XP works** explains the 20 exchange XP/day, one reward per pair/day and
+shared 60 action XP/day limits. Received material is logged separately when composted.
+
+The board has active/mine/history filters, pagination, manual and periodic refresh,
+release/cancel actions, and retryable errors. Exchange uses the existing authenticated
+SocialRepository boundary; signed-out demo activity never awards multiplayer XP.

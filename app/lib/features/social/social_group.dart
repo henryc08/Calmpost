@@ -24,6 +24,12 @@ class _CircleScreenState extends ConsumerState<CircleScreen>
         hero: heroStat('${group['team_xp']}', 'compost XP together'),
         children: [
           status(),
+          PillButton(
+            label: 'Materials & help',
+            icon: PhosphorIconsRegular.handshake,
+            onTap: () => openSocial(context, ExchangeScreen(circleId: widget.id)),
+          ),
+          const SizedBox(height: S.x3),
           if (owner)
             PillButton(
               label: 'Invite to this group',

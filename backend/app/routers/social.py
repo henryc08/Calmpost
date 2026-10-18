@@ -383,6 +383,8 @@ async def leave_or_remove(cid: str, target: str, uid: str = Depends(current_user
         if target != uid and circle["owner_id"] != uid:
             raise HTTPException(403, "Only the owner can remove someone else")
         await conn.execute("DELETE FROM social_circle_members WHERE circle_id=$1 AND user_id=$2", cid, target)
+        from ..services.exchange import remove_member as remove_exchanges
+        await remove_exchanges(conn, cid, target)
         # Old join codes cannot silently undo a removal.
         await conn.execute("DELETE FROM social_invites WHERE circle_id=$1", cid)
     return {"ok": True}

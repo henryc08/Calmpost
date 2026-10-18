@@ -7,7 +7,7 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 
 **Contents**
 1. [Key ideas](#1-key-ideas-dont-break-these)
-2. [Major features](#2-major-features): compost inventory · sensing & health · next best action · scrap check · **camera drop-in** · summaries · game & economy · notifications
+2. [Major features](#2-major-features): materials & help exchange · compost inventory · sensing & health · next best action · scrap check · **camera drop-in** · summaries · game & economy · notifications
 3. [Gemini: what it does and how](#3-gemini-what-it-does-and-how)
 4. [System architecture](#4-system-architecture)
 5. [Backend & Tiger Data](#5-backend--tiger-data)
@@ -21,7 +21,7 @@ This file is the source of truth for how we build Calmpost. Read it before you w
 
 ## 1. Key ideas (don't break these)
 
-1. **Reward compostable volume as well as care.** Confirmed green and brown additions earn **1 XP per 20 g** (estimated mass is our volume proxy), alongside care bonuses. Accumulate grams across the day before rounding, so splitting one drop does not create extra XP. Volume, following advice (+15), keeping an unsuitable item out (+5), and check-in XP share the **60 XP daily action cap**. Keep-out materials earn no volume XP. Nothing earns rewards until it is saved; retries must not double-log or double-award. Volume rewards do not override compost safety advice.
+1. **Reward compostable volume as well as care.** Confirmed green and brown additions earn **1 XP per 20 g** (estimated mass is our volume proxy), alongside care bonuses. Accumulate grams across the day before rounding, so splitting one drop does not create extra XP. Volume, following advice (+15), keeping an unsuitable item out (+5), check-ins, and completed exchange rewards (up to +10 each; §2.11) share the **60 XP daily action cap**. Keep-out materials earn no volume XP. Nothing earns rewards until it is saved; retries must not double-log or double-award. Volume rewards do not override compost safety advice.
 2. **Same scrap, different answer.** Advice is always based on the bin's *current* readings. This is our demo moment, so protect it.
 3. **Honest about accuracy.** Moisture is our most reliable signal; temperature and CO₂ add context. Stage and "ready" are guides, not lab results. The camera can be wrong, so **the user always confirms what it saw**.
 4. **Sleek, minimal, grown-up.** Calm editorial design, one living illustration per screen, open layout instead of boxes. **No mascot, no cartoons.**
@@ -41,6 +41,7 @@ Each feature lists what the user sees, how it works, and its status.
 | 2.3 | Scrap check ("Can I add this?") | ✅ rules + Log tab verdict sheet · ⏳ Gemini |
 | 2.4 | **Camera drop-in: identify and track what goes in** | ✅ vision + backend + app (sheet, "Is this right?" review, mixed drops) |
 | 2.10 | **Confirmed compost inventory** (counts, estimated mass, score breakdown) | ✅ backend + mock/live app + private group totals |
+| 2.11 | **Materials & help exchange** (private group requests/offers) | ✅ app + authenticated backend + two-party rewards |
 | 2.5 | Summaries (daily note, recap, batch story) | 📝 planned |
 | 2.6 | Game & economy (streaks, quests, Loam, crates, gacha, leagues) | ✅ Home, Social, Profile, **Greenhouse (gacha)**, crate reveal · ⏳ Rewards inbox history |
 | 2.7 | Notifications | ✅ compost ready · ⏳ streak at risk, crate earned |
@@ -163,6 +164,48 @@ Why this design:
 - Inventory uses `CalmpostRepository.inventory` in mock and API mode, refreshes after
   successful saves, every 20 seconds while visible, and on manual refresh. Demo inventory
   lasts for the repository session and does not represent a signed-in account's score.
+
+### 2.11 Materials & help exchange
+
+- Open **Social → Groups → a group → Materials & help**. Members post a **request**
+  ("I need dry leaves") or an **offer** ("I can offer cardboard"), with an amount/help
+  description and optional group-visible details. Materials are the catalog's greens
+  and browns, finished compost, help turning a bin, or help harvesting. Keep-out and
+  unknown material IDs are rejected. No map, public listing, automatic message or
+  exchange of bin access is involved. A paired bin is not required to help someone.
+- Another member reserves the post and can suggest arrangements. Handoff notes are
+  visible **only to the two participants**, including when the group owner moderates.
+  Both can update their own note. The owner of a post cannot reserve it themselves.
+- **Both people explicitly confirm only after the handoff/help happened.** Posting,
+  reserving and one-sided confirmations earn nothing. Completion and both awards save
+  in one transaction. These are participant attestations, not hardware verification.
+- Each participant earns **up to 10 XP** (`exchange_completed`), subject to **20 exchange
+  XP per person per UTC day**, **one rewarded exchange per unordered pair per UTC day
+  across all groups**, and the existing **60 XP shared action cap**. No Loam, amount
+  multiplier or seed buff applies. Caps may reduce a reward to zero; sharing can still
+  be completed. Pair cooldown receipts survive deleting a group. Exchange XP counts
+  toward levels, daily progress, streaks, the existing care/reward score component,
+  league totals and permitted profile activity; it is never uploaded by the phone.
+- Sharing is not composting: it does **not** add weight, pieces or records to inventory,
+  affect sensor health, or award amount XP. The recipient logs material when actually
+  putting it in their bin, through the normal confirmation flow.
+- Posts expire in seven days; reserving starts a fresh seven-day handoff window. The
+  responder may release an unconfirmed reservation, reopening the post. Once either
+  person has confirmed, release is blocked; either participant may close an unfinished
+  exchange without XP. The group owner can close posts but cannot confirm for others.
+  Completed posts cannot be reopened/cancelled. History retains closed/expired/completed
+  posts; Active / My exchanges / History are paged and refresh every 20 seconds.
+- Removal/leaving cancels the departing creator's active posts. A departing responder's
+  wholly unconfirmed reservation reopens with private notes cleared; a partially
+  confirmed handoff closes without XP. Every mutation rechecks group membership under
+  the circle lock. Reservation IDs and post versions reject stale confirmations and
+  delayed claims after release. Creation/reservation retries are idempotent; simultaneous
+  claims have one winner. At most 10 active posts per creator across all groups.
+- `098_materials_exchange.sql` adds `exchange_posts`. The authenticated routes are
+  `GET/POST /social/circles/{cid}/exchange` and `POST …/{id}/claim`, `/note`, `/confirm`,
+  `/release`, `/cancel`. GET accepts `view=active|mine|history`, `before` and `limit`.
+  No shared API key or device-token access. Rewards take player locks in sorted order
+  before testing caps, including simultaneous completions in different groups.
 
 ### 2.5 Summaries 📝 *planned*
 Short, plain text from Gemini, using only numbers from the snapshot: **daily note** (Home status line), **score explainer** (health breakdown), **layer trend** (Sensors), **weekly recap** (Sunday, with the league reset), **batch story** (harvest celebration). Details in §3.
@@ -357,7 +400,7 @@ The backend is a thin FastAPI app (`backend/`, full reference in `backend/README
 - The food and collectible catalogs are **generated** from `lib/data/*.dart` by `python -m scripts.sync_catalogs`, which also writes `vision/catalog.json`.
 - All XP and Loam are awarded server-side into an append-only ledger, so the client can't award itself anything. Pulls are rolled on the server.
 
-**Layout:** `app/rules` (pure) → `app/services` (DB + Gemini) → `app/routers` (HTTP). `sql/000…097_*.sql` are applied in order on every boot. Each file is idempotent. Migration 095 adds manual-log request receipts and camera-confirmation receipts; 096 adds compost counts; 097 adds the active seed. Identical retries return the original result; changed payloads conflict. A whole camera drop saves in one transaction, with deterministic verdicts (no Gemini network call inside confirmation). A per-player lock serializes XP caps and ledger deduplication.
+**Layout:** `app/rules` (pure) → `app/services` (DB + Gemini) → `app/routers` (HTTP). `sql/000…098_*.sql` are applied in order on every boot. Each file is idempotent. Migration 095 adds manual-log request receipts and camera-confirmation receipts; 096 adds compost counts; 097 adds the active seed. Identical retries return the original result; changed payloads conflict. A whole camera drop saves in one transaction, with deterministic verdicts (no Gemini network call inside confirmation). A per-player lock serializes XP caps and ledger deduplication.
 
 **Tiger Data schema**
 
@@ -529,7 +572,7 @@ Rarity: Common `#9AA39D` · Uncommon `#3F8A5F` · Rare `#3F7FBF` · Epic `#C0623
 
 | Mechanic | Rule |
 |---|---|
-| XP | **confirmed compostable volume +1 per 20 g**, rounded cumulatively per day · followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100. Volume and other action XP share the 60/day cap |
+| XP | **confirmed compostable volume +1 per 20 g**, rounded cumulatively per day · followed next action +15 · check on layers +5 · healthy layer-day +10 per layer · kept a bad item out +5 · quests +10–20 · weekly balance +30 · harvest +100 · completed exchange up to +10 each (20 exchange XP/day; same pair once/day). Volume and other action XP share the 60/day cap |
 | Streak | consecutive days with ≥ 1 care action (open Sensors, follow the next action, confirm a camera drop that fixes balance). Calendar on Home; consecutive days join into one amber run |
 | Lid Lock | streak freeze; covers one missed day; hold max 2; 60 Loam |
 | Daily quests | "Check on your layers" (10 XP, 10 Loam) · "Follow the next best action" (20 XP, 25 Loam) · "Both layers in range for 6h" (15 XP, 15 Loam) |

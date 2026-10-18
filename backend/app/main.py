@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .config import get_settings
-from .routers import advice, bins, chat, drops, economy, game, ingest, social
+from .routers import advice, bins, chat, drops, economy, game, ingest, social, exchange
 
 logging.basicConfig(level=logging.INFO)
 
@@ -52,6 +52,7 @@ app.include_router(game.router)
 app.include_router(drops.router)
 app.include_router(economy.router)
 app.include_router(social.router)
+app.include_router(exchange.router)
 
 
 @app.get("/health", tags=["meta"])

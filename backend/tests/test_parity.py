@@ -48,6 +48,8 @@ def test_xp_values_match_xp_rules_dart():
     assert const(src, "healthyLayerDay") == game.XP["healthy_layer_day"]
     assert const(src, "weeklyBalance") == game.XP["weekly_balance"]
     assert const(src, "harvest") == game.XP["harvest"]
+    assert const(src, "exchangeCompleted") == game.XP["exchange_completed"]
+    assert const(src, "exchangeDailyCap") == game.EXCHANGE_DAILY_CAP
     assert const(src, "log") == game.XP["log"] == 0
     assert const(src, "gramsPerXp") == game.GRAMS_PER_XP
     assert const(src, "dailyActionCap") == game.DAILY_ACTION_CAP

@@ -128,7 +128,12 @@ class SectionLabel extends StatelessWidget {
         Expanded(
           child: info == null
               ? Text(text, style: T.caps)
-              : Row(children: [Flexible(child: Text(text, style: T.caps)), InfoDot(info!)]),
+              : Row(
+                  children: [
+                    Flexible(child: Text(text, style: T.caps)),
+                    InfoDot(info!),
+                  ],
+                ),
         ),
         ?trailing,
       ],
@@ -166,11 +171,12 @@ class PinkPill extends StatelessWidget {
 
 /// Segmented control drawn on the green band (white pill for the selected item).
 class BandSegments<V> extends StatelessWidget {
-  const BandSegments({super.key, required this.values, required this.selected, required this.label, required this.onChanged});
+  const BandSegments({super.key, required this.values, required this.selected, required this.label, required this.onChanged, this.flex});
   final List<V> values;
   final V selected;
   final String Function(V) label;
   final ValueChanged<V> onChanged;
+  final int Function(V)? flex;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +187,7 @@ class BandSegments<V> extends StatelessWidget {
         children: [
           for (final v in values)
             Expanded(
+              flex: flex?.call(v) ?? 1,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {

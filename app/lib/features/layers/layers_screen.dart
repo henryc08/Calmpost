@@ -77,20 +77,22 @@ class _LayersScreenState extends ConsumerState<LayersScreen> {
       hero: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Two primary hardware views; air readings remain reachable below.
           BandSegments<Metric>(
-            values: const [Metric.moisture, Metric.temperature],
+            values: const [Metric.moisture, Metric.temperature, Metric.co2],
             selected: metric,
-            label: (m) => m == Metric.moisture ? 'Moisture' : 'Temperature',
+            label: (m) => switch (m) {
+              Metric.moisture => 'Moisture',
+              Metric.temperature => 'Temperature',
+              Metric.co2 => 'CO₂',
+            },
+            flex: (m) => switch (m) {
+              Metric.moisture => 4,
+              Metric.temperature => 5,
+              Metric.co2 => 2,
+            },
             onChanged: (m) => ref.read(sensorMetricProvider.notifier).state = m,
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: () => ref.read(sensorMetricProvider.notifier).state = Metric.co2,
-              child: Text(metric == Metric.co2 ? 'Air · CO₂ selected' : 'View air · CO₂', style: T.label.copyWith(color: C.onBrand)),
-            ),
-          ),
+          const SizedBox(height: S.x5),
           if (moisture)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

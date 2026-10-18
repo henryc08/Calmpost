@@ -182,7 +182,7 @@ void main() {
     expect(find.text('Not measured · check the sensor connection'), findsOneWidget);
     expect(find.text('Ambient air: 22.0 °C'), findsOneWidget);
     expect(find.text('23.0 °C'), findsNothing);
-    await t.tap(find.text('View air · CO₂'));
+    await t.tap(find.text('CO₂'));
     await settle(t);
     expect(find.text('3600 ppm'), findsOneWidget);
     expect(c.read(sensorMetricProvider), Metric.co2);

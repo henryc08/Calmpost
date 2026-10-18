@@ -9,6 +9,7 @@ import 'package:calmpost/domain/models.dart';
 import 'package:calmpost/features/layers/layers_screen.dart';
 import 'package:calmpost/state/providers.dart';
 import 'package:calmpost/ui/theme.dart';
+import 'package:calmpost/ui/brand.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -76,11 +77,25 @@ void main() {
     await t.tap(find.text('Temperature'));
     await settle(t);
     await capture('02-temperature');
+    await t.tap(find.text('CO₂'));
+    await settle(t);
+    expect(c.read(sensorMetricProvider), Metric.co2);
+    expect(t.widget<BandSegments<Metric>>(find.byType(BandSegments<Metric>)).selected, Metric.co2);
+    expect(find.text('View air · CO₂'), findsNothing);
+    await capture('03-co2');
     t.view.physicalSize = const Size(360 * 2, 740 * 2);
     t.platformDispatcher.textScaleFactorTestValue = 1.3;
     for (final metric in Metric.values) {
-      c.read(sensorMetricProvider.notifier).state = metric;
+      final label = switch (metric) {
+        Metric.moisture => 'Moisture',
+        Metric.temperature => 'Temperature',
+        Metric.co2 => 'CO₂',
+      };
+      await t.tap(find.text(label));
       await settle(t);
+      expect(c.read(sensorMetricProvider), metric);
+      expect(t.widget<BandSegments<Metric>>(find.byType(BandSegments<Metric>)).values, [Metric.moisture, Metric.temperature, Metric.co2]);
+      if (metric == Metric.co2) await capture('04-co2-small-large-text');
       final scroll = find.byType(Scrollable).first;
       for (var i = 0; i < 4; i++) {
         await t.drag(scroll, const Offset(0, -400));

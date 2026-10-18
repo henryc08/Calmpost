@@ -61,7 +61,10 @@ def test_ingest_rejects_a_token_for_another_bin(c):
 def test_same_scrap_different_answer(c):
     ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=10)
     dry = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}).json()
-    assert dry["verdict"] == "great" and dry["model"] == "rules-fallback"
+    # Dry alone is not evidence that food is needed: without brown-heavy logs,
+    # the current action is water. Compostable additions remain loggable.
+    assert dry["verdict"] == "careful" and dry["model"] == "rules-fallback"
+    assert "water" in dry["reason"]
 
     ingest_series(c, moisture_raw=raw_for(76), probe_temp=31, co2=3900, minutes=0)
     wet = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}).json()
@@ -262,7 +265,7 @@ def test_rules_override_a_gemini_verdict_that_disagrees(c, monkeypatch):
     monkeypatch.setattr(advisor, "_ask_gemini", gemini_says_avoid)
     ingest_series(c, moisture_raw=raw_for(25), probe_temp=24, co2=750, minutes=10)
     r = c.post("/bins/bin-001/advice/check", json={"item": "Banana peel"}, params={"refresh": "true"}).json()
-    assert r["verdict"] == "great" and r["model"] == "rules-override"
+    assert r["verdict"] == "careful" and r["model"] == "rules-override"
 
     # Unknown items also retain the conservative deterministic verdict.
     r = c.post("/bins/bin-001/advice/check", json={"item": "durian rind"}, params={"refresh": "true"}).json()

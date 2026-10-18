@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data' show Uint8List;
 
 import '../domain/advice_rules.dart';
+import '../domain/trunc_guidance.dart';
 import '../domain/drop.dart';
 import '../domain/models.dart';
 import '../domain/inventory.dart';
@@ -37,7 +38,7 @@ class _Base {
 const _ambient = 21.0;
 
 const _bases = {
-  Scenario.healthy: _Base(57, 33, 34, 24.5, 2400, -1.5, 3, 4.4, Stage.active, Stage.curing, 4.5),
+  Scenario.healthy: _Base(57, 33, 48, 24.5, 2400, -1.5, 3, 7.5, Stage.active, Stage.curing, 4.5),
   Scenario.tooWet: _Base(76, 31, 63, 25, 3900, 1, 8, 4, Stage.active, Stage.curing, 0.5),
   Scenario.tooDry: _Base(24, 23.5, 31, 22, 750, -2, 2, 9, Stage.active, Stage.curing, 1),
   Scenario.curing: _Base(50, 34, 45, 22.5, 1150, -8, 3, 8, Stage.active, Stage.curing, 5.5),
@@ -147,6 +148,7 @@ class MockRepository implements CalmpostRepository {
       topTemp: b.topT + wobble(0.3, 0.4, 2),
       bottomMoisture: b.botM + wobble(0.5, 0.5, 3),
       bottomTemp: b.botT + wobble(0.2, 0.3, 4),
+      bottomTemperatureMeasured: false,
       co2: b.co2 + wobble(b.co2 * 0.02, 0.6, 5),
       ambientTemp: _ambient,
       co2SlopePerDay: b.slope,
@@ -526,62 +528,38 @@ class MockRepository implements CalmpostRepository {
 
     final q = message.toLowerCase();
     final snap = _last ?? _snapshot(0);
-    final context = TruncContext(readingsAt: snap.time, recentAdds: (_greens + _browns).round(), photos: includePhotos ? 1 : 0);
-
-    if (q.contains('fallback') || q.contains('test error')) {
+    final a = guidanceFor(snap);
+    final context = TruncContext(
+      readingsAt: snap.time,
+      readingsStale: snap.readingsStale,
+      recentAdds: _inventoryLogs.where((l) => DateTime.now().difference(l.time) < const Duration(hours: 48)).length,
+      photos: 0, // The mock has no real frames to send to a model.
+    );
+    final item = truncRequestedItem(message) ?? truncFollowupItem(message, history);
+    if (!_soundsLikeCompost(q) && item == null && !q.contains('fallback') && !q.contains('test error')) {
       return TruncReply(
-        reply:
-            "I can't reach my brain right now, so here's what the sensors say "
-            'instead. Right now the top layer is ${snap.topMoisture.round()}% moisture.',
-        model: 'rules-fallback',
-        onTopic: true,
-        usedReadings: true,
-        context: context,
-      );
-    }
-
-    if (!_soundsLikeCompost(q)) {
-      return TruncReply(
-        reply:
-            "I only know about composting, so I'll stay out of that one. "
-            'Ask me about your bin, what to add, or why something smells off.',
+        reply: "I only know about composting, so I'll stay out of that one. Ask about your bin or what to add.",
         model: 'mock',
         onTopic: false,
         usedReadings: false,
         context: context,
       );
     }
-
-    // Leans on the readings when the question is about this bin's behaviour.
-    final aboutThisBin = ['smell', 'wet', 'dry', 'hot', 'slow', 'why', 'my bin'].any(q.contains);
-    if (aboutThisBin) {
-      final wet = snap.topMoisture > 64;
-      return TruncReply(
-        reply: wet
-            ? 'The top layer is at ${snap.topMoisture.round()}%, which is soggy, and that '
-                  'sour smell is what a wet pile does when air cannot get through. Add a '
-                  'few handfuls of shredded cardboard and give it a stir.'
-            : 'Nothing looks off: the top layer is ${snap.topMoisture.round()}% moisture and '
-                  'running ${(snap.topTemp - snap.ambientTemp).toStringAsFixed(1)}C above the '
-                  'room, which is healthy. Keep adding scraps as you have been.',
-        model: 'mock',
-        onTopic: true,
-        usedReadings: true,
-        context: context,
-      );
+    var text = item != null
+        ? truncMaterialAnswer(snap, item, foodCatalog)
+        : q.contains('what are browns')
+        ? 'Browns are dry materials such as plain shredded cardboard and dry leaves. ${a.summary}'
+        : a.summary;
+    if (['how much', 'how many', 'exact'].any(q.contains)) {
+      text = 'I cannot calculate an exact dose or number of scraps from two moisture points and estimated additions. $text';
     }
-
-    // A general question, answered without reciting the sensors -- the
-    // behaviour the real prompt asks for.
     return TruncReply(
-      reply:
-          'Yes, those are fine to compost. Break them up a little first so they '
-          'rot faster, and tuck them under the top layer rather than leaving them '
-          'sitting on it.',
-      model: 'mock',
+      reply: text,
+      model: q.contains('fallback') || q.contains('test error') ? 'rules-fallback' : 'mock',
       onTopic: true,
-      usedReadings: false,
+      usedReadings: a.usable && !text.contains('cannot confidently identify') && !text.contains('Keep $item out'),
       context: context,
+      need: a.need,
     );
   }
 

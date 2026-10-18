@@ -130,18 +130,29 @@ def need_for(snap: dict) -> str:
     pct = top["moisture_pct"]
     if snap.get("stale") or not top["measured"] or pct is None:
         return "nothing"
-    if snap["stages"]["bottom"] in ("curing", "ready") and snap["layers"]["bottom"]["measured"]:
+    if moisture_conflict(snap):
         return "nothing"
     greens, browns = snap["greens_7d"], snap["browns_7d"]
     ratio = browns / greens if greens > 0 else (4.0 if browns > 0 else 2.5)
     delta = top["temp_c"] - air["ambient_temp_c"] if top["temp_c"] is not None and air["ambient_temp_c"] is not None else None
-    if pct > 60 or ratio < 2 or (air.get("co2_ok") and (air["co2_ppm"] or 0) > 6000 and delta is not None and delta < 5):
+    if pct > 60:
         return "browns"
     if pct < 40:
         return "greens" if ratio > 3 else "water"
+    if ratio < 2:
+        return "browns"
     if air.get("co2_ok") and (air.get("co2_slope_per_day") or 0) > 2 and delta is not None and delta < 5:
         return "mix"
     return "nothing"
+
+
+def moisture_conflict(snap: dict) -> bool:
+    """A lower out-of-band point that the upper reading cannot represent."""
+    top, bottom = snap["layers"]["top"], snap["layers"]["bottom"]
+    a, b = top.get("moisture_pct"), bottom.get("moisture_pct")
+    if not bottom.get("measured") or a is None or b is None:
+        return False
+    return (b < MOISTURE_LO and a >= MOISTURE_LO) or (b > MOISTURE_HI and a <= MOISTURE_HI)
 
 
 # --- stage -----------------------------------------------------------------
@@ -256,7 +267,9 @@ def categorise(item: str) -> str:
     hit = food.lookup(item)
     if hit is not None:
         return hit["category"]
-    low = item.strip().lower()
+    low = normalise_item(item)
+    if not low:
+        return "unknown"
     if any(g in low or low in g for g in GREENS):
         return "green"
     if any(b in low or low in b for b in BROWNS):
@@ -268,5 +281,13 @@ def is_wet_item(item: str) -> bool:
     hit = food.lookup(item)
     if hit is not None:
         return hit["wet"]
-    low = item.strip().lower()
+    low = normalise_item(item)
+    if not low:
+        return False
     return any(w in low or low in w for w in WET_GREENS)
+
+
+def normalise_item(item: str) -> str:
+    low = item.strip().lower()
+    return {"apple": "apple core", "apples": "apple core", "apple scraps": "apple core",
+            "apple cores": "apple core", "banana peels": "banana peel"}.get(low, low)

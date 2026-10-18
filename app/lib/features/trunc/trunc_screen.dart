@@ -53,7 +53,7 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
             child: BrandPage(
               controller: _scroll,
               title: 'Trunc',
-              subtitle: 'Your compost questions, answered',
+              subtitle: 'Advice for your bin’s current state',
               trailing: IconButton(
                 tooltip: 'Back',
                 onPressed: () => Navigator.pop(context),
@@ -61,7 +61,7 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
               ),
               children: [
                 Text(
-                  'This conversation stays in app memory, not on the server. The latest 10 exchanges provide context for your next question.',
+                  'Each question uses the latest available bin readings and confirmed additions. Missing or stale readings limit what Trunc can recommend. Conversation stays in app memory.',
                   style: T.small,
                 ),
                 const SizedBox(height: S.x3),
@@ -77,9 +77,9 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                 ),
                 if (chat.exchanges.isEmpty) ...[
                   const SectionBreak(),
-                  Text('What would you like to know?', style: T.heading),
+                  Text('What does your bin need?', style: T.heading),
                   const SizedBox(height: S.x3),
-                  for (final prompt in ['Why does my bin smell?', 'What are browns?', 'What should I add?']) ...[
+                  for (final prompt in ['Should I add more apples to this compost?', 'Why does my bin smell?', 'What should I do next?']) ...[
                     Align(
                       alignment: Alignment.centerLeft,
                       child: PillButton(label: prompt, dense: true, onTap: () => _send(prompt)),
@@ -160,7 +160,7 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
                       style: T.body,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Ask about compost…',
+                        hintText: 'Should I add apples right now?',
                         hintStyle: T.small,
                         filled: true,
                         fillColor: C.surface,
@@ -192,7 +192,8 @@ class _TruncScreenState extends ConsumerState<TruncScreen> {
     final c = reply.context;
     final time = c.readingsAt?.toLocal();
     return [
-      if (reply.isFallback) 'Rule-based reply.',
+      if (reply.model.startsWith('rules')) 'Rule-based reply.',
+      if (c.readingsStale || (time != null && DateTime.now().difference(time) > const Duration(minutes: 2))) 'These readings are stale.',
       time == null
           ? 'General guidance · no sensor readings available.'
           : 'Readings available: ${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}.',

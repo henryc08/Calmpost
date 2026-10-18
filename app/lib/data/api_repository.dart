@@ -175,9 +175,7 @@ class ApiRepository implements CalmpostRepository {
     final bottom = zone == Zone.bottom;
     final name = switch (metric) {
       Metric.moisture => bottom ? 'moisture_2' : 'moisture',
-      Metric.temperature => zone == Zone.air
-          ? 'air_temp'
-          : (bottom ? 'temperature_2' : 'temperature'),
+      Metric.temperature => zone == Zone.air ? 'air_temp' : (bottom ? 'temperature_2' : 'temperature'),
       Metric.co2 => 'co2',
     };
     final j =
@@ -589,12 +587,14 @@ TruncReply truncReplyFromJson(Map<String, dynamic> j) {
     // Absent means on topic: only an off-topic answer sets it false.
     onTopic: j['on_topic'] != false,
     usedReadings: j['used_readings'] == true,
+    need: BinNeed.values.where((n) => n.name == j['need']).firstOrNull,
     context: TruncContext(
       // Null when the bin has never reported, which is not an error: a general
       // question does not need a reading.
       readingsAt: at == null ? null : DateTime.tryParse(at)?.toLocal(),
       recentAdds: (ctx['recent_adds'] as num?)?.toInt() ?? 0,
       photos: (ctx['photos'] as num?)?.toInt() ?? 0,
+      readingsStale: ctx['readings_stale'] == true,
     ),
   );
 }

@@ -25,7 +25,7 @@ def stub(monkeypatch, answer, capture=None):
     async def fake(body):
         if capture is not None:
             capture["body"] = body
-        return answer
+        return {**answer, "need": answer.get("need", context_json(body)["care_decision"]["need"])}
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     get_settings.cache_clear()
@@ -131,7 +131,7 @@ def test_earlier_turns_are_sent_so_it_can_follow_up(c, monkeypatch):
     stub(monkeypatch, reply(), seen)
     ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
 
-    ask(c, "And how much of it?", history=[
+    ask(c, "Why is it wet?", history=[
         {"role": "user", "text": "Should I add cardboard?"},
         {"role": "assistant", "text": "Yes, it is a good brown."},
     ])
@@ -177,7 +177,7 @@ def test_telling_them_not_to_add_something_is_left_alone(c, monkeypatch):
     stub(monkeypatch, reply("Don't add meat to this bin -- it draws pests."))
     ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
 
-    r = ask(c, "Can I compost chicken?").json()
+    r = ask(c, "What materials belong here?").json()
 
     assert r["reply"].startswith("Don't add meat")
     assert r["model"] != "rules-override"
@@ -209,17 +209,17 @@ def test_the_prompt_tells_it_to_stay_on_compost(c, monkeypatch):
     assert "Trunc" in brief
 
 
-def test_it_is_told_to_use_the_context_only_when_it_matters(c, monkeypatch):
-    """Kevin's requirement: aware of the data, not reciting it every turn."""
+def test_prompt_requires_current_state_not_generic_compostability(c, monkeypatch):
     seen = {}
     stub(monkeypatch, reply(), seen)
     ingest_series(c, moisture_raw=raw_for(50), probe_temp=30, co2=1500, minutes=10)
 
-    ask(c, "Can I compost eggshells?")
+    ask(c, "What does my bin need?")
 
     brief = seen["body"]["systemInstruction"]["parts"][0]["text"]
-    assert "only when it bears on the question" in brief
-    assert "do not recite the moisture" in brief
+    assert "THIS BIN NOW" in brief
+    assert "care_decision.action" in brief
+    assert "estimated addition logs cannot determine" in brief
 
 
 # --- degrading ------------------------------------------------------------------
@@ -293,6 +293,18 @@ def ask_bin(c, bin_id, message):
     return c.post(f"/bins/{bin_id}/chat", json={"message": message})
 
 
+def test_apples_answer_changes_with_current_bin_without_model(c, monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    get_settings.cache_clear()
+    ingest_series(c, moisture_raw=raw_for(25), probe_temp=30, co2=1500, minutes=10)
+    dry = ask(c, "Should I add more apples to this compost?", include_photos=False).json()
+    assert dry["need"] == "water" and "Hold off" in dry["reply"]
+    assert "water" in dry["reply"]
+    assert dry["context"]["readings_stale"] is False
+    assert dry["model"] == "rules-grounded"
+
+
 def test_an_empty_or_oversized_message_is_rejected(c):
     assert c.post("/bins/bin-001/chat", json={"message": ""}).status_code == 422
     assert c.post("/bins/bin-001/chat", json={"message": "x" * 1001}).status_code == 422
@@ -317,7 +329,7 @@ def test_one_unreadable_photo_does_not_cost_the_whole_answer(c, monkeypatch):
         calls.append(sum(1 for p in parts if "inlineData" in p))
         if calls[-1]:
             raise RuntimeError("400 Unable to process input image")
-        return reply("Sour usually means too wet. Add browns.")
+        return {**reply("Sour usually means too wet. Add browns."), "need": "browns"}
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     get_settings.cache_clear()
@@ -332,6 +344,7 @@ def test_one_unreadable_photo_does_not_cost_the_whole_answer(c, monkeypatch):
     r = ask(c, "Why does my bin smell sour?").json()
 
     assert calls == [1, 0], "tried with the photo, then retried without it"
+    assert r["context"]["photos"] == 0, "the successful reply did not see photos"
     assert r["reply"].startswith("Sour usually means")
     assert r["model"] != "rules-fallback", "the real answer survived"
 

@@ -441,15 +441,17 @@ class TruncTurn {
 /// decoratively: when [readingsAt] is null the bin has never reported, so the
 /// answer came from general rules and not from this bin.
 class TruncContext {
-  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0});
+  const TruncContext({this.readingsAt, this.recentAdds = 0, this.photos = 0, this.readingsStale = false});
 
   final DateTime? readingsAt;
   final int recentAdds;
   final int photos;
+  final bool readingsStale;
 }
 
 class TruncReply {
-  const TruncReply({required this.reply, required this.model, required this.onTopic, required this.usedReadings, required this.context});
+  const TruncReply({required this.reply, required this.model, required this.onTopic, required this.usedReadings, required this.context, this.need});
+  final BinNeed? need;
 
   /// Always something sayable, including when [onTopic] is false or the model
   /// was unreachable. Render it as a normal message either way.

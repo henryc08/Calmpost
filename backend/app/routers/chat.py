@@ -41,6 +41,7 @@ class ChatContext(BaseModel):
     readings_at: str | None = None
     recent_adds: int = 0
     photos: int = 0
+    readings_stale: bool = False
 
 
 class ChatReply(BaseModel):
@@ -49,6 +50,7 @@ class ChatReply(BaseModel):
     on_topic: bool
     used_readings: bool = False
     context: ChatContext
+    need: str | None = None
 
 
 async def _photos(bin_id: str, limit: int) -> list[dict]:
@@ -105,10 +107,12 @@ async def chat(bin_id: str, body: ChatRequest) -> ChatReply:
         model=model,
         on_topic=payload["on_topic"],
         used_readings=payload.get("used_readings", False),
+        need=payload.get("need"),
         context=ChatContext(
             readings_at=str(snap["time"]) if snap.get("time") else None,
             recent_adds=len(recent),
-            photos=len(photos),
+            photos=payload.get("photos_used", 0),
+            readings_stale=trunc.guidance.is_stale(snap),
         ),
     )
 

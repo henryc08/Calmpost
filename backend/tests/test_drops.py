@@ -164,7 +164,8 @@ def test_confirm_returns_verdict_when_available(c, monkeypatch):
     drop_id = report(c, arm(c)).json()["drop_id"]
     r = c.post(f"/drops/{drop_id}/confirm", json={"items": [
         {"label": "banana peel", "catalog_id": "banana_peel", "category": "green"}]}).json()
-    assert r["items"][0]["verdict"]["verdict"] == "great"
+    assert r["items"][0]["verdict"]["verdict"] == "careful"
+    assert "water" in r["items"][0]["verdict"]["reason"]
 
 
 def test_mixed_drop_the_camera_could_not_separate(c):

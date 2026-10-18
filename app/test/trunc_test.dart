@@ -14,11 +14,9 @@ import 'package:calmpost/domain/models.dart';
 
 const _config = ApiConfig(baseUrl: 'http://10.0.0.5:8000', apiKey: 'k', binId: 'bin-001');
 
-ApiRepository _repo(Future<http.Response> Function(http.Request) handler) =>
-    ApiRepository(_config, client: MockClient(handler));
+ApiRepository _repo(Future<http.Response> Function(http.Request) handler) => ApiRepository(_config, client: MockClient(handler));
 
-http.Response _json(Object body, [int code = 200]) =>
-    http.Response(jsonEncode(body), code, headers: {'content-type': 'application/json'});
+http.Response _json(Object body, [int code = 200]) => http.Response(jsonEncode(body), code, headers: {'content-type': 'application/json'});
 
 Map<String, dynamic> _replyJson({
   String reply = 'Add a few handfuls of shredded cardboard.',
@@ -38,6 +36,20 @@ Map<String, dynamic> _replyJson({
 
 void main() {
   group('ApiRepository.askTrunc', () {
+    test('reads guarded guidance metadata and tolerates older servers', () async {
+      final repo = _repo(
+        (_) async => _json({
+          ..._replyJson(),
+          'need': 'water',
+          'context': {'readings_at': null, 'readings_stale': true, 'recent_adds': 0, 'photos': 0},
+        }),
+      );
+      final r = await repo.askTrunc('What next?');
+      expect(r.need, BinNeed.water);
+      expect(r.context.readingsStale, isTrue);
+      final old = await _repo((_) async => _json(_replyJson())).askTrunc('What next?');
+      expect(old.need, isNull);
+    });
     test('sends the question, the conversation and the photo choice', () async {
       late http.Request seen;
       final repo = _repo((req) async {
@@ -45,10 +57,13 @@ void main() {
         return _json(_replyJson());
       });
 
-      await repo.askTrunc('Why does it smell sour?', history: const [
-        TruncTurn(role: TruncRole.user, text: 'Should I add cardboard?'),
-        TruncTurn(role: TruncRole.assistant, text: 'Yes, it is a good brown.'),
-      ]);
+      await repo.askTrunc(
+        'Why does it smell sour?',
+        history: const [
+          TruncTurn(role: TruncRole.user, text: 'Should I add cardboard?'),
+          TruncTurn(role: TruncRole.assistant, text: 'Yes, it is a good brown.'),
+        ],
+      );
 
       expect(seen.method, 'POST');
       expect(seen.url.path, '/bins/bin-001/chat');
@@ -91,11 +106,9 @@ void main() {
     });
 
     test('an off-topic answer arrives with the redirect already written', () async {
-      final repo = _repo((req) async => _json(_replyJson(
-        reply: "I only know about composting, so I'll stay out of that one.",
-        onTopic: false,
-        usedReadings: false,
-      )));
+      final repo = _repo(
+        (req) async => _json(_replyJson(reply: "I only know about composting, so I'll stay out of that one.", onTopic: false, usedReadings: false)),
+      );
 
       final r = await repo.askTrunc('Write me a Python script.');
 
@@ -105,10 +118,7 @@ void main() {
     });
 
     test('a rules-fallback answer is flagged but is still a normal reply', () async {
-      final repo = _repo((req) async => _json(_replyJson(
-        reply: "I can't reach my brain right now. The top layer is 76% moisture.",
-        model: 'rules-fallback',
-      )));
+      final repo = _repo((req) async => _json(_replyJson(reply: "I can't reach my brain right now. The top layer is 76% moisture.", model: 'rules-fallback')));
 
       final r = await repo.askTrunc('Why does it smell?');
 
@@ -135,19 +145,16 @@ void main() {
 
     test('a server error surfaces rather than looking like an answer', () async {
       final repo = _repo((req) async => _json({'detail': 'boom'}, 500));
-      await expectLater(
-        repo.askTrunc('hi'),
-        throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 500)),
-      );
+      await expectLater(repo.askTrunc('hi'), throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 500)));
     });
   });
 
   group('MockRepository.askTrunc', () {
-    test('answers a general question without reciting the sensors', () async {
+    test('compostability questions include current suitability', () async {
       final r = await MockRepository(Scenario.healthy).askTrunc('Can I compost eggshells?');
 
       expect(r.onTopic, isTrue);
-      expect(r.usedReadings, isFalse, reason: 'the prompt asks it not to recite readings');
+      expect(r.usedReadings, isTrue, reason: 'suitability is based on the current bin');
       expect(r.reply, isNotEmpty);
     });
 
@@ -155,7 +162,7 @@ void main() {
       final r = await MockRepository(Scenario.tooWet).askTrunc('Why does my bin smell?');
 
       expect(r.usedReadings, isTrue);
-      expect(r.reply.toLowerCase(), contains('soggy'));
+      expect(r.reply.toLowerCase(), contains('cardboard'));
       expect(r.context.readingsAt, isNotNull);
     });
 
@@ -163,7 +170,7 @@ void main() {
       final wet = await MockRepository(Scenario.tooWet).askTrunc('Why does my bin smell?');
       final ok = await MockRepository(Scenario.healthy).askTrunc('Why does my bin smell?');
       expect(wet.reply, isNot(ok.reply));
-      expect(ok.reply.toLowerCase(), contains('healthy'));
+      expect(ok.reply.toLowerCase(), contains('no addition'));
     });
 
     test('an off-topic question is refused', () async {

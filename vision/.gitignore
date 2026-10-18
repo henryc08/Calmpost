@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 thumbs/
 roi.json
+
+# Backups of .env hold real keys too.
+.env.*
+!.env.example
+*.bak

@@ -7,3 +7,7 @@ __pycache__/
 
 # Bridge autostart log: local runtime output, grows forever.
 bridge.log
+
+# Backups of .env hold real keys too.
+.env.*
+!.env.example

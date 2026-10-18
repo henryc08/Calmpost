@@ -44,6 +44,8 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
   @override
   Widget build(BuildContext context) {
     final g = ref.watch(gameProvider);
+    // Live and demo use the same supported batches; the server accepts 1 or 10.
+    final packetCount = g.packets >= 10 ? 10 : 1;
     final pity = g.pity;
     final items = collectibles.where((c) => _filter == _Filter.all || c.type.name == _filter.name).toList();
 
@@ -84,11 +86,11 @@ class _GreenhouseScreenState extends ConsumerState<GreenhouseScreen> {
               SizedBox(
                 width: double.infinity,
                 child: PillButton(
-                  label: g.packets == 1 ? 'Open your Seed Packet' : 'Open ${g.packets.clamp(1, 10)} Seed Packets',
+                  label: packetCount == 1 ? 'Open your Seed Packet' : 'Open 10 Seed Packets',
                   icon: PhosphorIconsBold.sparkle,
                   color: C.pink,
                   textColor: C.ink,
-                  onTap: () => _pull(g.packets.clamp(1, 10), fromPackets: true),
+                  onTap: () => _pull(packetCount, fromPackets: true),
                 ),
               ),
               const SizedBox(height: S.x2),

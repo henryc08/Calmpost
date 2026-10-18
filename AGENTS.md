@@ -683,6 +683,7 @@ Today's XP (from any source, including compostable volume) fills a track with th
 
 ### Seed Packets (gacha, in the Greenhouse)
 Plants have equippable buffs; finishes and titles stay cosmetic. The catalog is `data/collectibles.dart` (40 items), and the rules are in `domain/gacha.dart` (pure, unit-tested):
+- Owned packets open in supported batches of **1 or 10** in both live and demo mode: fewer than ten opens one, ten or more opens ten. Never send a 2–9 packet batch to the server.
 - **24 specimens** (plants: Fern … Ghost Orchid, Golden Sprout) for the collection.
 - **10 bin finishes**: equipping one recolours the health ring and marker on the Home band (Classic white, Mint, Sky, Blossom, Copper, Aurora, Gold…).
 - **6 titles**: equipping one replaces the level title in the HUD and on Profile (Early Riser, Night Composter, Worm Whisperer, Keeper of Balance, Mycelium Mind, Loam Sage).

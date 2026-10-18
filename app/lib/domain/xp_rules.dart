@@ -10,6 +10,8 @@ abstract final class Xp {
   static const healthyLayerDay = 10;
   static const weeklyBalance = 30;
   static const harvest = 100;
+  static const exchangeCompleted = 10;
+  static const exchangeDailyCap = 20;
 
   /// Max XP per day from actions (health-based XP is uncapped: it can't be farmed).
   static const dailyActionCap = 60;

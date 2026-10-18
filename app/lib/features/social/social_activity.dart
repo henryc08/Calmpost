@@ -41,7 +41,7 @@ class _ActivityListState extends ConsumerState<ActivityList>
                       const SizedBox(height: S.x2),
                       Row(
                         children: [
-                          PinkPill('+${row['xp']} care XP'),
+                          PinkPill('+${row['xp']} XP'),
                           const Spacer(),
                           if (row['user_id'] != uid)
                             smallAction(

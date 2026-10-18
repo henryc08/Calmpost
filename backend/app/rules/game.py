@@ -17,17 +17,23 @@ XP = {
     "healthy_layer_day": 10,
     "weekly_balance": 30,
     "harvest": 100,
+    "exchange_completed": 10,
 }
 
 # Action XP is capped per day so it cannot be farmed by tapping
 # (xpForAction / dailyActionCap). Sensor-driven XP and quest rewards are not.
 DAILY_ACTION_CAP = 60
 GRAMS_PER_XP = 20
-CAPPED_KINDS = ("compost_added", "followed_suggestion", "avoided_bad_add", "check_in")
+EXCHANGE_DAILY_CAP = 20
+CAPPED_KINDS = ("compost_added", "followed_suggestion", "avoided_bad_add", "check_in", "exchange_completed")
 
 
 def volume_xp(grams: float, already_logged: float = 0) -> int:
     return int((already_logged + max(0, grams)) // GRAMS_PER_XP) - int(already_logged // GRAMS_PER_XP)
+
+
+def exchange_xp(earned_today: int) -> int:
+    return min(XP["exchange_completed"], max(0, EXCHANGE_DAILY_CAP - earned_today))
 
 
 def cap_xp(base: int, earned_today: int) -> int:
@@ -38,6 +44,7 @@ def cap_xp(base: int, earned_today: int) -> int:
 # A confirmed compostable addition keeps the streak alive.
 CARE_KINDS = (
     "compost_added",
+    "exchange_completed",
     "followed_suggestion",
     "avoided_bad_add",
     "check_in",

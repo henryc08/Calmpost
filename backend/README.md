@@ -412,3 +412,33 @@ Amount XP remains 1 per 20 g rounded cumulatively each day, sharing the 60/day
 action cap with care actions. Registered owners use their bearer session for
 camera review; the vision service uses the bin's `DEVICE_TOKEN` for detection
 reporting. That device token cannot confirm, award XP, or read inventories.
+
+## Private group exchange
+
+Authenticated members use `/social/circles/{cid}/exchange`:
+
+| Method | Suffix | Purpose |
+|---|---|---|
+| GET | (none) | Board + allowed materials; `view=active\|mine\|history`, `before`, `limit` |
+| POST | (none) | `{kind, material_id, quantity, details?, request_id}`; retry-safe create |
+| POST | `/{id}/claim` | `{version, request_id, note?}`; reserve another member's post |
+| POST | `/{id}/note` | `{reservation_id, note}`; update your private arrangement note |
+| POST | `/{id}/confirm` | `{reservation_id}`; attest the real handoff/help happened |
+| POST | `/{id}/release` | `{reservation_id}`; release a wholly unconfirmed reservation |
+| POST | `/{id}/cancel` | `{version}`; participant/moderator closes an unfinished post |
+
+Only two current participants can confirm. A second confirmation atomically writes
+completion and two `exchange_completed` ledger events, up to 10 XP each. Caps:
+20 exchange XP/user/UTC day, one rewarded unordered pair/UTC day across groups,
+and the shared 60 action XP/day. Sorted player locks serialize concurrent caps;
+per-pair ledger keys survive group deletion. Seed buffs and Loam do not apply.
+These are participant attestations, not independent proof of physical delivery.
+
+Migration `098_materials_exchange.sql` is idempotent. Post creation uses a unique
+creator/request receipt and validates changed retry bodies. Claim versions and
+reservation IDs prevent stale retries from claiming a reopened post or confirming
+another reservation. Group locks serialize reservations, membership removal and
+completion. Private notes are omitted for every nonparticipant, including moderators.
+Sharing never writes `add_log`, inventory weight or sensor data. Posts expire after
+seven days (a new reservation starts a new seven-day window), with 10 active posts
+per creator across groups. API keys/device tokens do not grant access.

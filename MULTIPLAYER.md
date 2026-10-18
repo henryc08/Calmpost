@@ -174,3 +174,25 @@ flutter test test/multiplayer_live_test.dart \
 
 Do not point that test at your production database. It exercises actual HTTP calls for
 friend/group invitations, account progress, rankings, cheers, and membership revocation.
+
+## Materials & help exchange
+
+Open a private group and choose **Materials & help**. Members can request or offer
+compostable catalog materials, finished compost, or help turning/harvesting a bin.
+A post includes an amount/help description and optional details visible to the group.
+The other participant reserves it; only the two participants can read handoff notes.
+Both must confirm the actual handoff/help before either earns XP.
+
+Each person can earn 10 XP on completion, up to 20 exchange XP/day and one reward
+with the same person per UTC day across all groups, within the shared 60 action XP
+cap. A cap may reduce XP to zero; the completion is still recorded. Posting,
+reserving and cancelling earn no XP. Confirmations are self-reported by both people;
+physical delivery is not sensor-verified. Sharing does not automatically log compost
+or inflate inventory. Log received scraps only when adding them to your bin.
+
+Posts and reservations expire after seven days. Unconfirmed reservations can be
+released. Once either party confirms, close an unfinished exchange instead of
+reopening it. Owners may close posts but cannot approve rewards for participants.
+Removing a member cancels/reopens affected unfinished exchanges safely. Completed
+rewards remain in the ledger after group deletion. Deploy migration
+`098_materials_exchange.sql` with the backend before distributing the new app.

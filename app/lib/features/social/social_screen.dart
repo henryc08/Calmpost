@@ -1,9 +1,12 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../data/social_repository.dart';
 import '../../state/social.dart';
+import '../../state/game.dart';
+import '../../domain/xp_rules.dart';
 import '../../app/routes.dart';
 import '../../ui/brand.dart';
 import '../../ui/components.dart';
@@ -14,6 +17,7 @@ import 'demo_league_screen.dart';
 part 'social_account.dart';
 part 'social_profile.dart';
 part 'social_group.dart';
+part 'social_exchange.dart';
 part 'social_activity.dart';
 part 'social_widgets.dart';
 
@@ -253,10 +257,10 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
           ),
         ],
         if (view == 2) ...[
-          const SectionLabel('PRIVATE LEADERBOARDS'),
+          const SectionLabel('YOUR PRIVATE GROUPS'),
           const SizedBox(height: S.x3),
           Text(
-            'A friendly weekly race for your household, friends or campus. Only invited members see the board.',
+            'Share materials, lend a hand and follow progress with your household, friends or campus. Only invited members see the group.',
             style: T.body,
           ),
           const SizedBox(height: S.x4),
@@ -336,7 +340,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen>
         ],
         const SectionBreak(),
         Text(
-          'Rankings reward care, never the amount of food added. Weekly boards reset Sunday at 00:00 UTC.',
+          'Rankings include compostable amounts, care and completed exchanges. Weekly boards reset Sunday at 00:00 UTC.',
           style: T.small,
         ),
       ],
